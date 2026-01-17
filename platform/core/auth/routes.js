@@ -77,8 +77,52 @@ router.post('/signup', asyncHandler(async (req, res) => {
         });
         console.log('[Signup] Tenant created:', tenant.id);
 
-        // Step 2: Create the first user (admin) for this tenant
-        console.log('[Signup] Step 2: Creating user for tenant:', tenant.id);
+        // Step 2: Seed Default Roles & Permissions
+        console.log('[Signup] Step 2: Seeding Roles...');
+        const RoleService = require('../roles/services/RoleService');
+        await RoleService.seedDefaultRoles(tenant.id);
+
+        // Step 3: Ensure Functional Admin Account (admin@subdomain.com) - The "Owner"
+        const adminEmail = `admin@${value.subdomain}.com`;
+        console.log(`[Signup] Step 3: Ensuring Functional Admin (${adminEmail})...`);
+
+        let adminUser = null;
+        try {
+            // Try to create the admin user
+            adminUser = await AuthService.register(tenant.id, {
+                email: adminEmail,
+                password: 'password123', // Default password for internal admin
+                first_name: 'Store',
+                last_name: 'Admin',
+            });
+            console.log('✓ Functional Admin created');
+        } catch (adminErr) {
+            console.warn('⚠️ Functional admin creation note (might already exist):', adminErr.message);
+            // If creation failed, try to find the existing user
+            try {
+                // Dynamically import User model to avoid circular checks if not available
+                const User = require('./models/User');
+                adminUser = await User.findByEmail(tenant.id, adminEmail);
+                if (adminUser) console.log('✓ Functional Admin found (already existed)');
+            } catch (findErr) {
+                console.error('❌ Failed to find existing functional admin:', findErr);
+            }
+        }
+
+        // Assign 'Admin' role to the functional admin (whether new or existing)
+        if (adminUser) {
+            try {
+                await RoleService.assignRoleToUser(tenant.id, adminUser.id, 'Admin');
+                console.log('✓ Functional Admin assigned Admin role');
+            } catch (roleErr) {
+                console.error('❌ Failed to assign Admin role to functional admin:', roleErr);
+            }
+        } else {
+            console.error('❌ Could not find or create functional admin user. Role assignment skipped.');
+        }
+
+        // Step 4: Create Personal User Account (The Signup User)
+        console.log('[Signup] Step 4: Creating Personal User...');
         const user = await AuthService.register(tenant.id, {
             email: value.email,
             password: value.password,
@@ -86,11 +130,12 @@ router.post('/signup', asyncHandler(async (req, res) => {
         });
         console.log('[Signup] User created:', user.id, user.email);
 
-        // Step 3: Assign admin role to the first user (if roles exist)
-        // This would be done via the roles module, but skipping for now
+        // Step 5: Assign Moderator Role to Personal User
+        await RoleService.assignRoleToUser(tenant.id, user.id, 'Moderator');
+        console.log('✓ Personal User assigned Moderator role');
 
-        // Step 4: Generate tokens and auto-login
-        console.log('[Signup] Step 4: Generating tokens...');
+        // Step 6: Generate tokens and auto-login as Personal User
+        console.log('[Signup] Step 6: Generating tokens...');
         const tokens = await AuthService.login(tenant.id, value.email, value.password);
         console.log('[Signup] Signup complete, user logged in');
 
@@ -102,7 +147,7 @@ router.post('/signup', asyncHandler(async (req, res) => {
                 name: tenant.name,
                 subdomain: tenant.subdomain,
             },
-            token: tokens.accessToken,  // Match login response format
+            token: tokens.accessToken,
             user: tokens.user,
             refreshToken: tokens.refreshToken,
         });

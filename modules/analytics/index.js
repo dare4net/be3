@@ -6,6 +6,7 @@
  */
 
 const express = require('express');
+const { query } = require('../../config/database');
 const { tenantInsert } = require('../../utils/dbHelpers');
 const { authenticate, optionalAuth } = require('../../platform/core/auth/middleware/authenticate');
 const subscriptionGuard = require('../../middleware/subscriptionGuard');

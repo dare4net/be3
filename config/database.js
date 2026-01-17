@@ -43,7 +43,7 @@ async function query(query, params = [], tenantId = null) {
         tenantId
       ]);
     }
-    
+
     const result = await client.query(query, params);
     return result;
   } finally {
@@ -59,14 +59,14 @@ async function transaction(callback, tenantId = null) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    
+
     if (tenantId) {
       await client.query('SELECT set_config($1, $2, true)', [
         'app.current_tenant_id',
         tenantId
       ]);
     }
-    
+
     const result = await callback(client);
     await client.query('COMMIT');
     return result;
@@ -84,8 +84,8 @@ async function transaction(callback, tenantId = null) {
  */
 function tenantWhere(tenantId, additionalConditions = '') {
   const baseWhere = `tenant_id = '${tenantId}'`;
-  return additionalConditions 
-    ? `${baseWhere} AND ${additionalConditions}` 
+  return additionalConditions
+    ? `${baseWhere} AND ${additionalConditions}`
     : baseWhere;
 }
 
