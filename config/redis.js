@@ -1,0 +1,100 @@
+const { createClient } = require('redis');
+require('dotenv').config();
+
+const redisClient = createClient({
+    socket: {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: process.env.REDIS_PORT || 6379,
+    },
+    password: process.env.REDIS_PASSWORD || undefined,
+    database: process.env.REDIS_DB || 0,
+});
+
+redisClient.on('error', (err) => {
+    console.error('Redis Client Error:', err);
+});
+
+redisClient.on('connect', () => {
+    console.log('✓ Redis connected');
+});
+
+// Initialize connection
+(async () => {
+    try {
+        await redisClient.connect();
+    } catch (error) {
+        console.error('Failed to connect to Redis:', error);
+    }
+})();
+
+/**
+ * Get cache key with tenant prefix
+ * PRINCIPLE: Multi-tenant by default - all cache keys are tenant-scoped
+ */
+function getTenantKey(tenantId, key) {
+    return `tenant:${tenantId}:${key}`;
+}
+
+/**
+ * Get subscription cache for a tenant
+ */
+async function getSubscriptionCache(tenantId) {
+    const key = getTenantKey(tenantId, 'subscription');
+    const cached = await redisClient.get(key);
+    return cached ? JSON.parse(cached) : null;
+}
+
+/**
+ * Set subscription cache for a tenant
+ */
+async function setSubscriptionCache(tenantId, data, expirySeconds = 3600) {
+    const key = getTenantKey(tenantId, 'subscription');
+    await redisClient.setEx(key, expirySeconds, JSON.stringify(data));
+}
+
+/**
+ * Clear subscription cache for a tenant
+ */
+async function clearSubscriptionCache(tenantId) {
+    const key = getTenantKey(tenantId, 'subscription');
+    await redisClient.del(key);
+}
+
+/**
+ * Get module access cache
+ */
+async function getModuleAccessCache(tenantId, moduleName) {
+    const key = getTenantKey(tenantId, `module:${moduleName}`);
+    const cached = await redisClient.get(key);
+    return cached === 'true';
+}
+
+/**
+ * Set module access cache
+ */
+async function setModuleAccessCache(tenantId, moduleName, hasAccess, expirySeconds = 3600) {
+    const key = getTenantKey(tenantId, `module:${moduleName}`);
+    await redisClient.setEx(key, expirySeconds, hasAccess ? 'true' : 'false');
+}
+
+/**
+ * Clear all cache for a tenant
+ */
+async function clearTenantCache(tenantId) {
+    const pattern = `tenant:${tenantId}:*`;
+    const keys = await redisClient.keys(pattern);
+    if (keys.length > 0) {
+        await redisClient.del(keys);
+    }
+}
+
+module.exports = {
+    redisClient,
+    getTenantKey,
+    getSubscriptionCache,
+    setSubscriptionCache,
+    clearSubscriptionCache,
+    getModuleAccessCache,
+    setModuleAccessCache,
+    clearTenantCache,
+};
