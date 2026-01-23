@@ -1,0 +1,3 @@
+-- Search Module Schema
+-- This file is included in the main migration system
+-- See migrations/027_search_module.sql for the full migration

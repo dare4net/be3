@@ -13,6 +13,7 @@ const { authenticate } = require('../../platform/core/auth/middleware/authentica
 const authorize = require('../../platform/core/roles/middleware/authorize');
 const subscriptionGuard = require('../../middleware/subscriptionGuard');
 const { asyncHandler } = require('../../middleware/errorHandler');
+const { mergeProductSEO, mergeCategorySEO } = require('../../lib/seoHelpers');
 
 async function bootstrap(context) {
     const { app, eventBus } = context;
@@ -26,7 +27,7 @@ async function bootstrap(context) {
 
         // PUBLIC STOREFRONT ENDPOINT (No Auth, but requires Subscription/Module Access)
         router.get('/storefront', subscriptionGuard('products'), asyncHandler(async (req, res) => {
-            const { featured, category, category_id, limit, exclude } = req.query;
+            const { featured, category, category_id, limit, exclude, sort } = req.query;
             const page = parseInt(req.query.page) || 1;
             const perPage = parseInt(limit || req.query.per_page) || 20;
             const offset = (page - 1) * perPage;
@@ -44,28 +45,45 @@ async function bootstrap(context) {
                 whereConditions.push(`p.id != $${queryParams.length}`);
             }
 
-            if (category_id) {
-                queryParams.push(category_id);
+            if (category_id || category) {
+                const catParam = category_id || category;
+                const field = category_id ? 'id' : 'slug';
+
+                queryParams.push(catParam);
+                const catIndex = queryParams.length;
+
                 whereConditions.push(`EXISTS (
                     SELECT 1 FROM product_categories pc
-                    WHERE pc.product_id = p.id AND pc.category_id = $${queryParams.length}
-                )`);
-            } else if (category) {
-                queryParams.push(category);
-                whereConditions.push(`EXISTS (
-                    SELECT 1 FROM product_categories pc
-                    JOIN categories c ON pc.category_id = c.id
-                    WHERE pc.product_id = p.id AND c.slug = $${queryParams.length}
+                    WHERE pc.product_id = p.id AND pc.category_id IN (
+                        WITH RECURSIVE cat_tree AS (
+                            SELECT id FROM categories WHERE ${field} = $${catIndex} AND tenant_id = $1
+                            UNION ALL
+                            SELECT c.id FROM categories c
+                            INNER JOIN cat_tree ct ON c.parent_id = ct.id
+                            WHERE c.tenant_id = $1
+                        )
+                        SELECT id FROM cat_tree
+                    )
                 )`);
             }
 
             const whereSQL = whereConditions.join(' AND ');
 
+            // Determine Sort Order
+            let orderBy = 'p.created_at DESC';
+            if (sort === 'oldest') orderBy = 'p.created_at ASC';
+            else if (sort === 'price_asc') orderBy = 'p.price ASC';
+            else if (sort === 'price_desc') orderBy = 'p.price DESC';
+            else if (sort === 'name_asc') orderBy = 'p.name ASC';
+            else if (sort === 'name_desc') orderBy = 'p.name DESC';
+            else if (sort === 'random') orderBy = 'RANDOM()';
+            else if (sort === 'trending') orderBy = 'p.is_featured DESC, p.created_at DESC';
+
             // Get products with filters
             const productsSQL = `
                 SELECT p.* FROM products p
                 WHERE ${whereSQL}
-                ORDER BY p.created_at DESC
+                ORDER BY ${orderBy}
                 LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
             `;
             queryParams.push(perPage, offset);
@@ -96,9 +114,22 @@ async function bootstrap(context) {
                 product.categories = cats.rows;
             }
 
+            // Fetch category context for metadata/titles if filtered
+            let categoryMetadata = null;
+            if (category_id || category) {
+                const catParam = category_id || category;
+                const field = category_id ? 'id' : 'slug';
+                const catRes = await query(
+                    `SELECT id, name, slug FROM categories WHERE ${field} = $1 AND tenant_id = $2`,
+                    [catParam, req.tenantId]
+                );
+                categoryMetadata = catRes.rows[0] || null;
+            }
+
             res.json({
                 success: true,
                 data: result.rows,
+                category: categoryMetadata,
                 pagination: {
                     page,
                     perPage,
@@ -152,8 +183,33 @@ async function bootstrap(context) {
             product.categories = catsRes.rows;
 
             // Get Attributes (Resolved from Categories + Product Specific)
-            // For now, we return the raw product 'attributes' JSONB column.
-            // Future: Implement full inheritance resolution similar to /categories/:id/admin if needed for the frontend.
+            // Resolve attribute metadata (labels, icons)
+            const attrKeys = Object.keys(product.attributes || {});
+            product.resolved_attributes = [];
+
+            if (attrKeys.length > 0) {
+                const attrDefs = await query(
+                    `SELECT code, label, image_url, type FROM attributes WHERE tenant_id = $1 AND code = ANY($2)`,
+                    [req.tenantId, attrKeys]
+                );
+
+                product.resolved_attributes = attrKeys.map(key => {
+                    const def = attrDefs.rows.find(a => a.code === key);
+                    return {
+                        code: key,
+                        label: def ? def.label : key.replace(/_/g, ' '), // Fallback to formatted key
+                        value: product.attributes[key],
+                        icon: def ? def.image_url : null,
+                        type: def ? def.type : 'text'
+                    };
+                });
+            }
+
+            // SEO Inheritance
+            const primaryCategory = product.categories[0] || null; // Fallback to first if no explicit primary
+            // Ideally we'd match product.category_id but simpler logic for now matches first found
+
+            product.seo = mergeProductSEO(product, primaryCategory);
 
             res.json({ success: true, product });
         }));
@@ -163,8 +219,7 @@ async function bootstrap(context) {
             const { slug } = req.params;
 
             const catRes = await query(
-                `SELECT id, name, slug, description, image_url, parent_id 
-                 FROM categories 
+                `SELECT * FROM categories 
                  WHERE tenant_id = $1 AND slug = $2 AND is_active = true`,
                 [req.tenantId, slug]
             );
@@ -184,7 +239,36 @@ async function bootstrap(context) {
             );
             category.children = subRes.rows;
 
+            // SEO
+            category.seo = mergeCategorySEO(category);
+
             res.json({ success: true, category });
+        }));
+
+        // PUBLIC STOREFRONT COLLECTION DETAIL
+        router.get('/storefront/collections/:slug', subscriptionGuard('products'), asyncHandler(async (req, res) => {
+            const { slug } = req.params;
+
+            const resCol = await query(
+                `SELECT * FROM collections 
+                 WHERE tenant_id = $1 AND slug = $2 AND is_active = true`,
+                [req.tenantId, slug]
+            );
+
+            if (!resCol.rows[0]) {
+                return res.status(404).json({ error: 'Collection not found' });
+            }
+
+            const collection = resCol.rows[0];
+
+            // Basic SEO fallback
+            if (!collection.seo) collection.seo = {};
+            if (typeof collection.seo === 'string') {
+                try { collection.seo = JSON.parse(collection.seo); } catch (e) { }
+            }
+            if (!collection.seo.title) collection.seo.title = collection.name;
+
+            res.json({ success: true, collection });
         }));
 
         // ==========================================
@@ -239,12 +323,61 @@ async function bootstrap(context) {
 
         // Get all categories (PUBLIC - for storefront and widget editors)
         router.get('/categories', asyncHandler(async (req, res) => {
-            const sql = `SELECT id, name, slug, description, parent_id, is_active, image_url 
-                         FROM categories 
-                         WHERE tenant_id = $1 AND is_active = true
-                         ORDER BY name ASC`;
+            // 1. Get Categories with Direct Product Count
+            const sql = `
+                SELECT 
+                    c.id, c.name, c.slug, c.description, c.parent_id, c.is_active, c.image_url,
+                    COUNT(pc.product_id)::int as direct_product_count
+                FROM categories c
+                LEFT JOIN product_categories pc ON c.id = pc.category_id
+                LEFT JOIN products p ON pc.product_id = p.id AND p.status = 'active' -- Only count active products
+                WHERE c.tenant_id = $1 AND c.is_active = true
+                GROUP BY c.id
+                ORDER BY c.name ASC
+            `;
             const result = await query(sql, [req.tenantId]);
-            res.json({ success: true, categories: result.rows });
+            const categories = result.rows;
+
+            // 2. Build Tree / Map for O(1) lookups
+            const categoryMap = new Map();
+            categories.forEach(cat => {
+                cat.product_count = cat.direct_product_count; // Initialize with direct count
+                cat.children = [];
+                categoryMap.set(cat.id, cat);
+            });
+
+            // 3. Link Children to Parents
+            categories.forEach(cat => {
+                if (cat.parent_id && categoryMap.has(cat.parent_id)) {
+                    categoryMap.get(cat.parent_id).children.push(cat);
+                }
+            });
+
+            // 4. Recursive Count Aggregation
+            // function to get total count (memoized implicitly by modifying objects)
+            const getRecursiveCount = (cat) => {
+                let total = cat.direct_product_count;
+                for (const child of cat.children) {
+                    total += getRecursiveCount(child);
+                }
+                cat.product_count = total; // Update with aggregated total
+                return total;
+            };
+
+            // Calculate for all top-level categories (others will get calculated recursively)
+            categories.forEach(cat => {
+                if (!cat.parent_id) {
+                    getRecursiveCount(cat);
+                }
+            });
+
+            // Clean up circular references if needed (or just send flat list with updated counts)
+            const flatResult = categories.map(cat => {
+                const { children, ...rest } = cat;
+                return rest; // Return flat list, but with updated product_count
+            });
+
+            res.json({ success: true, categories: flatResult });
         }));
 
         // List categories (Admin - Authenticated)
@@ -274,37 +407,48 @@ async function bootstrap(context) {
 
         // Create category (ADMIN)
         router.post('/categories', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
-            const { name, slug, parent_id, description, image_url } = req.body;
+            const category = await tenantInsert('categories', req.tenantId, {
+                name: req.body.name,
+                slug: req.body.slug || req.body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+                parent_id: req.body.parent_id || null,
+                description: req.body.description,
+                image_url: req.body.image_url,
+                is_active: true,
+                // SEO Fields
+                meta_description: req.body.meta_description,
+                og_title: req.body.og_title,
+                og_description: req.body.og_description,
+                og_image: req.body.og_image,
+                og_type: req.body.og_type,
+                twitter_card: req.body.twitter_card,
+                twitter_title: req.body.twitter_title,
+                twitter_description: req.body.twitter_description,
+                twitter_image: req.body.twitter_image,
+                canonical_url: req.body.canonical_url,
+                robots: req.body.robots,
+                structured_data: req.body.structured_data
+            });
+            // PRINCIPLE: All inter-module communication is event-based
+            eventBus.emitEvent('category.created', {
+                tenantId: req.tenantId,
+                categoryId: category.id,
+                name: category.name,
+            });
 
-            const sql = `INSERT INTO categories (tenant_id, name, slug, parent_id, description, image_url, is_active)
-                         VALUES ($1, $2, $3, $4, $5, $6, true)
-                         RETURNING *`;
-            const result = await query(sql, [req.tenantId, name, slug || name.toLowerCase().replace(/\s+/g, '-'), parent_id || null, description, image_url]);
-
-            res.status(201).json({ success: true, category: result.rows[0] });
+            res.status(201).json({ success: true, category });
         }));
 
         // Update category (ADMIN)
         router.put('/categories/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
-            const { name, slug, parent_id, description, image_url, is_active } = req.body;
+            // Note: Router is mounted at /products, so this becomes /products/categories/:id
+            const category = await tenantUpdate('categories', req.tenantId, req.params.id, req.body);
 
-            const sql = `UPDATE categories 
-                         SET name = COALESCE($1, name),
-                             slug = COALESCE($2, slug),
-                             parent_id = $3,
-                             description = COALESCE($4, description),
-                             image_url = COALESCE($5, image_url),
-                             is_active = COALESCE($6, is_active),
-                             updated_at = NOW()
-                         WHERE id = $7 AND tenant_id = $8
-                         RETURNING *`;
-            const result = await query(sql, [name, slug, parent_id, description, image_url, is_active, req.params.id, req.tenantId]);
+            eventBus.emitEvent('category.updated', {
+                tenantId: req.tenantId,
+                categoryId: category.id,
+            });
 
-            if (!result.rows[0]) {
-                return res.status(404).json({ error: 'Category not found' });
-            }
-
-            res.json({ success: true, category: result.rows[0] });
+            res.json({ success: true, category });
         }));
 
         // Delete category (ADMIN)
@@ -316,6 +460,11 @@ async function bootstrap(context) {
                 return res.status(404).json({ error: 'Category not found' });
             }
 
+            eventBus.emitEvent('category.deleted', {
+                tenantId: req.tenantId,
+                categoryId: req.params.id,
+            });
+
             res.json({ success: true, message: 'Category deleted' });
         }));
 
@@ -325,6 +474,15 @@ async function bootstrap(context) {
         // Attributes (Decoupled)
         // ==========================================
 
+        // List Global Attributes (All - for Admin dropdowns)
+        router.get('/attributes/all', authenticate, asyncHandler(async (req, res) => {
+            const result = await query(
+                `SELECT * FROM attributes WHERE tenant_id = $1 ORDER BY label`,
+                [req.tenantId]
+            );
+            res.json({ success: true, data: result.rows });
+        }));
+
         // List Global Attributes
         router.get('/attributes', authenticate, asyncHandler(async (req, res) => {
             const result = await paginatedTenantQuery('attributes', req.tenantId, {});
@@ -333,11 +491,24 @@ async function bootstrap(context) {
 
         // Create Global Attribute
         router.post('/attributes', authenticate, asyncHandler(async (req, res) => {
+            let options = req.body.options;
+            // Ensure options is a JSON string for DB
+            if (options && typeof options === 'object') {
+                options = JSON.stringify(options);
+            }
+
+            let clauses = req.body.clauses;
+            // Ensure clauses is a JSON string for DB
+            if (clauses && typeof clauses === 'object') {
+                clauses = JSON.stringify(clauses);
+            }
+
             const attribute = await tenantInsert('attributes', req.tenantId, {
                 code: req.body.code,
                 label: req.body.label,
                 type: req.body.type,
-                options: req.body.options || null,
+                options: options || null,
+                clauses: clauses || '[]',
                 image_url: req.body.image_url
             });
             res.status(201).json({ success: true, attribute });
@@ -345,11 +516,24 @@ async function bootstrap(context) {
 
         // Update Global Attribute
         router.put('/attributes/:id', authenticate, asyncHandler(async (req, res) => {
+            let options = req.body.options;
+            // Ensure options is a JSON string for DB
+            if (options && typeof options === 'object') {
+                options = JSON.stringify(options);
+            }
+
+            let clauses = req.body.clauses;
+            // Ensure clauses is a JSON string for DB
+            if (clauses && typeof clauses === 'object') {
+                clauses = JSON.stringify(clauses);
+            }
+
             const attribute = await tenantUpdate('attributes', req.tenantId, req.params.id, {
                 code: req.body.code,
                 label: req.body.label,
                 type: req.body.type,
-                options: req.body.options || null,
+                options: options || null,
+                clauses: clauses || '[]',
                 image_url: req.body.image_url
             });
             res.json({ success: true, attribute });
@@ -370,15 +554,41 @@ async function bootstrap(context) {
             res.json({ success: true, category_ids: result.rows.map(r => r.category_id) });
         }));
 
+        // Get ALL categories affected by this attribute (direct + inherited)
+        router.get('/attributes/:id/affected-categories', authenticate, asyncHandler(async (req, res) => {
+            const sql = `
+                WITH RECURSIVE affected_tree AS (
+                    -- Anchor: Direct links
+                    SELECT c.id, c.name, c.parent_id, 0 as depth
+                    FROM categories c
+                    JOIN category_attributes ca ON ca.category_id = c.id
+                    WHERE ca.attribute_id = $1 AND c.tenant_id = $2
+                    
+                    UNION ALL
+                    
+                    -- Recursive: Descendants
+                    SELECT c.id, c.name, c.parent_id, at.depth + 1
+                    FROM categories c
+                    JOIN affected_tree at ON c.parent_id = at.id
+                    WHERE c.tenant_id = $2
+                )
+                SELECT DISTINCT ON (id) id, name, parent_id, depth FROM affected_tree ORDER BY id, depth ASC
+            `;
+            const result = await query(sql, [req.params.id, req.tenantId]);
+            res.json({ success: true, categories: result.rows });
+        }));
+
         // Attach Attribute to Category
         router.post('/categories/:id/attributes', authenticate, asyncHandler(async (req, res) => {
-            const { attribute_id, is_required } = req.body;
+            const { attribute_id, is_required, is_ignored } = req.body;
 
             await query(
-                `INSERT INTO category_attributes (tenant_id, category_id, attribute_id, is_required)
-                 VALUES ($1, $2, $3, $4)
-                 ON CONFLICT (category_id, attribute_id) DO UPDATE SET is_required = EXCLUDED.is_required`,
-                [req.tenantId, req.params.id, attribute_id, is_required || false]
+                `INSERT INTO category_attributes (tenant_id, category_id, attribute_id, is_required, is_ignored)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (category_id, attribute_id) DO UPDATE SET 
+                    is_required = EXCLUDED.is_required,
+                    is_ignored = EXCLUDED.is_ignored`,
+                [req.tenantId, req.params.id, attribute_id, is_required || false, is_ignored || false]
             );
 
             res.json({ success: true, message: 'Attribute attached to category' });
@@ -414,6 +624,15 @@ async function bootstrap(context) {
             res.json({ success: true, ...result });
         }));
 
+        // List all collections (Public/Admin light)
+        router.get('/collections', asyncHandler(async (req, res) => {
+            const result = await query(
+                `SELECT id, name, slug, image_url FROM collections WHERE tenant_id = $1 AND is_active = true ORDER BY name ASC`,
+                [req.tenantId]
+            );
+            res.json({ success: true, collections: result.rows });
+        }));
+
         // Get product by ID
         router.get('/:id', authenticate, authorize('products.view'), asyncHandler(async (req, res) => {
             const sql = `SELECT * FROM products WHERE id = $1 AND tenant_id = $2`;
@@ -438,6 +657,18 @@ async function bootstrap(context) {
 
         // Create product
         router.post('/', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+            // Generate base handle
+            let handle = req.body.handle || req.body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+            if (!handle) handle = 'product-' + Date.now(); // Fallback for empty names
+
+            // Ensure uniqueness
+            const existing = await query(`SELECT id FROM products WHERE tenant_id = $1 AND handle = $2`, [req.tenantId, handle]);
+            if (existing.rows.length > 0) {
+                // Handle conflict - append random string
+                const randomSuffix = Math.random().toString(36).substring(2, 7);
+                handle = `${handle}-${randomSuffix}`;
+            }
+
             const product = await tenantInsert('products', req.tenantId, {
                 name: req.body.name,
                 description: req.body.description,
@@ -447,13 +678,27 @@ async function bootstrap(context) {
                 track_inventory: req.body.track_inventory,
                 inventory_quantity: req.body.inventory_quantity || 0,
                 status: req.body.status || 'draft',
-                attributes: req.body.attributes || {}, // Custom Fields
+                attributes: req.body.attributes ? JSON.stringify(req.body.attributes) : '{}', // Custom Fields
                 is_featured: req.body.is_featured || false,
                 tags: req.body.tags || [],
                 seo_title: req.body.seo_title,
                 seo_description: req.body.seo_description,
-                handle: req.body.handle || req.body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-                image_url: req.body.image_url
+                handle: handle,
+                image_url: req.body.image_url,
+                category_id: req.body.category_id, // Link to primary category
+                // SEO Fields
+                meta_description: req.body.meta_description,
+                og_title: req.body.og_title,
+                og_description: req.body.og_description,
+                og_image: req.body.og_image,
+                og_type: req.body.og_type,
+                twitter_card: req.body.twitter_card,
+                twitter_title: req.body.twitter_title,
+                twitter_description: req.body.twitter_description,
+                twitter_image: req.body.twitter_image,
+                canonical_url: req.body.canonical_url,
+                robots: req.body.robots,
+                structured_data: req.body.structured_data
             });
 
             // Handle categories
@@ -479,6 +724,11 @@ async function bootstrap(context) {
         router.patch('/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
             // Extract category_ids from body to avoid DB error in tenantUpdate
             const { category_ids, ...updateData } = req.body;
+
+            // Stringify attributes if provided
+            if (updateData.attributes && typeof updateData.attributes === 'object') {
+                updateData.attributes = JSON.stringify(updateData.attributes);
+            }
 
             const product = await tenantUpdate('products', req.tenantId, req.params.id, updateData);
 
@@ -510,25 +760,7 @@ async function bootstrap(context) {
 
 
 
-        // Create category
-        router.post('/categories', authenticate, asyncHandler(async (req, res) => {
-            const category = await tenantInsert('categories', req.tenantId, {
-                name: req.body.name,
-                slug: req.body.slug || req.body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-                parent_id: req.body.parent_id || null,
-                description: req.body.description,
-                attributes_schema: req.body.attributes_schema || [] // [NEW] Schema Definition
-            });
 
-            res.status(201).json({ success: true, category });
-        }));
-
-
-        // Update category
-        router.patch('/categories/:id', authenticate, asyncHandler(async (req, res) => {
-            const category = await tenantUpdate('categories', req.tenantId, req.params.id, req.body);
-            res.json({ success: true, category });
-        }));
 
 
 
@@ -560,6 +792,7 @@ async function bootstrap(context) {
                 SELECT DISTINCT ON (a.id)
                     a.*,
                     ca.is_required,
+                    ca.is_ignored,
                     ct.name as source_category_name,
                     (ct.depth > 0) as is_inherited
                 FROM category_tree ct
@@ -592,6 +825,84 @@ async function bootstrap(context) {
             });
 
             res.json({ success: true, message: 'Product deleted' });
+        }));
+
+        // ==========================================
+        // Collections Management (Admin)
+        // ==========================================
+
+        // List collections
+        router.get('/collections/admin', authenticate, asyncHandler(async (req, res) => {
+            const result = await paginatedTenantQuery('collections', req.tenantId, {
+                page: parseInt(req.query.page) || 1,
+                perPage: parseInt(req.query.per_page) || 50,
+            });
+            res.json({ success: true, ...result });
+        }));
+
+        // Get single collection
+        router.get('/collections/:id', authenticate, asyncHandler(async (req, res) => {
+            const resCol = await query(`SELECT * FROM collections WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+            if (!resCol.rows[0]) return res.status(404).json({ error: 'Collection not found' });
+            res.json({ success: true, collection: resCol.rows[0] });
+        }));
+
+        // Create collection
+        router.post('/collections', authenticate, asyncHandler(async (req, res) => {
+            const collection = await tenantInsert('collections', req.tenantId, {
+                name: req.body.name,
+                slug: req.body.slug,
+                description: req.body.description,
+                image_url: req.body.image_url,
+                thumbnail_url: req.body.thumbnail_url,
+                rules: req.body.rules ? JSON.stringify(req.body.rules) : '[]',
+                manual_product_ids: req.body.manual_product_ids || [],
+                excluded_product_ids: req.body.excluded_product_ids || [],
+                seo: req.body.seo ? JSON.stringify(req.body.seo) : '{}',
+                is_active: req.body.is_active !== false
+            });
+
+            eventBus.emitEvent('collection.created', {
+                tenantId: req.tenantId,
+                collectionId: collection.id
+            });
+
+            res.status(201).json({ success: true, collection });
+        }));
+
+        // Update collection
+        router.put('/collections/:id', authenticate, asyncHandler(async (req, res) => {
+            const collection = await tenantUpdate('collections', req.tenantId, req.params.id, {
+                name: req.body.name,
+                slug: req.body.slug,
+                description: req.body.description,
+                image_url: req.body.image_url,
+                thumbnail_url: req.body.thumbnail_url,
+                rules: req.body.rules ? JSON.stringify(req.body.rules) : undefined,
+                manual_product_ids: req.body.manual_product_ids,
+                excluded_product_ids: req.body.excluded_product_ids,
+                seo: req.body.seo ? JSON.stringify(req.body.seo) : undefined,
+                is_active: req.body.is_active
+            });
+
+            eventBus.emitEvent('collection.updated', {
+                tenantId: req.tenantId,
+                collectionId: req.params.id
+            });
+
+            res.json({ success: true, collection });
+        }));
+
+        // Delete collection
+        router.delete('/collections/:id', authenticate, asyncHandler(async (req, res) => {
+            await tenantDelete('collections', req.tenantId, req.params.id);
+
+            eventBus.emitEvent('collection.deleted', {
+                tenantId: req.tenantId,
+                collectionId: req.params.id
+            });
+
+            res.json({ success: true, message: 'Collection deleted' });
         }));
 
         // ==========================================

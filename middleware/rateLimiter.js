@@ -1,13 +1,18 @@
 /**
  * Rate Limiter Middleware
  * Per-tenant rate limiting using Redis
- * 
+ *
  * PRINCIPLE: Multi-tenant by default - rate limiting is per-tenant
+ * - Key: req.tenantId (when set by tenantIsolation) or req.ip for public routes
+ * - Skip: super admin (req.user.isSuperAdmin), tenants with rate_limit_exempt=true
+ *
+ * NOTE: Must run after tenantIsolation so req.tenantId is set for tenant-scoped routes.
  */
 
 const { rateLimit } = require('express-rate-limit');
 const RedisStore = require('rate-limit-redis').default;
 const { redisClient } = require('../config/redis');
+const { query } = require('../config/database');
 
 /**
  * Create rate limiter for tenant-scoped requests
@@ -43,9 +48,15 @@ function createTenantRateLimiter(options = {}) {
             });
         },
 
-        skip: (req) => {
-            // Skip rate limiting for super admin
-            return req.user && req.user.isSuperAdmin;
+        skip: async (req) => {
+            if (req.user && req.user.isSuperAdmin) return true;
+            if (!req.tenantId) return false;
+            try {
+                const r = await query('SELECT rate_limit_exempt FROM tenants WHERE id = $1', [req.tenantId]);
+                return r.rows[0]?.rate_limit_exempt === true;
+            } catch {
+                return false;
+            }
         },
     });
 }

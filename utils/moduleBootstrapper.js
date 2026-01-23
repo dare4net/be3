@@ -111,6 +111,7 @@ class ModuleBootstrapper {
             { name: 'shipping', path: path.join(__dirname, '../modules/shipping'), envVar: 'MODULE_SHIPPING_ENABLED' },
             { name: 'marketing', path: path.join(__dirname, '../modules/marketing'), envVar: 'MODULE_MARKETING_ENABLED' },
             { name: 'analytics', path: path.join(__dirname, '../modules/analytics'), envVar: 'MODULE_ANALYTICS_ENABLED' },
+            { name: 'search', path: path.join(__dirname, '../modules/search'), envVar: 'MODULE_SEARCH_ENABLED' },
             { name: 'menus', path: path.join(__dirname, '../modules/menus'), envVar: 'MODULE_MENUS_ENABLED' },
         ];
 

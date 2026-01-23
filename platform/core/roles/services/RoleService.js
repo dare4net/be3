@@ -9,6 +9,11 @@ class RoleService {
     static async seedDefaultRoles(tenantId) {
         console.log(`[RoleService] Seeding default roles for tenant: ${tenantId}`);
 
+        // Import CMS permissions
+        const { CMS_PERMISSIONS } = require('../seeds/cms-permissions');
+        // Import Search module permissions so new tenants get them by default
+        const SEARCH_PERMISSIONS = require('../../../modules/search/permissions');
+
         // Define Role Definitions based on reference implementation
         const ROLE_DEFINITIONS = [
             {
@@ -24,7 +29,20 @@ class RoleService {
                 permissions: [
                     'orders.view', 'orders.manage',
                     'products.view', 'products.manage', 'products.create', 'products.delete',
-                    'customers.view'
+                    'customers.view',
+                    // Add CMS permissions for Moderators
+                    'pages.view', 'pages.edit', 'pages.publish',
+                    'widgets.view', 'widgets.create', 'widgets.edit', 'widgets.reorder'
+                ]
+            },
+            {
+                name: 'Content Editor',
+                description: 'Manage Content Only',
+                is_system: false,
+                permissions: [
+                    'pages.view', 'pages.create', 'pages.edit', 'pages.publish',
+                    'widgets.view', 'widgets.create', 'widgets.edit', 'widgets.delete', 'widgets.reorder',
+                    'themes.view'
                 ]
             },
             {
@@ -35,7 +53,11 @@ class RoleService {
                     'orders.view',
                     'products.view',
                     'customers.view',
-                    'analytics.view'
+                    'analytics.view',
+                    'pages.view',
+                    'widgets.view',
+                    'themes.view',
+                    'layouts.view'
                 ]
             },
             {
@@ -46,15 +68,20 @@ class RoleService {
             }
         ];
 
-        // 1. Ensure all Permissions exist
-        // Note: In a real system, we'd have a global permissions matrix. 
-        // For now, we lazily create permissions if they don't exist to ensure the script works.
+        // 1. Ensure all Permissions exist (including CMS permissions)
         const allPermissions = new Set();
+
+        // Add role-based permissions
         ROLE_DEFINITIONS.forEach(def => {
             if (def.permissions[0] !== '*') {
                 def.permissions.forEach(p => allPermissions.add(p));
             }
         });
+
+        // Add CMS permissions explicitly
+        CMS_PERMISSIONS.forEach(perm => allPermissions.add(perm.name));
+        // Add Search module permissions explicitly
+        SEARCH_PERMISSIONS.forEach(perm => allPermissions.add(perm.name));
 
         // Always ensure admin.access exists for legacy/backup reasons
         allPermissions.add('admin.access');
@@ -62,10 +89,12 @@ class RoleService {
         for (const permSlug of allPermissions) {
             let perm = await Permission.findByName(permSlug);
             if (!perm) {
+                // Check if permission is in CMS_PERMISSIONS for proper metadata
+                const cmsPerm = CMS_PERMISSIONS.find(p => p.name === permSlug);
                 await Permission.create({
-                    name: permSlug, // Using slug as name based on previous findings
-                    module: permSlug.split('.')[0] || 'system',
-                    description: `Permission for ${permSlug}`
+                    name: permSlug,
+                    module: cmsPerm ? cmsPerm.module : (permSlug.split('.')[0] || 'system'),
+                    description: cmsPerm ? cmsPerm.description : `Permission for ${permSlug}`
                 });
             }
         }

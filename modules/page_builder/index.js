@@ -59,7 +59,7 @@ async function bootstrap(context) {
     }));
 
     // Create new widget
-    router.post('/widgets', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.post('/widgets', authenticate, authorize('widgets.create'), asyncHandler(async (req, res) => {
         let { layout_id } = req.body;
 
         if (!layout_id) {
@@ -95,7 +95,7 @@ async function bootstrap(context) {
     }));
 
     // Reorder widgets
-    router.put('/widgets/reorder', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.put('/widgets/reorder', authenticate, authorize('widgets.reorder'), asyncHandler(async (req, res) => {
         const { widgets } = req.body; // [{ id, sort_order }, ...]
         console.log('[PageBuilder] Reorder request body:', JSON.stringify(req.body));
         if (!widgets || !Array.isArray(widgets)) {
@@ -107,7 +107,7 @@ async function bootstrap(context) {
     }));
 
     // Update widget
-    router.put('/widgets/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.put('/widgets/:id', authenticate, authorize('widgets.edit'), asyncHandler(async (req, res) => {
         const widget = await PageWidget.update(req.tenantId, req.params.id, req.body);
         if (!widget) {
             return res.status(404).json({ error: 'Widget not found' });
@@ -129,7 +129,7 @@ async function bootstrap(context) {
     }));
 
     // Delete widget
-    router.delete('/widgets/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.delete('/widgets/:id', authenticate, authorize('widgets.delete'), asyncHandler(async (req, res) => {
         const widget = await PageWidget.delete(req.tenantId, req.params.id);
         if (!widget) {
             return res.status(404).json({ error: 'Widget not found' });
@@ -168,13 +168,13 @@ async function bootstrap(context) {
     }));
 
     // Create new page
-    router.post('/pages', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.post('/pages', authenticate, authorize('pages.create'), asyncHandler(async (req, res) => {
         const page = await Page.create(req.tenantId, req.body);
         res.status(201).json({ success: true, page });
     }));
 
     // Get single page by ID
-    router.get('/pages/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.get('/pages/:id', authenticate, authorize('pages.view'), asyncHandler(async (req, res) => {
         const page = await Page.findById(req.tenantId, req.params.id);
         if (!page) {
             return res.status(404).json({ error: 'Page not found' });
@@ -183,7 +183,7 @@ async function bootstrap(context) {
     }));
 
     // Update page
-    router.put('/pages/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.put('/pages/:id', authenticate, authorize('pages.edit'), asyncHandler(async (req, res) => {
         const page = await Page.update(req.tenantId, req.params.id, req.body);
         if (!page) {
             return res.status(404).json({ error: 'Page not found' });
@@ -192,7 +192,7 @@ async function bootstrap(context) {
     }));
 
     // Delete page
-    router.delete('/pages/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.delete('/pages/:id', authenticate, authorize('pages.delete'), asyncHandler(async (req, res) => {
         try {
             const page = await Page.delete(req.tenantId, req.params.id);
             if (!page) {
@@ -210,14 +210,14 @@ async function bootstrap(context) {
     // ========== LAYOUT MANAGEMENT ROUTES ==========
 
     // Get all layouts
-    router.get('/layouts', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.get('/layouts', authenticate, authorize('layouts.view'), asyncHandler(async (req, res) => {
         const sql = `SELECT * FROM layouts WHERE tenant_id = $1 ORDER BY created_at DESC`;
         const { rows } = await require('../../config/database').pool.query(sql, [req.tenantId]);
         res.json({ success: true, layouts: rows });
     }));
 
     // Create Layout
-    router.post('/layouts', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.post('/layouts', authenticate, authorize('layouts.create'), asyncHandler(async (req, res) => {
         const { name, description, clone_from_layout_id } = req.body;
 
         // 1. Create Layout Structure
@@ -244,7 +244,7 @@ async function bootstrap(context) {
     }));
 
     // Activate Layout
-    router.post('/layouts/:id/activate', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.post('/layouts/:id/activate', authenticate, authorize('layouts.activate'), asyncHandler(async (req, res) => {
         const client = await require('../../config/database').pool.connect();
         try {
             await client.query('BEGIN');
@@ -278,7 +278,7 @@ async function bootstrap(context) {
     // ========== THEME MANAGEMENT ROUTES ==========
 
     // Get all themes (Admin)
-    router.get('/themes', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.get('/themes', authenticate, authorize('themes.view'), asyncHandler(async (req, res) => {
         const themes = await Theme.findAll(req.tenantId);
         res.json({ success: true, themes });
     }));
@@ -291,40 +291,40 @@ async function bootstrap(context) {
     }));
 
     // Get single theme (Admin)
-    router.get('/themes/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.get('/themes/:id', authenticate, authorize('themes.view'), asyncHandler(async (req, res) => {
         const theme = await Theme.findById(req.tenantId, req.params.id);
         if (!theme) return res.status(404).json({ error: 'Theme not found' });
         res.json({ success: true, theme });
     }));
 
     // Create theme (Admin)
-    router.post('/themes', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.post('/themes', authenticate, authorize('themes.create'), asyncHandler(async (req, res) => {
         const theme = await Theme.create(req.tenantId, req.body);
         res.status(201).json({ success: true, theme });
     }));
 
     // Update theme (Admin)
-    router.put('/themes/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.put('/themes/:id', authenticate, authorize('themes.edit'), asyncHandler(async (req, res) => {
         const theme = await Theme.update(req.tenantId, req.params.id, req.body);
         if (!theme) return res.status(404).json({ error: 'Theme not found' });
         res.json({ success: true, theme });
     }));
 
     // Activate theme (Admin)
-    router.post('/themes/:id/activate', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.post('/themes/:id/activate', authenticate, authorize('themes.activate'), asyncHandler(async (req, res) => {
         const theme = await Theme.activate(req.tenantId, req.params.id);
         if (!theme) return res.status(404).json({ error: 'Theme not found' });
         res.json({ success: true, theme });
     }));
 
     // Deactivate all themes (Admin)
-    router.post('/themes/deactivate', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.post('/themes/deactivate', authenticate, authorize('themes.activate'), asyncHandler(async (req, res) => {
         await Theme.deactivate(req.tenantId);
         res.json({ success: true, message: 'Theme deactivated' });
     }));
 
     // Delete theme (Admin)
-    router.delete('/themes/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+    router.delete('/themes/:id', authenticate, authorize('themes.delete'), asyncHandler(async (req, res) => {
         try {
             const theme = await Theme.delete(req.tenantId, req.params.id);
             if (!theme) return res.status(404).json({ error: 'Theme not found' });
@@ -334,6 +334,36 @@ async function bootstrap(context) {
             // Ideally should not allow deleting active theme, but for now simple delete is fine.
             throw error;
         }
+    }));
+
+    // ========== SEO PRESETS ROUTES ==========
+
+    const SEOPreset = require('./models/SEOPreset');
+
+    // Get all SEO presets
+    router.get('/seo-presets', authenticate, authorize('pages.view'), asyncHandler(async (req, res) => {
+        const presets = await SEOPreset.findAll(req.tenantId);
+        res.json({ success: true, presets });
+    }));
+
+    // Create SEO preset
+    router.post('/seo-presets', authenticate, authorize('pages.create'), asyncHandler(async (req, res) => {
+        const preset = await SEOPreset.create(req.tenantId, req.body);
+        res.status(201).json({ success: true, preset });
+    }));
+
+    // Update SEO preset
+    router.put('/seo-presets/:id', authenticate, authorize('pages.edit'), asyncHandler(async (req, res) => {
+        const preset = await SEOPreset.update(req.tenantId, req.params.id, req.body);
+        if (!preset) return res.status(404).json({ error: 'SEO Preset not found' });
+        res.json({ success: true, preset });
+    }));
+
+    // Delete SEO preset
+    router.delete('/seo-presets/:id', authenticate, authorize('pages.delete'), asyncHandler(async (req, res) => {
+        const preset = await SEOPreset.delete(req.tenantId, req.params.id);
+        if (!preset) return res.status(404).json({ error: 'SEO Preset not found' });
+        res.json({ success: true, message: 'SEO Preset deleted' });
     }));
 
     app.use('/page-builder', router);

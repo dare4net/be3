@@ -88,6 +88,20 @@ async function clearTenantCache(tenantId) {
     }
 }
 
+/**
+ * Clear rate-limit counters for a tenant (express-rate-limit + rate-limit-redis).
+ * Keys are prefix:rate-limit: + key from keyGenerator (tenantId or ip).
+ * Pattern: rate-limit:${tenantId} or rate-limit:${tenantId}*
+ */
+async function clearRateLimitForTenant(tenantId) {
+    const pattern = `rate-limit:${tenantId}*`;
+    const keys = await redisClient.keys(pattern);
+    if (keys.length > 0) {
+        await redisClient.del(keys);
+    }
+    return keys.length;
+}
+
 module.exports = {
     redisClient,
     getTenantKey,
@@ -97,4 +111,5 @@ module.exports = {
     getModuleAccessCache,
     setModuleAccessCache,
     clearTenantCache,
+    clearRateLimitForTenant,
 };

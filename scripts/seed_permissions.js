@@ -26,6 +26,12 @@ const permissions = [
     { name: 'roles.view', module: 'roles', description: 'View roles' },
     { name: 'roles.manage', module: 'roles', description: 'Manage roles and permissions' },
     { name: 'roles.assign', module: 'roles', description: 'Assign roles to users' },
+
+    // Search
+    { name: 'search.view', module: 'search', description: 'View search results' },
+    { name: 'search.manage', module: 'search', description: 'Manage search settings (synonyms, filters)' },
+    { name: 'search.analytics', module: 'search', description: 'View search analytics' },
+    { name: 'search.index', module: 'search', description: 'Rebuild search index' },
 ];
 
 async function seed() {

@@ -895,6 +895,126 @@ export const WIDGET_SCHEMAS = {
             }
         ]
     }
+    ,
+
+    // =========================
+    // Search Widgets
+    // =========================
+    search_bar: {
+        label: 'Search Bar',
+        icon: 'search',
+        category: WIDGET_CATEGORIES.ECOMMERCE,
+        description: 'Search input with optional autocomplete suggestions',
+        fields: [
+            {
+                key: 'placeholder',
+                label: 'Placeholder',
+                type: FIELD_TYPES.TEXT,
+                default: 'Search products…'
+            },
+            {
+                key: 'autocomplete',
+                label: 'Enable Autocomplete',
+                type: FIELD_TYPES.BOOLEAN,
+                default: true
+            },
+            {
+                key: 'autocomplete_limit',
+                label: 'Autocomplete Limit',
+                type: FIELD_TYPES.NUMBER,
+                min: 1,
+                max: 20,
+                default: 8,
+                showIf: { field: 'autocomplete', value: true }
+            },
+            {
+                key: 'container',
+                label: 'Wrap in Container',
+                type: FIELD_TYPES.BOOLEAN,
+                default: true
+            }
+        ],
+        templates: [
+            {
+                name: 'Default Search Bar',
+                config: {
+                    placeholder: 'Search products…',
+                    autocomplete: true,
+                    autocomplete_limit: 8,
+                    container: true
+                }
+            }
+        ]
+    },
+
+    search_filters: {
+        label: 'Search Filters',
+        icon: 'sliders',
+        category: WIDGET_CATEGORIES.ECOMMERCE,
+        description: 'Faceted filters (category/price/status/featured + product attributes)',
+        fields: [
+            {
+                key: 'showTitle',
+                label: 'Show Title',
+                type: FIELD_TYPES.BOOLEAN,
+                default: true
+            },
+            {
+                key: 'container',
+                label: 'Wrap in Container',
+                type: FIELD_TYPES.BOOLEAN,
+                default: true
+            }
+        ],
+        templates: [
+            {
+                name: 'Default Filters Panel',
+                config: {
+                    showTitle: true,
+                    container: true
+                }
+            }
+        ]
+    },
+
+    search_results: {
+        label: 'Search Results',
+        icon: 'grid',
+        category: WIDGET_CATEGORIES.ECOMMERCE,
+        description: 'Search results grid with sorting and pagination',
+        fields: [
+            {
+                key: 'showHeader',
+                label: 'Show Header (count + sort)',
+                type: FIELD_TYPES.BOOLEAN,
+                default: true
+            },
+            {
+                key: 'columns',
+                label: 'Columns',
+                type: FIELD_TYPES.RESPONSIVE,
+                min: 1,
+                max: 6,
+                default: { desktop: 4, tablet: 2, mobile: 1 }
+            },
+            {
+                key: 'container',
+                label: 'Wrap in Container',
+                type: FIELD_TYPES.BOOLEAN,
+                default: true
+            }
+        ],
+        templates: [
+            {
+                name: 'Default Results Grid',
+                config: {
+                    showHeader: true,
+                    columns: { desktop: 4, tablet: 2, mobile: 1 },
+                    container: true
+                }
+            }
+        ]
+    }
 };
 
 // Helper function to get schema for a widget type

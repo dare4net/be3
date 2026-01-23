@@ -16,7 +16,9 @@ async function runMigrations() {
         // 'modules/cart/database/schema.sql',
         // 'modules/orders/database/schema.sql',
         // 'modules/payments/database/schema.sql',
-        'migrations/022_create_layouts_system.sql'
+        'migrations/022_create_layouts_system.sql',
+        'migrations/027_search_module.sql',
+        'migrations/028_tenant_rate_limit_exempt.sql'
     ];
 
     for (const schemaPath of schemas) {

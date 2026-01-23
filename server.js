@@ -52,12 +52,12 @@ async function initializeApp() {
     app.use(express.json()); // JSON body parser
     app.use(express.urlencoded({ extended: true })); // URL-encoded body parser
 
-    // Rate limiting
-    app.use(createTenantRateLimiter());
-
-    // Tenant identification middleware
+    // Tenant identification first (so rate limiter can use req.tenantId for per-tenant keys and exempt check)
     // PRINCIPLE: Multi-tenant by default
     app.use(tenantIdentifier);
+
+    // Rate limiting (after tenantId is set so keys are per-tenant and we can skip exempt tenants)
+    app.use(createTenantRateLimiter());
 
     // Health check endpoint (no tenant required)
     app.get('/health', (req, res) => {
@@ -108,7 +108,7 @@ async function startServer() {
     try {
         await initializeApp();
 
-        app.listen(PORT, () => {
+        app.listen(PORT, '0.0.0.0', () => {
             console.log(`\n========================================`);
             console.log(`  Server running on port ${PORT}`);
             console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
