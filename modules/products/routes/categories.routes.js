@@ -252,6 +252,86 @@ function registerCategoryRoutes(router, eventBus) {
         }
     }));
 
+    // Get category details for Admin Product Editor (Lightweight + Attributes)
+    router.get('/categories/:id/admin', authenticate, asyncHandler(async (req, res) => {
+        const categoryId = req.params.id;
+
+        try {
+            // 1. Get basic category info
+            const categoryRes = await query(
+                `SELECT * FROM categories WHERE id = $1 AND tenant_id = $2`,
+                [categoryId, req.tenantId]
+            );
+
+            if (!categoryRes.rows[0]) {
+                return res.status(404).json({ error: 'Category not found' });
+            }
+
+            const category = categoryRes.rows[0];
+
+            // 2. Get linked attributes (with inheritance and clauses) - CRITICAL for product editor
+            try {
+                const attributesSql = `
+                    WITH RECURSIVE category_tree AS (
+                        SELECT id, parent_id, name, 0 as depth
+                        FROM categories
+                        WHERE id = $1 AND tenant_id = $2
+                        UNION ALL
+                        SELECT c.id, c.parent_id, c.name, ct.depth + 1
+                        FROM categories c
+                        INNER JOIN category_tree ct ON c.id = ct.parent_id
+                        WHERE c.tenant_id = $2
+                    )
+                    SELECT DISTINCT ON (a.id)
+                        a.id, a.code, a.label, a.type, a.image_url, a.clauses, a.options,
+                        ca.is_required, ca.is_ignored,
+                        ct.name as source_category_name,
+                        (ct.depth > 0) as is_inherited
+                    FROM category_tree ct
+                    JOIN category_attributes ca ON ca.category_id = ct.id
+                    JOIN attributes a ON a.id = ca.attribute_id
+                    WHERE a.tenant_id = $2
+                    ORDER BY a.id, ct.depth ASC
+                `;
+                const attributesRes = await query(attributesSql, [categoryId, req.tenantId]);
+                category.attributes = attributesRes.rows || [];
+            } catch (attrError) {
+                console.error('Error fetching attributes:', attrError);
+                category.attributes = [];
+            }
+
+            // 3. Get breadcrumb path (useful for UI context)
+            try {
+                const breadcrumbSql = `
+                    WITH RECURSIVE category_path AS (
+                        SELECT id, name, parent_id, 0 as level
+                        FROM categories
+                        WHERE id = $1 AND tenant_id = $2
+                        UNION ALL
+                        SELECT c.id, c.name, c.parent_id, cp.level + 1
+                        FROM categories c
+                        INNER JOIN category_path cp ON c.id = cp.parent_id
+                        WHERE c.tenant_id = $2
+                    )
+                    SELECT id, name FROM category_path ORDER BY level DESC
+                `;
+                const breadcrumbRes = await query(breadcrumbSql, [categoryId, req.tenantId]);
+                category.breadcrumb = breadcrumbRes.rows || [];
+            } catch (breadError) {
+                category.breadcrumb = [{ id: category.id, name: category.name }];
+            }
+
+            res.json({ success: true, category });
+        } catch (error) {
+            console.error('Error in category admin endpoint:', error);
+            res.status(500).json({
+                success: false,
+                error: 'Failed to fetch category details',
+                message: error.message
+            });
+        }
+    }));
+
     // Get paginated products for a category (including subcategories)
     router.get('/categories/:id/products', authenticate, asyncHandler(async (req, res) => {
         const categoryId = req.params.id;
