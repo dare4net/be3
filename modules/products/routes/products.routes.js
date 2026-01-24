@@ -4,7 +4,7 @@
  */
 
 const { query } = require('../../../config/database');
-const { paginatedTenantQuery, tenantInsert, tenantUpdate } = require('../../../utils/dbHelpers');
+const { paginatedTenantQuery, tenantInsert, tenantUpdate, tenantDelete } = require('../../../utils/dbHelpers');
 const { authenticate } = require('../../../platform/core/auth/middleware/authenticate');
 const authorize = require('../../../platform/core/roles/middleware/authorize');
 const { asyncHandler } = require('../../../middleware/errorHandler');
@@ -38,6 +38,80 @@ function registerProductRoutes(router, eventBus) {
             [req.tenantId]
         );
         res.json({ success: true, collections: result.rows });
+    }));
+
+    // ==========================================
+    // Collections Management (Admin)
+    // ==========================================
+
+    // List collections (Admin with pagination)
+    router.get('/collections/admin', authenticate, asyncHandler(async (req, res) => {
+        const result = await paginatedTenantQuery('collections', req.tenantId, {
+            page: parseInt(req.query.page) || 1,
+            perPage: parseInt(req.query.per_page) || 50,
+        });
+        res.json({ success: true, ...result });
+    }));
+
+    // Get single collection
+    router.get('/collections/:id', authenticate, asyncHandler(async (req, res) => {
+        const resCol = await query(`SELECT * FROM collections WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+        if (!resCol.rows[0]) return res.status(404).json({ error: 'Collection not found' });
+        res.json({ success: true, collection: resCol.rows[0] });
+    }));
+
+    // Create collection
+    router.post('/collections', authenticate, asyncHandler(async (req, res) => {
+        const collection = await tenantInsert('collections', req.tenantId, {
+            name: req.body.name,
+            slug: req.body.slug,
+            description: req.body.description,
+            image_url: req.body.image_url,
+            rules: req.body.rules ? JSON.stringify(req.body.rules) : '[]',
+            manual_product_ids: req.body.manual_product_ids || [],
+            excluded_product_ids: req.body.excluded_product_ids || [],
+            is_active: req.body.is_active !== undefined ? req.body.is_active : true
+        });
+
+        eventBus.emitEvent('collection.created', {
+            tenantId: req.tenantId,
+            collectionId: collection.id,
+        });
+
+        res.status(201).json({ success: true, collection });
+    }));
+
+    // Update collection
+    router.put('/collections/:id', authenticate, asyncHandler(async (req, res) => {
+        const collection = await tenantUpdate('collections', req.tenantId, req.params.id, {
+            name: req.body.name,
+            slug: req.body.slug,
+            description: req.body.description,
+            image_url: req.body.image_url,
+            rules: req.body.rules ? JSON.stringify(req.body.rules) : undefined,
+            manual_product_ids: req.body.manual_product_ids,
+            excluded_product_ids: req.body.excluded_product_ids,
+            is_active: req.body.is_active
+        });
+
+        eventBus.emitEvent('collection.updated', {
+            tenantId: req.tenantId,
+            collectionId: collection.id,
+        });
+
+        res.json({ success: true, collection });
+    }));
+
+    // Delete collection
+    router.delete('/collections/:id', authenticate, asyncHandler(async (req, res) => {
+        await tenantDelete('collections', req.tenantId, req.params.id);
+
+        eventBus.emitEvent('collection.deleted', {
+            tenantId: req.tenantId,
+            collectionId: req.params.id,
+        });
+
+        res.json({ success: true, message: 'Collection deleted' });
     }));
 
     // Get product by ID
