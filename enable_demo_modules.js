@@ -10,7 +10,7 @@ async function enableModules() {
         }
         const tenantId = tenantRes.rows[0].id;
 
-        const modulesToEnable = ['storefront', 'products', 'cart', 'checkout', 'orders', 'payments', 'shipping', 'marketing', 'analytics'];
+        const modulesToEnable = ['storefront', 'products', 'cart', 'checkout', 'orders', 'payments', 'shipping', 'marketing', 'analytics', 'banner'];
 
         console.log(`Enabling modules for tenant ${tenantId}...`);
 
