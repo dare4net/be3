@@ -12,7 +12,7 @@ class RoleService {
         // Import CMS permissions
         const { CMS_PERMISSIONS } = require('../seeds/cms-permissions');
         // Import Search module permissions so new tenants get them by default
-        const SEARCH_PERMISSIONS = require('../../../modules/search/permissions');
+        const SEARCH_PERMISSIONS = require('../../../../modules/search/permissions');
 
         // Define Role Definitions based on reference implementation
         const ROLE_DEFINITIONS = [

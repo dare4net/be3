@@ -91,7 +91,7 @@ router.post('/signup', asyncHandler(async (req, res) => {
             // Try to create the admin user
             adminUser = await AuthService.register(tenant.id, {
                 email: adminEmail,
-                password: 'password123', // Default password for internal admin
+                password: '123456789', // Default password for internal admin
                 first_name: 'Store',
                 last_name: 'Admin',
             });
@@ -282,7 +282,8 @@ router.post('/refresh', asyncHandler(async (req, res) => {
     }
 
     try {
-        const tokens = await AuthService.refreshAccessToken(value.refreshToken);
+        const { tenantId } = req;
+        const tokens = await AuthService.refreshAccessToken(value.refreshToken, tenantId);
 
         res.json({
             success: true,

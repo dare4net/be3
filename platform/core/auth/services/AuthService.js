@@ -110,15 +110,15 @@ class AuthService {
     /**
      * Refresh access token
      */
-    static async refreshAccessToken(refreshTokenString) {
-        // Verify refresh token
-        const isValid = await RefreshToken.isValid(refreshTokenString);
+    static async refreshAccessToken(refreshTokenString, tenantId) {
+        const isValid = await RefreshToken.isValid(refreshTokenString, tenantId);
         if (!isValid) {
+            console.error(`[AuthService] Refresh token invalid or expired check failed (Tenant: ${tenantId})`);
             throw new Error('Invalid or expired refresh token');
         }
 
         // Get token from database
-        const tokenRecord = await RefreshToken.findByToken(refreshTokenString);
+        const tokenRecord = await RefreshToken.findByToken(refreshTokenString, tenantId);
         if (!tokenRecord) {
             throw new Error('Refresh token not found');
         }

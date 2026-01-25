@@ -61,19 +61,21 @@ class SlugResolver {
                         const filterKey = `attribute.${attr.code}:${clause.name}`;
                         const filterValue = clause.value ?? 1;
 
-                        const seo = generateBrandedSEO({
-                            title,
-                            category: cat,
-                            attribute: attr,
-                            clause: {
-                                name: clause.name,
-                                label: clause.label || clause.name,
-                                prefix: prefix || '',
-                                suffix: suffix || '',
-                                ...(clause.value !== undefined && { value: clause.value }),
-                                ...(clause.operator && { operator: clause.operator })
-                            }
-                        });
+                        const normalizedClause = {
+                            ...clause,
+                            name: clause.name || '',
+                            label: clause.label || clause.name || '',
+                            prefix: prefix || '',
+                            suffix: suffix || '',
+                            value: clause.value,
+                            operator: clause.operator || '='
+                        };
+
+                        const seo = generateBrandedSEO(
+                            cat,
+                            attr,
+                            normalizedClause
+                        );
 
                         return {
                             category: cat,

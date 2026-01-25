@@ -235,6 +235,10 @@ class FilterSQLBuilder {
                             const isArray = Array.isArray(rawVal) || (typeof rawVal === 'string' && rawVal.includes(','));
                             const val = Array.isArray(rawVal) ? rawVal : (typeof rawVal === 'string' && rawVal.includes(',') ? rawVal.split(',').map(v => v.trim()) : rawVal);
 
+                            // Force numeric comparison for numeric operators if value is numeric, 
+                            // even if attribute type is technically 'text' in DB
+                            const isNumericOp = ['<', '>', '<=', '>='].includes(op);
+
                             if (isArray && (op === '=' || op === 'LIKE' || op === 'ILIKE')) {
                                 const finalOp = (op === 'LIKE' || op === 'ILIKE') ? 'ILIKE ANY' : '= ANY';
                                 if (type === 'number') {
@@ -244,9 +248,17 @@ class FilterSQLBuilder {
                                 }
                                 queryParams.push(attrCode, val);
                                 index += 2;
-                            } else if (type === 'number') {
-                                // Handle single numeric value
-                                sql += ` AND (si.metadata->'attributes'->>$${index})::numeric ${op} $${index + 1}::numeric`;
+                            } else if (type === 'number' || isNumericOp) {
+                                const attrVal = `si.metadata->'attributes'->>$${index}`;
+                                // Safe cast to numeric
+                                const safeAttr = `(CASE WHEN ${attrVal} ~ '^-?[0-9.]+$' THEN (${attrVal})::numeric ELSE NULL END)`;
+
+                                if (isArray) {
+                                    sql += ` AND ${safeAttr} ${op} ($${index + 1}::numeric[])`;
+                                } else {
+                                    sql += ` AND ${safeAttr} ${op} $${index + 1}::numeric`;
+                                }
+
                                 queryParams.push(attrCode, val);
                                 index += 2;
                             } else {
@@ -259,6 +271,7 @@ class FilterSQLBuilder {
                         }
 
                         // Handle NLQ patterns (e.g., _nlq_under_1000)
+                        // Handle NLQ patterns (e.g., _nlq_under_1000)
                         if (clauseName.startsWith('_nlq_')) {
                             const nlqParts = clauseName.split('_');
                             const opWord = nlqParts[2];
@@ -266,8 +279,15 @@ class FilterSQLBuilder {
                             const opPhrases = { 'under': '<', 'below': '<', 'over': '>', 'above': '>', 'exactly': '=', 'min': '>=', 'max': '<=' };
                             const op = opPhrases[opWord] || '=';
 
-                            if (type === 'number') {
-                                sql += ` AND (si.metadata->'attributes'->>$${index})::numeric ${op} $${index + 1}::numeric`;
+                            // Force numeric comparison for numeric operators if value is numeric, 
+                            // even if attribute type is technically 'text' in DB
+                            const isNumericOp = ['<', '>', '<=', '>='].includes(op);
+
+                            if (type === 'number' || isNumericOp) {
+                                const attrVal = `si.metadata->'attributes'->>$${index}`;
+                                // Safe cast to numeric
+                                const safeAttr = `(CASE WHEN ${attrVal} ~ '^-?[0-9.]+$' THEN (${attrVal})::numeric ELSE NULL END)`;
+                                sql += ` AND ${safeAttr} ${op} $${index + 1}::numeric`;
                                 queryParams.push(attrCode, val);
                                 index += 2;
                             } else {

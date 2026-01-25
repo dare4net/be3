@@ -21,7 +21,8 @@ async function tenantIdentifier(req, res, next) {
             '/modules', // Global module registry
             '/products/admin', // Super admin product management
             '/auth/signup', // Public signup (creates tenant + user)
-            '/auth/refresh', // Token refresh (uses token for context)
+            '/auth/signup', // Public signup (creates tenant + user)
+            // '/auth/refresh', // Token refresh (uses token for context) - MOVED TO AUTHENTICATED/TENANT SCOPED
         ];
 
         // Check if this is a public route
@@ -52,10 +53,10 @@ async function tenantIdentifier(req, res, next) {
             if (parts.length > 2 && !['www', 'api'].includes(parts[0])) {
                 const subdomain = parts[0];
 
-                // Look up tenant by subdomain
+                // Look up tenant by subdomain (allow active and trial)
                 const result = await query(
-                    'SELECT id FROM tenants WHERE subdomain = $1 AND status = $2',
-                    [subdomain, 'active']
+                    "SELECT id FROM tenants WHERE subdomain = $1 AND status IN ('active', 'trial')",
+                    [subdomain]
                 );
 
                 if (result.rows.length > 0) {

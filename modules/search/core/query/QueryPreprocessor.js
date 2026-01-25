@@ -1,6 +1,7 @@
 /**
  * Query Preprocessor
  * Handles natural language query preprocessing and semantic understanding
+ * Enhanced with plural tolerance and query normalization
  */
 
 const { query } = require('../../../../config/database');
@@ -17,7 +18,11 @@ class QueryPreprocessor {
         if (!searchQuery) return { processedQuery: null, additionalFilters: {} };
 
         const additionalFilters = {};
-        let processedQuery = searchQuery;
+
+        // 0. Initial Normalization: Strip common "junk" phrases
+        let processedQuery = searchQuery
+            .replace(/\b(show me|looking for|find|search for|list of|i want)\b/gi, '')
+            .trim();
 
         // 1. Fetch all attributes with clauses for this tenant
         const attrRes = await query(
@@ -26,7 +31,7 @@ class QueryPreprocessor {
         );
         const attributes = attrRes.rows;
 
-        // 2. Pattern matching for numeric attributes (e.g., "price under 1000", "storage above 128")
+        // 2. Pattern matching for numeric attributes (e.g., "price under 1k", "storage above 128")
         const opPhrases = {
             'under': '<',
             'below': '<',
@@ -41,78 +46,124 @@ class QueryPreprocessor {
             const label = (attr.label || '').toLowerCase();
             const code = attr.code.toLowerCase();
 
-            // Try to find phrases like "storage under 500" or "price above 1000"
-            const regex = new RegExp(`\\b(${label}|${code})\\s+(under|below|over|above|exactly|min|max)\\s+(\\$?)(\\d+)\\b`, 'i');
+            // Support numeric shortcuts like '1k' -> '1000'
+            const regex = new RegExp(`\\b(${label}|${code})\\s+(under|below|over|above|exactly|min|max)\\s+(\\$?)(\\d+\\.?\\d*)(k|m)?\\b`, 'i');
             const match = processedQuery.match(regex);
 
             if (match) {
-                const operator = opPhrases[match[2].toLowerCase()];
-                const value = parseInt(match[4]);
+                const operatorWord = match[2].toLowerCase();
+                let value = parseFloat(match[4]);
+                const unit = (match[5] || '').toLowerCase();
 
-                if (attr.type === 'number') {
-                    // Create synthetic clause name
-                    const clauseKey = `attribute.${attr.code}:_nlq_${match[2]}_${value}`;
-                    additionalFilters[clauseKey] = value;
-                }
+                if (unit === 'k') value *= 1000;
+                if (unit === 'm') value *= 1000000;
 
-                // Remove the pattern from query
+                const clauseKey = `attribute.${attr.code}:_nlq_${operatorWord}_${value}`;
+                additionalFilters[clauseKey] = value;
                 processedQuery = processedQuery.replace(match[0], '').trim();
-                break; // Only process first match
             }
         }
 
-        // 3. Pattern matching for predefined clauses (e.g., "budget phones", "premium laptops")
+        /**
+         * Simple helper for plural-tolerant matching
+         */
+        const isSmartMatch = (input, target) => {
+            const i = input.toLowerCase().trim();
+            const t = target.toLowerCase().trim();
+            if (i === t) return true;
+            // Handle common English plurals
+            return i === t + 's' || i === t + 'es' || t === i + 's' || t === i + 'es';
+        };
+
+        // 2.5 Match explicit Attribute: Value or Attribute: Clause patterns
+        for (const attr of attributes) {
+            const attrLabel = (attr.label || '').toLowerCase();
+            const attrCode = attr.code.toLowerCase();
+
+            const regex = new RegExp(`\\b(${attrLabel}|${attrCode})\\s*:\\s*(.+?)(?=\\s+\\w+:|$)`, 'i');
+            const match = processedQuery.match(regex);
+
+            if (match) {
+                const searchValue = match[2].trim();
+                const clauses = (typeof attr.clauses === 'string' ? JSON.parse(attr.clauses) : attr.clauses) || [];
+
+                // Smart match for clause name or label
+                const matchedClause = clauses.find(c =>
+                    isSmartMatch(searchValue, c.name || '') ||
+                    isSmartMatch(searchValue, c.label || '')
+                );
+
+                if (matchedClause) {
+                    additionalFilters[`attribute.${attr.code}:${matchedClause.name}`] = matchedClause.value ?? 1;
+                } else {
+                    additionalFilters[`attribute.${attr.code}`] = searchValue;
+                }
+
+                processedQuery = processedQuery.replace(match[0], '').trim();
+            }
+        }
+
+        // 3. Pattern matching for predefined clauses (Plural Tolerant)
         for (const attr of attributes) {
             const clauses = (typeof attr.clauses === 'string' ? JSON.parse(attr.clauses) : attr.clauses) || [];
 
             for (const clause of clauses) {
-                const keywords = Array.isArray(clause.keywords) ? clause.keywords : [];
-                for (const keyword of keywords) {
-                    if (searchQuery.toLowerCase().includes(keyword.toLowerCase())) {
+                const phrases = [];
+                if (clause.label) phrases.push(clause.label);
+                if (clause.prefix) phrases.push(clause.prefix);
+                if (clause.suffix) phrases.push(clause.suffix);
+                if (Array.isArray(clause.keywords)) phrases.push(...clause.keywords);
+
+                const validPhrases = phrases
+                    .filter(p => p && typeof p === 'string' && p.trim().length > 0)
+                    .sort((a, b) => b.length - a.length);
+
+                for (const phrase of validPhrases) {
+                    const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    // Add optional 's' or 'es' to the end of the phrase match
+                    const regex = new RegExp(`\\b${escaped}(s|es)?\\b`, 'i');
+
+                    if (processedQuery.match(regex)) {
                         const clauseKey = `attribute.${attr.code}:${clause.name}`;
                         additionalFilters[clauseKey] = clause.value ?? 1;
-
-                        // Remove keyword from query
-                        processedQuery = processedQuery.replace(new RegExp(keyword, 'gi'), '').trim();
+                        processedQuery = processedQuery.replace(regex, '').trim();
                         break;
                     }
                 }
-                if (Object.keys(additionalFilters).length > 0) break;
             }
-            if (Object.keys(additionalFilters).length > 0) break;
         }
 
-        // 4. Category detection patterns (e.g., "best phones", "cheap laptops under 5000")
+        // 4. Category detection patterns (Plural Tolerant)
         const categoryPatterns = [
             /^(best|top|cheapest|affordable|premium|budget)\s+(.+)$/i,
-            /^(.+)\s+(under|below|less than)\s+(\d+)$/i
+            /^(.+)\s+(under|below|less than)\s+(\d+)(k|m)?$/i
         ];
 
         for (const pattern of categoryPatterns) {
-            const match = searchQuery.match(pattern);
+            const match = processedQuery.match(pattern);
             if (match) {
-                const potentialCategory = match[2] || match[1];
+                const potentialCategory = (match[2] || match[1]).trim();
+                const stem = potentialCategory.replace(/(s|es)$/i, '');
 
-                // Try to find matching category
                 const catRes = await query(
                     `SELECT id, name FROM categories 
                      WHERE tenant_id = $1 
-                     AND (name ILIKE $2 OR slug ILIKE $2)
+                     AND (name ILIKE $2 OR slug ILIKE $2 OR name ILIKE $3 OR slug ILIKE $3)
                      AND is_active = true
                      LIMIT 1`,
-                    [tenantId, `%${potentialCategory}%`]
+                    [tenantId, `%${potentialCategory}%`, `%${stem}%`]
                 );
 
                 if (catRes.rows.length > 0) {
                     additionalFilters.category_id = catRes.rows[0].id;
-                    processedQuery = potentialCategory; // Just search for the category name
+                    processedQuery = processedQuery.replace(potentialCategory, '').trim();
                     break;
                 }
             }
         }
 
         return {
-            processedQuery: processedQuery || null,
+            processedQuery: processedQuery,
             additionalFilters
         };
     }
