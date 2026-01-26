@@ -1,14 +1,27 @@
 const { createClient } = require('redis');
 require('dotenv').config();
 
-const redisClient = createClient({
-    socket: {
-        host: process.env.REDIS_HOST || 'localhost',
-        port: process.env.REDIS_PORT || 6379,
-    },
-    password: process.env.REDIS_PASSWORD || undefined,
-    database: process.env.REDIS_DB || 0,
-});
+const redisUrl = process.env.REDIS_URL;
+
+const redisConfig = redisUrl
+    ? { url: redisUrl }
+    : {
+        socket: {
+            host: process.env.REDIS_HOST || 'localhost',
+            port: process.env.REDIS_PORT || 6379,
+        },
+        password: process.env.REDIS_PASSWORD || undefined,
+        database: process.env.REDIS_DB || 0,
+    };
+
+// Handle TLS for production/Upstash if REDIS_URL is rediss://
+if (redisUrl && redisUrl.startsWith('rediss://')) {
+    if (!redisConfig.socket) redisConfig.socket = {};
+    redisConfig.socket.tls = true;
+    redisConfig.socket.rejectUnauthorized = false; // often needed for serverless redis
+}
+
+const redisClient = createClient(redisConfig);
 
 redisClient.on('error', (err) => {
     console.error('Redis Client Error:', err);

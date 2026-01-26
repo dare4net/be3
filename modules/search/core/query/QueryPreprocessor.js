@@ -142,16 +142,34 @@ class QueryPreprocessor {
         for (const pattern of categoryPatterns) {
             const match = processedQuery.match(pattern);
             if (match) {
+                // Fetch synonyms to help match
+                const synRes = await query(`SELECT term, synonyms FROM search_synonyms WHERE tenant_id = $1 AND is_active = true`, [tenantId]);
+                const synonymMap = new Map();
+                synRes.rows.forEach(s => {
+                    const terms = [s.term, ...(Array.isArray(s.synonyms) ? s.synonyms : [])];
+                    terms.forEach(t => synonymMap.set(t.toLowerCase(), terms));
+                });
+
                 const potentialCategory = (match[2] || match[1]).trim();
                 const stem = potentialCategory.replace(/(s|es)$/i, '');
 
+                // Collect search terms including synonyms
+                const searchTerms = new Set([potentialCategory.toLowerCase(), stem.toLowerCase()]);
+                if (synonymMap.has(potentialCategory.toLowerCase())) {
+                    synonymMap.get(potentialCategory.toLowerCase()).forEach(t => searchTerms.add(t.toLowerCase()));
+                }
+                if (synonymMap.has(stem.toLowerCase())) {
+                    synonymMap.get(stem.toLowerCase()).forEach(t => searchTerms.add(t.toLowerCase()));
+                }
+
+                // Try to find matching category using any of the terms
                 const catRes = await query(
                     `SELECT id, name FROM categories 
                      WHERE tenant_id = $1 
-                     AND (name ILIKE $2 OR slug ILIKE $2 OR name ILIKE $3 OR slug ILIKE $3)
+                     AND (name ILIKE ANY($2) OR slug ILIKE ANY($2))
                      AND is_active = true
                      LIMIT 1`,
-                    [tenantId, `%${potentialCategory}%`, `%${stem}%`]
+                    [tenantId, Array.from(searchTerms).map(t => `%${t}%`)]
                 );
 
                 if (catRes.rows.length > 0) {

@@ -69,9 +69,10 @@ class IndexService {
             content_type: 'product',
             content_id: product.id,
             title: product.name || '',
-            content: `${product.description || ''} ${product.sku || ''}`.trim(),
+            content: `${product.description || ''} ${product.sku || ''} ${Array.from(allCategoryNames).join(' ')}`.trim(),
             keywords: keywords,
-            metadata: metadata
+            metadata: metadata,
+            is_active: product.status === 'active'
         };
 
         await this.upsertIndex(tenantId, searchDoc);
@@ -102,7 +103,8 @@ class IndexService {
             title: category.name || '',
             content: category.description || '',
             keywords: keywords,
-            metadata: metadata
+            metadata: metadata,
+            is_active: category.is_active !== false
         };
 
         await this.upsertIndex(tenantId, searchDoc);
@@ -132,7 +134,8 @@ class IndexService {
             title: collection.name || '',
             content: collection.description || '',
             keywords: keywords,
-            metadata: metadata
+            metadata: metadata,
+            is_active: collection.is_active !== false
         };
 
         await this.upsertIndex(tenantId, searchDoc);
@@ -162,7 +165,8 @@ class IndexService {
             title: page.title || '',
             content: page.content || page.meta_description || '',
             keywords: keywords,
-            metadata: metadata
+            metadata: metadata,
+            is_active: page.is_published !== false
         };
 
         await this.upsertIndex(tenantId, searchDoc);
@@ -176,8 +180,8 @@ class IndexService {
     async upsertIndex(tenantId, doc) {
         const sql = `
             INSERT INTO search_indexes 
-            (tenant_id, content_type, content_id, title, content, keywords, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            (tenant_id, content_type, content_id, title, content, keywords, metadata, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (tenant_id, content_type, content_id)
             DO UPDATE SET
                 title = EXCLUDED.title,
@@ -195,7 +199,8 @@ class IndexService {
             doc.title,
             doc.content,
             doc.keywords,
-            JSON.stringify(doc.metadata)
+            JSON.stringify(doc.metadata),
+            doc.is_active !== false
         ]);
     }
 

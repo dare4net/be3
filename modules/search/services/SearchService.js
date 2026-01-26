@@ -40,10 +40,14 @@ class SearchService {
             perPage = 20
         } = params;
 
-        // Recursive Category Fetch
+        // Recursive Category Fetch + Auto Drill-down
         let originalCategoryId = filters.category_id;
         if (filters.category_id) {
-            const resolvedId = await this.categoryResolver.resolveCategoryId(tenantId, filters.category_id);
+            let resolvedId = await this.categoryResolver.resolveCategoryId(tenantId, filters.category_id);
+
+            // Auto-drill down if only one child exists
+            resolvedId = await this.categoryResolver.resolveDeepestSingleChild(tenantId, resolvedId);
+
             originalCategoryId = resolvedId;
             const allCategoryIds = await this.categoryResolver.getDescendantCategoryIds(tenantId, resolvedId);
             filters.category_ids = allCategoryIds;
@@ -226,8 +230,8 @@ class SearchService {
             return row;
         });
 
-        // Get faceted filter counts using Aggregator
-        const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, expandedQuery, contentTypes, filters);
+        // Get faceted filter counts using Aggregator (passing contextCategoryId for smart subcategory filtering)
+        const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, expandedQuery, contentTypes, filters, originalCategoryId);
 
         // Fetch category context for SEO if filtered by category
         let category = null;

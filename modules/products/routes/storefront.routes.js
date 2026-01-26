@@ -159,12 +159,32 @@ function registerStorefrontRoutes(router) {
 
         // Get Categories
         const catsRes = await query(
-            `SELECT c.id, c.name, c.slug FROM categories c
+            `SELECT c.id, c.name, c.slug, c.parent_id FROM categories c
              JOIN product_categories pc ON c.id = pc.category_id
              WHERE pc.product_id = $1`,
             [product.id]
         );
         product.categories = catsRes.rows;
+
+        // Fetch breadcrumb for the first category found
+        if (product.categories.length > 0) {
+            const primaryCat = product.categories[0];
+            const breadcrumbSql = `
+                WITH RECURSIVE category_path AS (
+                    SELECT id, name, slug, parent_id, 0 as level
+                    FROM categories
+                    WHERE id = $1 AND tenant_id = $2
+                    UNION ALL
+                    SELECT c.id, c.name, c.slug, c.parent_id, cp.level + 1
+                    FROM categories c
+                    INNER JOIN category_path cp ON c.id = cp.parent_id
+                    WHERE c.tenant_id = $2
+                )
+                SELECT id, name, slug FROM category_path ORDER BY level DESC
+            `;
+            const breadcrumbRes = await query(breadcrumbSql, [primaryCat.id, req.tenantId]);
+            product.categories[0].breadcrumb = breadcrumbRes.rows || [];
+        }
 
         // Get Attributes (Resolved from Categories + Product Specific)
         // Resolve attribute metadata (labels, icons)
@@ -214,7 +234,7 @@ function registerStorefrontRoutes(router) {
 
         const category = catRes.rows[0];
 
-        // Get Subcategories?
+        // Get Subcategories
         const subRes = await query(
             `SELECT id, name, slug FROM categories 
              WHERE tenant_id = $1 AND parent_id = $2 AND is_active = true 
@@ -222,6 +242,23 @@ function registerStorefrontRoutes(router) {
             [req.tenantId, category.id]
         );
         category.children = subRes.rows;
+
+        // Get Breadcrumb path
+        const breadcrumbSql = `
+            WITH RECURSIVE category_path AS (
+                SELECT id, name, slug, parent_id, 0 as level
+                FROM categories
+                WHERE id = $1 AND tenant_id = $2
+                UNION ALL
+                SELECT c.id, c.name, c.slug, c.parent_id, cp.level + 1
+                FROM categories c
+                INNER JOIN category_path cp ON c.id = cp.parent_id
+                WHERE c.tenant_id = $2
+            )
+            SELECT id, name, slug FROM category_path ORDER BY level DESC
+        `;
+        const breadcrumbRes = await query(breadcrumbSql, [category.id, req.tenantId]);
+        category.breadcrumb = breadcrumbRes.rows || [];
 
         // SEO
         category.seo = mergeCategorySEO(category);

@@ -54,6 +54,44 @@ class CategoryResolver {
         const result = await query(sql, [categoryId, tenantId]);
         return result.rows.map(row => row.id);
     }
+
+    /**
+     * Resolve the deepest single child in a branch.
+     * Enhanced: Only considers children that actually contain products in the search index.
+     * If category A has children [B, C, D] but only B has products, it drills into B.
+     * @param {string} tenantId
+     * @param {string} categoryId
+     * @returns {Promise<string>} - The deepest single viable child ID
+     */
+    async resolveDeepestSingleChild(tenantId, categoryId) {
+        let currentId = categoryId;
+
+        while (true) {
+            // Find children that actually have products in the index (directly or in descendants)
+            // We use the search_indexes as the source of truth for "active" products
+            const result = await query(
+                `SELECT c.id FROM categories c
+                 WHERE c.tenant_id = $1 AND c.parent_id = $2 AND c.is_active = true
+                 AND EXISTS (
+                    SELECT 1 FROM search_indexes si 
+                    WHERE si.tenant_id = $1 AND si.is_active = true 
+                    AND si.metadata->'category_ids' ? c.id::text
+                 )`,
+                [tenantId, currentId]
+            );
+
+            if (result.rows.length === 1) {
+                // If there's exactly one subcategory with products, drill down.
+                // This ensures that "Smart Phones & Tablets" (where Tablets is empty) 
+                // will automatically land the user on "Smart Phones".
+                currentId = result.rows[0].id;
+            } else {
+                // If it has 0 categories with products, or multiple "viable" branches, we stop.
+                break;
+            }
+        }
+        return currentId;
+    }
 }
 
 module.exports = CategoryResolver;
