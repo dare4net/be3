@@ -121,14 +121,23 @@ async function startServer() {
 }
 
 // Handle uncaught errors
+let lastRejection = null;
 process.on('unhandledRejection', (error) => {
-    console.error('Unhandled Rejection:', error);
-    process.exit(1);
+    // ANTI-SPAM: Don't flood the console with the same rejection (e.g. from Redis loop)
+    const msg = error.message || String(error);
+    if (msg === lastRejection) return;
+
+    console.error('🕒 Unhandled Rejection (Recovering):', msg);
+    lastRejection = msg;
+    // Reset after 10 seconds to allow showing if it happens again later
+    setTimeout(() => { if (lastRejection === msg) lastRejection = null; }, 10000);
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-    process.exit(1);
+    console.error('💥 Uncaught Exception:', error.message || error);
+    // Uncaught exceptions are usually more severe code issues, so we exit but with a slight delay 
+    // to allow logging to flush. In a production cluster (PM2/Kubernetes), it will restart.
+    setTimeout(() => process.exit(1), 500);
 });
 
 // Graceful shutdown
@@ -139,8 +148,7 @@ process.on('SIGTERM', async () => {
 });
 
 // Start the server
+// initializeApp().then(() => { ... }) is not used here as startServer calls it.
 startServer();
 
 module.exports = app;
-
-// Server file touched to trigger reload (FINAL fix for import paths)

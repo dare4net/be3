@@ -1,10 +1,12 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+const isNeon = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('neon.tech');
+
 const poolConfig = process.env.DATABASE_URL
   ? {
     connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+    ssl: { rejectUnauthorized: false }
   }
   : {
     host: process.env.DB_HOST,
@@ -17,10 +19,11 @@ const poolConfig = process.env.DATABASE_URL
 // PostgreSQL connection pool
 const pool = new Pool({
   ...poolConfig,
-  min: parseInt(process.env.DB_POOL_MIN) || 2,
-  max: parseInt(process.env.DB_POOL_MAX) || 10,
+  // Optimized for Neon / Cloud: smaller pools and longer timeouts for cold starts
+  min: isNeon ? 0 : (parseInt(process.env.DB_POOL_MIN) || 2),
+  max: isNeon ? 5 : (parseInt(process.env.DB_POOL_MAX) || 10),
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  connectionTimeoutMillis: isNeon ? 15000 : 5000, // 15s for Neon cold start
 });
 
 // Test connection on startup
@@ -29,8 +32,8 @@ pool.on('connect', () => {
 });
 
 pool.on('error', (err) => {
-  console.error('Unexpected database error:', err);
-  process.exit(-1);
+  // PRINCIPLE: Do NOT crash the process. Neon disconnects are common and recoverable.
+  console.error('Unexpected database pool error:', err.message);
 });
 
 /**
