@@ -224,7 +224,9 @@ class SearchService {
                     is_featured: row.metadata.is_featured || false,
                     status: row.metadata.status || 'active',
                     sku: row.metadata.sku,
-                    description: row.content // content field usually stores description
+                    description: row.metadata.description || row.content, // Prioritize clean description
+                    attributes: row.metadata.attributes || {},
+                    tags: row.metadata.tags || []
                 };
             }
             return row;

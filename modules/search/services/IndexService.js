@@ -39,12 +39,21 @@ class IndexService {
             });
         }
 
+        const attrValues = [];
+        if (product.attributes && typeof product.attributes === 'object') {
+            Object.values(product.attributes).forEach(val => {
+                if (typeof val === 'string') attrValues.push(val);
+                if (Array.isArray(val)) attrValues.push(...val.map(v => v.toString()));
+            });
+        }
+
         const keywords = [
             product.name,
             product.sku || '',
             ...(product.tags || []),
             ...Array.from(allCategoryNames),
-            ...Array.from(allCategorySlugs)
+            ...Array.from(allCategorySlugs),
+            ...attrValues
         ].filter(k => k && k.trim() !== '');
 
         const metadata = {
@@ -69,7 +78,7 @@ class IndexService {
             content_type: 'product',
             content_id: product.id,
             title: product.name || '',
-            content: `${product.description || ''} ${product.sku || ''} ${Array.from(allCategoryNames).join(' ')}`.trim(),
+            content: `${product.description || ''} ${product.sku || ''} ${Array.from(allCategoryNames).join(' ')} ${attrValues.join(' ')}`.trim(),
             keywords: keywords,
             metadata: metadata,
             is_active: product.status === 'active'

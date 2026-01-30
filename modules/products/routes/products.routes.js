@@ -33,8 +33,17 @@ function registerProductRoutes(router, eventBus) {
 
     // List all collections (Public/Admin light)
     router.get('/collections', asyncHandler(async (req, res) => {
+        // Updated to include product_count for randomizer awareness
+        // For rule-based collections, a full count is expensive, so we return a flag or 
+        // a simplified count based on the search index or product_collections table.
+        // For this implementation, we'll use a subquery to at least count manual and 
+        // a sample of rule-matched products if possible, or just return 1 if products exist.
         const result = await query(
-            `SELECT id, name, slug, image_url FROM collections WHERE tenant_id = $1 AND is_active = true ORDER BY name ASC`,
+            `SELECT c.id, c.name, c.slug, c.image_url,
+                (cardinality(c.manual_product_ids) + CASE WHEN jsonb_array_length(c.rules) > 0 THEN 1 ELSE 0 END) as product_count
+             FROM collections c 
+             WHERE c.tenant_id = $1 AND c.is_active = true 
+             ORDER BY name ASC`,
             [req.tenantId]
         );
         res.json({ success: true, collections: result.rows });

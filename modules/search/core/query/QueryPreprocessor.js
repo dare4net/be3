@@ -120,7 +120,6 @@ class QueryPreprocessor {
 
                 for (const phrase of validPhrases) {
                     const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                    // Add optional 's' or 'es' to the end of the phrase match
                     const regex = new RegExp(`\\b${escaped}(s|es)?\\b`, 'i');
 
                     if (processedQuery.match(regex)) {
@@ -130,52 +129,52 @@ class QueryPreprocessor {
                         break;
                     }
                 }
+
+                // ALSO match by raw clause value (for brands/colors)
+                if (typeof clause.value === 'string' || Array.isArray(clause.value)) {
+                    const values = Array.isArray(clause.value) ? clause.value : [clause.value];
+                    for (const val of values) {
+                        if (!val) continue;
+                        const escapedVal = val.toString().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        const vRegex = new RegExp(`\\b${escapedVal}(s|es)?\\b`, 'i');
+                        if (processedQuery.match(vRegex)) {
+                            const clauseKey = `attribute.${attr.code}:${clause.name}`;
+                            if (!additionalFilters[clauseKey]) {
+                                additionalFilters[clauseKey] = clause.value ?? 1;
+                                processedQuery = processedQuery.replace(vRegex, '').trim();
+                            }
+                            break;
+                        }
+                    }
+                }
             }
         }
 
-        // 4. Category detection patterns (Plural Tolerant)
-        const categoryPatterns = [
-            /^(best|top|cheapest|affordable|premium|budget)\s+(.+)$/i,
-            /^(.+)\s+(under|below|less than)\s+(\d+)(k|m)?$/i
-        ];
+        // 4. Standalone Category detection (Plural Tolerant)
+        if (processedQuery.length > 0) {
+            const tokens = processedQuery.split(/\s+/).filter(t => t.length >= 3);
+            if (tokens.length > 0) {
+                const stems = tokens.map(t => t.replace(/(s|es)$/i, ''));
+                const searchTerms = new Set([...tokens.map(t => t.toLowerCase()), ...stems.map(s => s.toLowerCase())]);
 
-        for (const pattern of categoryPatterns) {
-            const match = processedQuery.match(pattern);
-            if (match) {
-                // Fetch synonyms to help match
-                const synRes = await query(`SELECT term, synonyms FROM search_synonyms WHERE tenant_id = $1 AND is_active = true`, [tenantId]);
-                const synonymMap = new Map();
-                synRes.rows.forEach(s => {
-                    const terms = [s.term, ...(Array.isArray(s.synonyms) ? s.synonyms : [])];
-                    terms.forEach(t => synonymMap.set(t.toLowerCase(), terms));
-                });
-
-                const potentialCategory = (match[2] || match[1]).trim();
-                const stem = potentialCategory.replace(/(s|es)$/i, '');
-
-                // Collect search terms including synonyms
-                const searchTerms = new Set([potentialCategory.toLowerCase(), stem.toLowerCase()]);
-                if (synonymMap.has(potentialCategory.toLowerCase())) {
-                    synonymMap.get(potentialCategory.toLowerCase()).forEach(t => searchTerms.add(t.toLowerCase()));
-                }
-                if (synonymMap.has(stem.toLowerCase())) {
-                    synonymMap.get(stem.toLowerCase()).forEach(t => searchTerms.add(t.toLowerCase()));
-                }
-
-                // Try to find matching category using any of the terms
+                // Try to find matching category for any token
                 const catRes = await query(
-                    `SELECT id, name FROM categories 
-                     WHERE tenant_id = $1 
+                    `SELECT id, name FROM categories
+                     WHERE tenant_id = $1
                      AND (name ILIKE ANY($2) OR slug ILIKE ANY($2))
                      AND is_active = true
+                     ORDER BY length(name) DESC
                      LIMIT 1`,
-                    [tenantId, Array.from(searchTerms).map(t => `%${t}%`)]
+                    [tenantId, Array.from(searchTerms)]
                 );
 
                 if (catRes.rows.length > 0) {
                     additionalFilters.category_id = catRes.rows[0].id;
-                    processedQuery = processedQuery.replace(potentialCategory, '').trim();
-                    break;
+                    // Remove matching word from query
+                    for (const term of searchTerms) {
+                        const r = new RegExp(`\\b${term}\\b`, 'i');
+                        processedQuery = processedQuery.replace(r, '').trim();
+                    }
                 }
             }
         }

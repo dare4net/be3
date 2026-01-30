@@ -10,6 +10,7 @@ const SearchService = require('../services/SearchService');
 const AutocompleteService = require('../services/AutocompleteService');
 const SearchAnalyticsService = require('../services/SearchAnalyticsService');
 const FilterService = require('../services/FilterService');
+const RandomizationService = require('../services/RandomizationService');
 const { generateSearchSEO } = require('../../../lib/searchSEO');
 
 function registerSearchRoutes(router) {
@@ -264,6 +265,25 @@ function registerSearchRoutes(router) {
             filter: `category_id=${picked.id}&${filterKey}=${encodeURIComponent(String(filterValue))}`,
             results: results.results,
             pagination: results.pagination
+        });
+    }));
+
+    // Master Plan Randomization Resolver
+    router.post('/randomization/resolve', optionalAuth, asyncHandler(async (req, res) => {
+        const { widgets } = req.body;
+
+        if (!widgets || !Array.isArray(widgets)) {
+            return res.status(400).json({
+                success: false,
+                error: 'widgets array is required'
+            });
+        }
+
+        const results = await RandomizationService.resolveMasterPlan(req.tenantId, widgets);
+
+        res.json({
+            success: true,
+            results
         });
     }));
 

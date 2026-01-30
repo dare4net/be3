@@ -21,7 +21,17 @@ class AutocompleteService {
         const normalizedQuery = partialQuery.toLowerCase().trim();
         const terms = normalizedQuery.split(/\s+/).filter(t => t.length >= 2);
         const searchTerm = `%${normalizedQuery}%`;
-        const singularQuery = normalizedQuery.replace(/(es|s)$/, '');
+
+        // Prepare plural/singular tokens for flexible matching
+        const singularize = (t) => t.replace(/(es|s)$/, '');
+        const pluralize = (t) => {
+            if (t.endsWith('s')) return t;
+            if (t.endsWith('y')) return t.slice(0, -1) + 'ies';
+            return t + 's';
+        };
+
+        const singularTokens = terms.map(t => singularize(t));
+        const pluralTokens = terms.map(t => pluralize(t));
 
         // 1. Get Direct Content/Title suggestions (Products, Pages, etc.)
         const contentSQL = `
@@ -35,27 +45,45 @@ class AutocompleteService {
             WHERE tenant_id = $1
             AND is_active = true
             AND (
-                LOWER(title) LIKE $2
-                OR EXISTS (
-                    SELECT 1 FROM unnest(keywords) AS keyword
-                    WHERE LOWER(keyword) LIKE $2
+                -- Must match ALL tokens in the query
+                NOT EXISTS (
+                    SELECT 1 FROM unnest($5::text[], $6::text[]) as t(s_token, p_token)
+                    WHERE NOT (
+                        LOWER(title) LIKE '%' || s_token || '%' 
+                        OR LOWER(title) LIKE '%' || p_token || '%'
+                        OR content ILIKE '%' || s_token || '%'
+                        OR content ILIKE '%' || p_token || '%'
+                        OR EXISTS (
+                            SELECT 1 FROM unnest(keywords) k 
+                            WHERE k ILIKE '%' || s_token || '%' OR k ILIKE '%' || p_token || '%'
+                        )
+                        OR (
+                            metadata ? 'attributes' AND EXISTS (
+                                SELECT 1 FROM jsonb_each_text(metadata->'attributes') as attr(key, val)
+                                WHERE val ILIKE '%' || s_token || '%' OR val ILIKE '%' || p_token || '%'
+                            )
+                        )
+                    )
                 )
             )
             ORDER BY 
                 CASE 
-                    WHEN LOWER(title) = $3 THEN 1
-                    WHEN LOWER(title) LIKE $3 || '%' THEN 2
+                    WHEN LOWER(title) = $2 THEN 1
+                    WHEN LOWER(title) LIKE $2 || '%' THEN 2
                     ELSE 3
                 END,
                 title
-            LIMIT $4
+            LIMIT $3
+            OFFSET $4
         `;
 
         const contentResults = await query(contentSQL, [
             tenantId,
-            searchTerm,
             normalizedQuery,
-            Math.ceil(limit * 0.4)
+            Math.ceil(limit * 0.4),
+            0, // offset
+            singularTokens,
+            pluralTokens
         ]);
 
         // 2. Intelligent Navigation Suggestions
@@ -95,23 +123,26 @@ class AutocompleteService {
                     cl->>'prefix' as cl_prefix, cl->>'suffix' as cl_suffix,
                     cl->>'value' as cl_value,
                     cl->'excluded_category_ids' as cl_excluded_ids,
+                    cl->'value' as cl_value_json,
                     a.image_url as attr_image,
                     -- Explicit matching: brand/clause specifically mentioned
                     (
                         cl->>'label' ILIKE $2 OR cl->>'label' ILIKE $3 
-                        OR EXISTS (SELECT 1 FROM query_tokens WHERE cl->>'label' ILIKE '%' || token || '%')
+                        OR cl->>'prefix' ILIKE $2 OR cl->>'prefix' ILIKE $3
+                        OR cl->>'suffix' ILIKE $2 OR cl->>'suffix' ILIKE $3
+                        OR EXISTS (SELECT 1 FROM query_tokens WHERE cl->>'label' ILIKE '%' || token || '%' OR cl->>'prefix' ILIKE '%' || token || '%' OR cl->>'suffix' ILIKE '%' || token || '%')
                     ) as is_explicit_value_match,
                     -- Soft matching: attribute name (e.g. typing "brand") mentioned
                     (a.label ILIKE $2 OR a.code ILIKE $2) as is_attribute_name_match,
                     -- Intersection scoring: did this match part of the query?
-                    (SELECT count(*) FROM query_tokens WHERE cl->>'label' ILIKE '%' || token || '%') as val_match_count
+                    (SELECT count(*) FROM query_tokens WHERE cl->>'label' ILIKE '%' || token || '%' OR cl->>'prefix' ILIKE '%' || token || '%' OR cl->>'suffix' ILIKE '%' || token || '%') as val_match_count
                 FROM attributes a
                 CROSS JOIN LATERAL jsonb_array_elements(a.clauses) cl
                 WHERE a.tenant_id = $1
                 AND (
                     a.label ILIKE $2 OR cl->>'label' ILIKE $2 OR a.code ILIKE $2 OR cl->>'name' ILIKE $2
                     OR cl->>'prefix' ILIKE $2 OR cl->>'suffix' ILIKE $2
-                    OR EXISTS (SELECT 1 FROM query_tokens WHERE cl->>'label' ILIKE '%' || token || '%' OR a.label ILIKE '%' || token || '%')
+                    OR EXISTS (SELECT 1 FROM query_tokens WHERE cl->>'label' ILIKE '%' || token || '%' OR a.label ILIKE '%' || token || '%' OR cl->>'prefix' ILIKE '%' || token || '%' OR cl->>'suffix' ILIKE '%' || token || '%')
                 )
             ),
             -- 5. Final Rankings
@@ -135,6 +166,8 @@ class AutocompleteService {
                     1 as priority
                 FROM matched_clauses mc
                 WHERE mc.cl_label ILIKE $2 OR mc.cl_label ILIKE $3
+                   OR mc.cl_prefix ILIKE $2 OR mc.cl_prefix ILIKE $3
+                   OR mc.cl_suffix ILIKE $2 OR mc.cl_suffix ILIKE $3
 
                 UNION ALL
                 
@@ -154,7 +187,7 @@ class AutocompleteService {
                 UNION ALL
                 
                 -- TIER 3: Branded Drift (Brand-only search suggested in related categories)
-                -- ANTI-EXPLOSION: Capped to Top 3 unless the category name was explicitly mentioned
+                -- ANTI-EXPLOSION: Capped to Top 5 that have CONFIRMED product matches
                 SELECT 
                     c.id, c.name, c.slug, c.image_url,
                     ma.attr_code, ma.attr_label,
@@ -168,23 +201,32 @@ class AutocompleteService {
                 WHERE c.is_active = true 
                 AND ma.is_explicit_value_match = true
                 AND (ma.cl_excluded_ids IS NULL OR NOT (ma.cl_excluded_ids @> jsonb_build_array(c.id::text)))
-                -- EXPLICIT BYPASS: If category name matched, don't cap it (solves "Infinix Tablet" issue)
-                AND (
-                    (SELECT count(*) FROM query_tokens WHERE c.name ILIKE '%' || token || '%') > 0
-                    OR 
-                    c.id IN (
-                        SELECT category_id FROM product_categories 
-                        GROUP BY category_id ORDER BY COUNT(*) DESC LIMIT 3
+                -- PRODUCT MATCH REQUIRED (using search_indexes):
+                AND EXISTS (
+                    SELECT 1 FROM search_indexes si
+                    WHERE si.tenant_id = $1
+                    AND si.is_active = true
+                    AND si.content_type = 'product'
+                    AND si.metadata->'category_ids' ? c.id::text
+                    AND (
+                        CASE 
+                            WHEN jsonb_typeof(ma.cl_value_json) = 'array' 
+                            THEN si.metadata->'attributes'->>ma.attr_code = ANY(
+                                SELECT jsonb_array_elements_text(ma.cl_value_json)
+                            )
+                            ELSE si.metadata->'attributes'->>ma.attr_code = (ma.cl_value_json #>> '{}')
+                        END
                     )
+                    LIMIT 1
                 )
                 -- Avoid redundancy with Tier 2
                 AND NOT ( (SELECT count(*) FROM query_tokens WHERE c.name ILIKE '%' || token || '%') > 0 AND ma.val_match_count > 0 )
             )
             SELECT * FROM (
-                SELECT DISTINCT ON (priority, cat_id, attr_code, cl_name)
+                SELECT DISTINCT ON (priority, cat_name, attr_code, cl_name)
                     cat_id, cat_name, cat_slug, cat_image, attr_code, attr_label, cl_name, cl_label, cl_prefix, cl_suffix, cl_value, priority
                 FROM final_pool
-                ORDER BY priority ASC, cat_id, attr_code, cl_name
+                ORDER BY priority ASC, cat_name, attr_code, cl_name
             ) sub
             ORDER BY priority ASC, 
                      CASE WHEN LOWER(cat_name) = $4 THEN 1 ELSE 2 END,
@@ -196,7 +238,7 @@ class AutocompleteService {
         const brandingRes = await query(brandingSQL, [
             tenantId,
             searchTerm,
-            `%${singularQuery}%`,
+            `%${normalizedQuery.replace(/(es|s)$/, '')}%`,
             normalizedQuery,
             Math.max(limit, 20),
             terms
