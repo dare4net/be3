@@ -21,15 +21,21 @@ async function runDeployMigrations() {
         'modules/payments/database/schema.sql',
         'modules/shipping/database/schema.sql',
         'modules/marketing/database/schema.sql',
-        'modules/analytics/database/schema.sql',
         'modules/search/database/schema.sql',
 
-        // 3. Evolutionary Migrations
+        // 3. Module Specific Initial Data/Schema
+        'modules/products/database/migrations/001_add_categories.sql',
+
+        // 4. Evolutionary Migrations
+        'migrations/012_page_widgets.sql',
+        'migrations/013_pages.sql',
         'migrations/015_enhance_products.sql',
+        'migrations/016_add_product_image.sql',
         'migrations/017_create_attributes_system.sql',
         'migrations/018_add_attribute_clauses.sql',
         'migrations/019_add_excluded_clauses.sql',
         'migrations/022_create_layouts_system.sql',
+        'migrations/026_product_category_seo.sql',
         'migrations/027_search_module.sql',
         'migrations/029_add_collections.sql'
     ];
@@ -38,12 +44,19 @@ async function runDeployMigrations() {
         const fullPath = path.join(__dirname, '..', schemaPath);
         if (fs.existsSync(fullPath)) {
             console.log(`📦 Applying: ${schemaPath}`);
-            const sql = fs.readFileSync(fullPath, 'utf8');
+
             try {
-                await pool.query(sql);
-                console.log(` ✅ Success`);
+                if (schemaPath.endsWith('.sql')) {
+                    const sql = fs.readFileSync(fullPath, 'utf8');
+                    await pool.query(sql);
+                    console.log(` ✅ SUCCESS`);
+                } else if (schemaPath.endsWith('.js')) {
+                    console.log(` ⚙️ EXECUTING SCRIPT...`);
+                    require(fullPath);
+                    console.log(` ✅ SUCCESS`);
+                }
             } catch (err) {
-                if (err.message.includes('already exists')) {
+                if (err.message.includes('already exists') || err.message.includes('duplicate key value')) {
                     console.log(` ℹ️ Skipped (already exists)`);
                 } else {
                     console.error(` ❌ Error: ${err.message}`);

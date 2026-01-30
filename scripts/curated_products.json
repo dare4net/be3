@@ -1,0 +1,230 @@
+{
+  "Food1": [
+    {
+      "name": "Organic Hass Avocado",
+      "description": "Experience the best quality with our Organic Hass Avocado. Perfect for your lifestyle.",
+      "price": "125.99",
+      "image_url": "https://images.unsplash.com/photo-1523049673857-eb18f1d7b578?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Grade A Maple Syrup",
+      "description": "Experience the best quality with our Grade A Maple Syrup. Perfect for your lifestyle.",
+      "price": "16.99",
+      "image_url": "https://images.unsplash.com/photo-1552314971-d2feb3513949?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Artisan Sourdough Bread",
+      "description": "Experience the best quality with our Artisan Sourdough Bread. Perfect for your lifestyle.",
+      "price": "73.99",
+      "image_url": "https://images.unsplash.com/photo-1613396874083-2d5fbe59ae79?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Extra Virgin Olive Oil",
+      "description": "Experience the best quality with our Extra Virgin Olive Oil. Perfect for your lifestyle.",
+      "price": "62.99",
+      "image_url": "https://images.unsplash.com/photo-1666694890460-37ec16b0df47?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Himalayan Pink Salt",
+      "description": "Experience the best quality with our Himalayan Pink Salt. Perfect for your lifestyle.",
+      "price": "95.99",
+      "image_url": "https://images.unsplash.com/photo-1606791450998-d3859ac80814?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Raw Manuka Honey",
+      "description": "Experience the best quality with our Raw Manuka Honey. Perfect for your lifestyle.",
+      "price": "52.99",
+      "image_url": "https://images.unsplash.com/photo-1605880980331-20a711b27338?auto=format&fit=crop&q=80&w=800"
+    }
+  ],
+  "Gadgets": [
+    {
+      "name": "Wireless Noise Cancelling Earbuds",
+      "description": "Experience the best quality with our Wireless Noise Cancelling Earbuds. Perfect for your lifestyle.",
+      "price": "149.99",
+      "image_url": "https://images.unsplash.com/photo-1722448113450-f6860b7fbfe5?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Smart Digital Watch",
+      "description": "Experience the best quality with our Smart Digital Watch. Perfect for your lifestyle.",
+      "price": "35.99",
+      "image_url": "https://images.unsplash.com/photo-1508685096489-7aacd43bd3b1?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Portable Power Bank",
+      "description": "Experience the best quality with our Portable Power Bank. Perfect for your lifestyle.",
+      "price": "91.99",
+      "image_url": "https://images.unsplash.com/photo-1594843665794-446ce915d840?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Mini Portable Projector",
+      "description": "Experience the best quality with our Mini Portable Projector. Perfect for your lifestyle.",
+      "price": "97.99",
+      "image_url": "https://images.unsplash.com/photo-1701318188948-e07ff602430a?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Mechanical Backlit Keyboard",
+      "description": "Experience the best quality with our Mechanical Backlit Keyboard. Perfect for your lifestyle.",
+      "price": "28.99",
+      "image_url": "https://images.unsplash.com/photo-1558050032-160f36233a07?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Smart Home Hub",
+      "description": "Experience the best quality with our Smart Home Hub. Perfect for your lifestyle.",
+      "price": "126.99",
+      "image_url": "https://images.unsplash.com/photo-1752262167753-37a0ec83f614?auto=format&fit=crop&q=80&w=800"
+    }
+  ],
+  "Gaming": [
+    {
+      "name": "RGB Wired Gaming Mouse",
+      "description": "Experience the best quality with our RGB Wired Gaming Mouse. Perfect for your lifestyle.",
+      "price": "80.99",
+      "image_url": "https://images.unsplash.com/photo-1631749352438-7d576312185d?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "4K Ultra-Wide Monitor",
+      "description": "Experience the best quality with our 4K Ultra-Wide Monitor. Perfect for your lifestyle.",
+      "price": "53.99",
+      "image_url": "https://images.unsplash.com/photo-1591370874773-6702e8f12fd8?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Ergonomic Gaming Chair",
+      "description": "Experience the best quality with our Ergonomic Gaming Chair. Perfect for your lifestyle.",
+      "price": "77.99",
+      "image_url": "https://images.unsplash.com/photo-1619725002198-6a689b72f41d?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Wireless Gaming Controller",
+      "description": "Experience the best quality with our Wireless Gaming Controller. Perfect for your lifestyle.",
+      "price": "115.99",
+      "image_url": "https://images.unsplash.com/photo-1616341316676-fb436b96f99a?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Virtual Reality Headset",
+      "description": "Experience the best quality with our Virtual Reality Headset. Perfect for your lifestyle.",
+      "price": "136.99",
+      "image_url": "https://images.unsplash.com/photo-1593508512255-86ab42a8e620?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Surround Sound Headset",
+      "description": "Experience the best quality with our Surround Sound Headset. Perfect for your lifestyle.",
+      "price": "81.99",
+      "image_url": "https://images.unsplash.com/photo-1610041321327-b794c052db27?auto=format&fit=crop&q=80&w=800"
+    }
+  ],
+  "Laptops & Computers": [
+    {
+      "name": "Professional Laptop Pro 14",
+      "description": "Experience the best quality with our Professional Laptop Pro 14. Perfect for your lifestyle.",
+      "price": "83.99",
+      "image_url": "https://images.unsplash.com/photo-1592919933511-ea9d487c85e4?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Business Ultra Laptop",
+      "description": "Experience the best quality with our Business Ultra Laptop. Perfect for your lifestyle.",
+      "price": "117.99",
+      "image_url": "https://images.unsplash.com/photo-1623567238235-940ff1311da7?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Premium 2-in-1 Tablet",
+      "description": "Experience the best quality with our Premium 2-in-1 Tablet. Perfect for your lifestyle.",
+      "price": "139.99",
+      "image_url": "https://images.unsplash.com/photo-1617780421536-f74c55b953ef?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "High-Performance Gaming Laptop",
+      "description": "Experience the best quality with our High-Performance Gaming Laptop. Perfect for your lifestyle.",
+      "price": "57.99",
+      "image_url": "https://images.unsplash.com/photo-1658262530868-f7460e2f071f?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Portable Workstation Stealth",
+      "description": "Experience the best quality with our Portable Workstation Stealth. Perfect for your lifestyle.",
+      "price": "108.99",
+      "image_url": "https://images.unsplash.com/photo-1673431738089-c4fc9c2e96a7?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Slim Convertible Laptop",
+      "description": "Experience the best quality with our Slim Convertible Laptop. Perfect for your lifestyle.",
+      "price": "99.99",
+      "image_url": "https://images.unsplash.com/photo-1719523676561-10af04209e8c?auto=format&fit=crop&q=80&w=800"
+    }
+  ],
+  "Smartphones & Tablets": [
+    {
+      "name": "Flagship Smartphone 5G",
+      "description": "Experience the best quality with our Flagship Smartphone 5G. Perfect for your lifestyle.",
+      "price": "78.99",
+      "image_url": "https://images.unsplash.com/photo-1726828537956-61ae115d7d7a?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Ultra Smartphone with Stylus",
+      "description": "Experience the best quality with our Ultra Smartphone with Stylus. Perfect for your lifestyle.",
+      "price": "44.99",
+      "image_url": "https://images.unsplash.com/photo-1721864429261-3059e48c056b?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Pro Smartphone AI Enhanced",
+      "description": "Experience the best quality with our Pro Smartphone AI Enhanced. Perfect for your lifestyle.",
+      "price": "143.99",
+      "image_url": "https://images.unsplash.com/photo-1660801795225-362cca8c1c30?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Professional 12.9-inch Tablet",
+      "description": "Experience the best quality with our Professional 12.9-inch Tablet. Perfect for your lifestyle.",
+      "price": "96.99",
+      "image_url": "https://images.unsplash.com/photo-1627405016867-4d59bd6b4747?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Thin AMOLED Tablet",
+      "description": "Experience the best quality with our Thin AMOLED Tablet. Perfect for your lifestyle.",
+      "price": "92.99",
+      "image_url": "https://images.unsplash.com/photo-1658282513777-deb2e68367c3?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Premium Smartphone Fold",
+      "description": "Experience the best quality with our Premium Smartphone Fold. Perfect for your lifestyle.",
+      "price": "78.99",
+      "image_url": "https://images.unsplash.com/photo-1657731739861-b21d95062cbf?auto=format&fit=crop&q=80&w=800"
+    }
+  ],
+  "New Cat": [
+    {
+      "name": "Minimalist Desk Lamp",
+      "description": "Experience the best quality with our Minimalist Desk Lamp. Perfect for your lifestyle.",
+      "price": "141.99",
+      "image_url": "https://images.unsplash.com/photo-1621177555452-bedbe4c28879?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Abstract Canvas Wall Art",
+      "description": "Experience the best quality with our Abstract Canvas Wall Art. Perfect for your lifestyle.",
+      "price": "150.99",
+      "image_url": "https://images.unsplash.com/photo-1759917741924-50fb1dddeb88?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Ceramic Scented Candle",
+      "description": "Hand-poured soy wax candle.",
+      "price": "67.99",
+      "image_url": "https://images.unsplash.com/photo-1603905179139-db12ab535ca9?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Modern Succulent Trio",
+      "description": "Experience the best quality with our Modern Succulent Trio. Perfect for your lifestyle.",
+      "price": "125.99",
+      "image_url": "https://images.unsplash.com/photo-1604759280982-6f84e05a27bc?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Decorative Woven Blanket",
+      "description": "Experience the best quality with our Decorative Woven Blanket. Perfect for your lifestyle.",
+      "price": "76.99",
+      "image_url": "https://images.unsplash.com/photo-1728931709923-b0c8b0e9f4a4?auto=format&fit=crop&q=80&w=800"
+    },
+    {
+      "name": "Bamboo Desk Organizer",
+      "description": "Experience the best quality with our Bamboo Desk Organizer. Perfect for your lifestyle.",
+      "price": "144.99",
+      "image_url": "https://images.unsplash.com/photo-1496128858413-b36217c2ce36?auto=format&fit=crop&q=80&w=800"
+    }
+  ]
+}
