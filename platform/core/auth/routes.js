@@ -484,4 +484,20 @@ router.get('/users/:id', authenticate, authorize('users.view'), asyncHandler(asy
     });
 }));
 
+/**
+ * PATCH /auth/users/:id
+ * Update user details
+ */
+router.patch('/users/:id', authenticate, authorize('users.manage'), asyncHandler(async (req, res) => {
+    const { tenantId } = req;
+    const { id } = req.params;
+
+    const updatedUser = await AuthService.updateUser(tenantId, id, req.body);
+
+    res.json({
+        success: true,
+        user: updatedUser
+    });
+}));
+
 module.exports = router;

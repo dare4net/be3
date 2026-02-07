@@ -12,40 +12,109 @@ const { asyncHandler } = require('../../../middleware/errorHandler');
 function registerProductRoutes(router, eventBus) {
     // List products (Admin)
     router.get('/', authenticate, authorize('products.view'), asyncHandler(async (req, res) => {
-        const result = await paginatedTenantQuery('products', req.tenantId, {
-            page: parseInt(req.query.page) || 1,
-            perPage: parseInt(req.query.per_page) || 20,
-        });
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
 
-        // Fetch categories for each product (simple N+1 solution for now, optimized in prod)
-        for (let product of result.data) {
+        // Check permissions and vendor context
+        const { categoryAccess: { hasUnrestrictedAccess, allowedCategories }, isVendor, vendorName } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+
+        // If restricted, we need a custom query as dbHelpers.paginatedTenantQuery doesn't support complex joins/subqueries easily
+        // If unrestricted, we use the standard helper
+
+        if (hasUnrestrictedAccess && !isVendor) {
+            const result = await paginatedTenantQuery('products', req.tenantId, {
+                page: parseInt(req.query.page) || 1,
+                perPage: parseInt(req.query.per_page) || 20,
+            });
+            // Fetch categories for each product (simple N+1 solution for now, optimized in prod)
+            for (let product of result.data) {
+                const cats = await query(
+                    `SELECT c.id, c.name, c.slug FROM categories c
+                     JOIN product_categories pc ON c.id = pc.category_id
+                     WHERE pc.product_id = $1`,
+                    [product.id]
+                );
+                product.categories = cats.rows;
+            }
+            return res.json({ success: true, ...result });
+        }
+
+        // Restricted Access Logic
+        const page = parseInt(req.query.page) || 1;
+        const perPage = parseInt(req.query.per_page) || 20;
+        const offset = (page - 1) * perPage;
+
+        // Build query for restricted products
+        // Products that belong to ANY of the allowed categories
+        const productsSql = `
+            SELECT DISTINCT p.* 
+            FROM products p
+            LEFT JOIN product_categories pc ON p.id = pc.product_id
+            WHERE p.tenant_id = $1 
+            AND (NOT $5::boolean OR p.tags @> ARRAY[$6]::text[])
+            AND ($7::boolean OR pc.category_id = ANY($2))
+            ORDER BY p.created_at DESC
+            LIMIT $3 OFFSET $4
+        `;
+
+        const countSql = `
+            SELECT COUNT(DISTINCT p.id)::int as total
+            FROM products p
+            LEFT JOIN product_categories pc ON p.id = pc.product_id
+            WHERE p.tenant_id = $1 
+            AND (NOT $3::boolean OR p.tags @> ARRAY[$4]::text[])
+            AND ($5::boolean OR pc.category_id = ANY($2))
+        `;
+
+        const shouldFilterByVendor = isVendor && !hasUnrestrictedAccess;
+
+        const countRes = await query(countSql, [req.tenantId, allowedCategories, shouldFilterByVendor, vendorName, hasUnrestrictedAccess]);
+        const total = countRes.rows[0]?.total || 0;
+
+        const productRes = await query(productsSql, [req.tenantId, allowedCategories, perPage, offset, shouldFilterByVendor, vendorName, hasUnrestrictedAccess]);
+        const products = productRes.rows;
+
+        // Fetch categories for each product
+        for (let product of products) {
             const cats = await query(
                 `SELECT c.id, c.name, c.slug FROM categories c
-           JOIN product_categories pc ON c.id = pc.category_id
-           WHERE pc.product_id = $1`,
+                 JOIN product_categories pc ON c.id = pc.category_id
+                 WHERE pc.product_id = $1`,
                 [product.id]
             );
             product.categories = cats.rows;
         }
 
-        res.json({ success: true, ...result });
+        res.json({
+            success: true,
+            data: products,
+            pagination: {
+                page,
+                perPage,
+                total,
+                totalPages: Math.ceil(total / perPage)
+            }
+        });
     }));
 
     // List all collections (Public/Admin light)
-    router.get('/collections', asyncHandler(async (req, res) => {
-        // Updated to include product_count for randomizer awareness
-        // For rule-based collections, a full count is expensive, so we return a flag or 
-        // a simplified count based on the search index or product_collections table.
-        // For this implementation, we'll use a subquery to at least count manual and 
-        // a sample of rule-matched products if possible, or just return 1 if products exist.
-        const result = await query(
-            `SELECT c.id, c.name, c.slug, c.image_url,
+    router.get('/collections', authenticate, asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { isVendor, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+
+        let sql = `SELECT c.id, c.name, c.slug, c.image_url,
                 (cardinality(c.manual_product_ids) + CASE WHEN jsonb_array_length(c.rules) > 0 THEN 1 ELSE 0 END) as product_count
              FROM collections c 
-             WHERE c.tenant_id = $1 AND c.is_active = true 
-             ORDER BY name ASC`,
-            [req.tenantId]
-        );
+             WHERE c.tenant_id = $1 AND c.is_active = true`;
+        const params = [req.tenantId];
+
+        if (isVendor && !hasUnrestrictedAccess) {
+            sql += ` AND c.created_by = $2`;
+            params.push(req.user.id);
+        }
+
+        sql += ` ORDER BY name ASC`;
+
+        const result = await query(sql, params);
         res.json({ success: true, collections: result.rows });
     }));
 
@@ -55,9 +124,18 @@ function registerProductRoutes(router, eventBus) {
 
     // List collections (Admin with pagination)
     router.get('/collections/admin', authenticate, asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { isVendor, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+
+        const conditions = {};
+        if (isVendor && !hasUnrestrictedAccess) {
+            conditions.created_by = req.user.id;
+        }
+
         const result = await paginatedTenantQuery('collections', req.tenantId, {
             page: parseInt(req.query.page) || 1,
             perPage: parseInt(req.query.per_page) || 50,
+            conditions
         });
         res.json({ success: true, ...result });
     }));
@@ -125,10 +203,20 @@ function registerProductRoutes(router, eventBus) {
 
     // Get product by ID
     router.get('/:id', authenticate, authorize('products.view'), asyncHandler(async (req, res) => {
-        const sql = `SELECT * FROM products WHERE id = $1 AND tenant_id = $2`;
-        const result = await query(sql, [req.params.id, req.tenantId]);
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { isVendor, vendorName, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+
+        let sql = `SELECT * FROM products WHERE id = $1 AND tenant_id = $2`;
+        let params = [req.params.id, req.tenantId];
+
+        if (isVendor && vendorName && !hasUnrestrictedAccess) {
+            sql += ` AND (tags @> ARRAY[$3]::text[] OR created_by = $4)`;
+            params.push(vendorName, req.user.id);
+        }
+
+        const result = await query(sql, params);
         if (!result.rows[0]) {
-            return res.status(404).json({ error: 'Product not found' });
+            return res.status(404).json({ error: 'Product not found or access denied' });
         }
 
         const product = result.rows[0];
@@ -136,8 +224,8 @@ function registerProductRoutes(router, eventBus) {
         // Get categories
         const cats = await query(
             `SELECT c.id, c.name, c.slug FROM categories c
-         JOIN product_categories pc ON c.id = pc.category_id
-         WHERE pc.product_id = $1`,
+             JOIN product_categories pc ON c.id = pc.category_id
+             WHERE pc.product_id = $1`,
             [product.id]
         );
         product.categories = cats.rows;
@@ -147,6 +235,9 @@ function registerProductRoutes(router, eventBus) {
 
     // Create product
     router.post('/', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { isVendor, vendorName, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+
         // Generate base handle
         let handle = req.body.handle || req.body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
         if (!handle) handle = 'product-' + Date.now(); // Fallback for empty names
@@ -159,6 +250,11 @@ function registerProductRoutes(router, eventBus) {
             handle = `${handle}-${randomSuffix}`;
         }
 
+        const tags = req.body.tags || [];
+        if (isVendor && vendorName && !hasUnrestrictedAccess && !tags.includes(vendorName)) {
+            tags.push(vendorName);
+        }
+
         const product = await tenantInsert('products', req.tenantId, {
             name: req.body.name,
             description: req.body.description,
@@ -168,9 +264,10 @@ function registerProductRoutes(router, eventBus) {
             track_inventory: req.body.track_inventory,
             inventory_quantity: req.body.inventory_quantity || 0,
             status: req.body.status || 'draft',
+            created_by: req.user.id,
             attributes: req.body.attributes ? JSON.stringify(req.body.attributes) : '{}', // Custom Fields
             is_featured: req.body.is_featured || false,
-            tags: req.body.tags || [],
+            tags: tags,
             seo_title: req.body.seo_title,
             seo_description: req.body.seo_description,
             handle: handle,
@@ -214,6 +311,24 @@ function registerProductRoutes(router, eventBus) {
     router.patch('/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
         // Extract category_ids from body to avoid DB error in tenantUpdate
         const { category_ids, ...updateData } = req.body;
+
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { isVendor, vendorName, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+
+        // Security check for vendor ownership
+        if (isVendor && vendorName && !hasUnrestrictedAccess) {
+            const check = await query(`SELECT id FROM products WHERE id = $1 AND tenant_id = $2 AND (tags @> ARRAY[$3]::text[] OR created_by = $4)`, [req.params.id, req.tenantId, vendorName, req.user.id]);
+            if (check.rows.length === 0) {
+                return res.status(403).json({ error: 'Access denied: You do not own this product' });
+            }
+
+            // Ensure vendor tag remains
+            if (updateData.tags && Array.isArray(updateData.tags)) {
+                if (!updateData.tags.includes(vendorName)) {
+                    updateData.tags.push(vendorName);
+                }
+            }
+        }
 
         // Stringify attributes if provided
         if (updateData.attributes && typeof updateData.attributes === 'object') {

@@ -44,13 +44,47 @@ async function bootstrap(context) {
                 return res.json({ success: true, cart: null, items: [] });
             }
 
-            // Get cart items
+            // Get cart items with product and vendor details
             const itemsResult = await query(
-                `SELECT * FROM cart_items WHERE cart_id = $1`,
-                [cart.id]
+                `SELECT 
+                    ci.*, 
+                    p.name as product_name, 
+                    p.image_url,
+                    p.created_by as vendor_id,
+                    u.business_name,
+                    u.checkout_style,
+                    u.whatsapp_phone
+                 FROM cart_items ci
+                 JOIN products p ON ci.product_id = p.id
+                 LEFT JOIN users u ON p.created_by = u.id
+                 WHERE ci.cart_id = $1 AND ci.tenant_id = $2`,
+                [cart.id, tenantId]
             );
 
-            res.json({ success: true, cart, items: itemsResult.rows });
+            // Group items by vendor
+            const vendorGroupsMap = new Map();
+            itemsResult.rows.forEach(item => {
+                const vendorId = item.vendor_id || 'platform';
+                if (!vendorGroupsMap.has(vendorId)) {
+                    vendorGroupsMap.set(vendorId, {
+                        vendorId,
+                        businessName: item.business_name || 'Generic',
+                        checkoutStyle: item.checkout_style || 'inhouse',
+                        whatsappPhone: item.whatsapp_phone || null,
+                        items: []
+                    });
+                }
+                vendorGroupsMap.get(vendorId).items.push(item);
+            });
+
+            const vendorGroups = Array.from(vendorGroupsMap.values());
+
+            res.json({
+                success: true,
+                cart,
+                items: itemsResult.rows,
+                vendorGroups
+            });
         }));
 
         // Add item to cart

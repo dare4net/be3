@@ -52,6 +52,12 @@ async function initializeApp() {
     app.use(express.json()); // JSON body parser
     app.use(express.urlencoded({ extended: true })); // URL-encoded body parser
 
+    // DEBUG: Request Logger
+    app.use((req, res, next) => {
+        console.log(`[REQUEST] ${req.method} ${req.url}`);
+        next();
+    });
+
     // Tenant identification first (so rate limiter can use req.tenantId for per-tenant keys and exempt check)
     // PRINCIPLE: Multi-tenant by default
     app.use(tenantIdentifier);

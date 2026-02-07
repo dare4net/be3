@@ -65,7 +65,8 @@ async function bootstrap(context) {
 
     // Assign role to user
     router.post('/:roleId/users', authenticate, authorize('roles.assign'), asyncHandler(async (req, res) => {
-        await Role.assignToUser(req.tenantId, req.body.userId, req.params.roleId);
+        const RoleService = require('./services/RoleService');
+        await RoleService.assignRoleIdToUser(req.tenantId, req.body.userId, req.params.roleId);
         res.json({ success: true });
     }));
 
@@ -75,14 +76,17 @@ async function bootstrap(context) {
         res.json({ success: true });
     }));
 
-    // Get all permissions
-    router.get('/permissions', authenticate, authorize('roles.view'), asyncHandler(async (req, res) => {
-        const permissions = await Permission.findAll();
-        res.json({ success: true, permissions });
-    }));
+    // Link to permission management routes
+    const permissionsRouter = require('./routes/permissions.routes');
+
+    // Mount globally at /api/permissions (Recommended architecture)
+    app.use('/api/permissions', permissionsRouter);
+    console.log('[Roles] Permission management routes registered at /api/permissions');
 
     app.use('/roles', router);
-    console.log('[Roles] Routes registered at /roles');
+    console.log('[Roles] Roles routes registered at /roles');
+
+    return true;
 
     return true;
 }

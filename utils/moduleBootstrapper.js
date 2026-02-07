@@ -114,6 +114,7 @@ class ModuleBootstrapper {
             { name: 'search', path: path.join(__dirname, '../modules/search'), envVar: 'MODULE_SEARCH_ENABLED' },
             { name: 'menus', path: path.join(__dirname, '../modules/menus'), envVar: 'MODULE_MENUS_ENABLED' },
             { name: 'banner', path: path.join(__dirname, '../modules/banner'), envVar: 'MODULE_BANNER_ENABLED' },
+            { name: 'vendor', path: path.join(__dirname, '../modules/vendor'), envVar: 'MODULE_VENDOR_ENABLED' },
         ];
 
         console.log('\n=== Loading Feature Modules ===');

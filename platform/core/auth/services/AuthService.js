@@ -89,21 +89,24 @@ class AuthService {
         await RefreshToken.create(tenantId, user.id, refreshToken, expiresAt);
 
         // Emit event
-        // Emit event
         eventBus.emitEvent('user.logged_in', {
             tenantId,
             userId: user.id,
             email: user.email,
         });
 
-        // Get Permissions (add RBAC context)
-        const permissions = await Permission.getUserPermissions(tenantId, user.id);
+        // Get comprehensive permission context (permissions, roles, category access)
+        const PermissionService = require('../../roles/services/PermissionService');
+        const permissionContext = await PermissionService.getUserPermissionContext(tenantId, user.id);
 
         return {
             user: this._sanitizeUser(user),
             accessToken,
             refreshToken,
-            permissions,
+            permissions: permissionContext.permissions,
+            roles: permissionContext.roles,
+            allowedCategories: permissionContext.categoryAccess.allowedCategories,
+            hasUnrestrictedCategoryAccess: permissionContext.categoryAccess.hasUnrestrictedAccess
         };
     }
 
@@ -286,6 +289,11 @@ class AuthService {
 
         if (updates.first_name !== undefined) allowedUpdates.first_name = updates.first_name;
         if (updates.last_name !== undefined) allowedUpdates.last_name = updates.last_name;
+        if (updates.business_name !== undefined) allowedUpdates.business_name = updates.business_name;
+        if (updates.business_thumbnail !== undefined) allowedUpdates.business_thumbnail = updates.business_thumbnail;
+        if (updates.business_backdrop !== undefined) allowedUpdates.business_backdrop = updates.business_backdrop;
+        if (updates.checkout_style !== undefined) allowedUpdates.checkout_style = updates.checkout_style;
+        if (updates.whatsapp_phone !== undefined) allowedUpdates.whatsapp_phone = updates.whatsapp_phone;
 
         // Handle password update
         if (updates.password) {
@@ -297,6 +305,19 @@ class AuthService {
 
         // Use User.update
         const updatedUser = await User.update(tenantId, userId, allowedUpdates);
+
+        // Hook: Update vendor context if business_name, business_thumbnail or business_backdrop changed
+        if (updates.business_name !== undefined || updates.business_thumbnail !== undefined || updates.business_backdrop !== undefined) {
+            const eventBus = require('../../../events/EventBus');
+            eventBus.emitEvent('user.profile_updated', {
+                tenantId,
+                userId,
+                businessName: updates.business_name,
+                businessThumbnail: updates.business_thumbnail,
+                businessBackdrop: updates.business_backdrop
+            });
+        }
+
         return this._sanitizeUser(updatedUser);
     }
 

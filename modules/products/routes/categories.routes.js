@@ -72,16 +72,65 @@ function registerCategoryRoutes(router, eventBus) {
     // List categories (Admin - Authenticated)
     // Must be before /categories/:id to prevent conflict
     router.get('/categories/all', authenticate, asyncHandler(async (req, res) => {
-        // Simple fetch all (flat list)
-        const result = await query(
-            `SELECT * FROM categories WHERE tenant_id = $1 ORDER BY name`,
-            [req.tenantId]
-        );
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { hasUnrestrictedAccess, allowedCategories } = await PermissionService.getUserCategoryAccess(req.tenantId, req.user.id);
+
+        let sql = `SELECT * FROM categories WHERE tenant_id = $1`;
+        const params = [req.tenantId];
+
+        if (!hasUnrestrictedAccess) {
+            sql += ` AND id = ANY($2)`;
+            params.push(allowedCategories);
+        }
+
+        sql += ` ORDER BY name`;
+
+        const result = await query(sql, params);
         res.json({ success: true, categories: result.rows });
     }));
 
     // Get top-level categories only (Admin - for hierarchical navigation)
     router.get('/categories/top-level', authenticate, asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { hasUnrestrictedAccess, allowedCategories } = await PermissionService.getUserCategoryAccess(req.tenantId, req.user.id);
+
+        const params = [req.tenantId];
+        let whereClause = `c.tenant_id = $1 AND c.parent_id IS NULL`;
+
+        // If restricted, we need to be careful. 
+        // A "top level" category for a restricted user might be a subcategory in the global tree.
+        // OR we simply show only the allowed categories that happen to be top level.
+        // Usually, if a user is assigned a subcategory, they should see it as a "root" in their view or see the path to it?
+        // For simplicity and security: Show only allowed categories that are top-level. 
+        // If a user is assigned ONLY a subcategory, this endpoint might return nothing if we strict filter for parent_id IS NULL.
+        // BETTER APPROACH: Return allowed categories that have NO allowed parent.
+        // But for now, let's just filter the standard top-level query.
+
+        if (!hasUnrestrictedAccess) {
+            // If user is restricted, we'll just return the logical roots of their allowed tree
+            // i.e. categories they have access to where they DON'T have access to the parent
+            // logic: select * from categories where id IN allowed AND (parent_id IS NULL OR parent_id NOT IN allowed)
+
+            // Dynamic SQL is safer here
+            const result = await query(
+                `SELECT 
+                    c.id, c.name, c.slug, c.description, c.image_url, c.is_active,
+                    COUNT(DISTINCT pc.product_id)::int as product_count,
+                    COUNT(DISTINCT child.id)::int as subcategory_count,
+                    EXISTS(SELECT 1 FROM categories WHERE parent_id = c.id AND tenant_id = $1) as has_children
+                FROM categories c
+                LEFT JOIN product_categories pc ON c.id = pc.category_id
+                LEFT JOIN categories child ON child.parent_id = c.id AND child.tenant_id = $1
+                WHERE c.tenant_id = $1 
+                AND c.id = ANY($2)
+                AND (c.parent_id IS NULL OR NOT (c.parent_id = ANY($2)))
+                GROUP BY c.id
+                ORDER BY c.name ASC`,
+                [req.tenantId, allowedCategories]
+            );
+            return res.json({ success: true, categories: result.rows });
+        }
+
         const sql = `
             SELECT 
                 c.id, c.name, c.slug, c.description, c.image_url, c.is_active,
@@ -101,6 +150,25 @@ function registerCategoryRoutes(router, eventBus) {
 
     // Get children of a specific category (Admin - for hierarchical navigation)
     router.get('/categories/:id/children', authenticate, asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { hasUnrestrictedAccess, allowedCategories } = await PermissionService.getUserCategoryAccess(req.tenantId, req.user.id);
+
+        // Security check: Can user view the parent?
+        if (!hasUnrestrictedAccess && !allowedCategories.some(id => id == req.params.id)) {
+            // If user can't see parent, they shouldn't be asking for children, but maybe they have access to children?
+            // Usually tree navigation implies access to node.
+            // For strict security: deny.
+            return res.status(403).json({ error: 'Access denied to this category' });
+        }
+
+        const params = [req.tenantId, req.params.id];
+        let filterClause = "";
+
+        if (!hasUnrestrictedAccess) {
+            filterClause = `AND c.id = ANY($3)`;
+            params.push(allowedCategories);
+        }
+
         const sql = `
             SELECT 
                 c.id, c.name, c.slug, c.description, c.image_url, c.parent_id, c.is_active,
@@ -111,16 +179,24 @@ function registerCategoryRoutes(router, eventBus) {
             LEFT JOIN product_categories pc ON c.id = pc.category_id
             LEFT JOIN categories child ON child.parent_id = c.id AND child.tenant_id = $1
             WHERE c.tenant_id = $1 AND c.parent_id = $2
+            ${filterClause}
             GROUP BY c.id
             ORDER BY c.name ASC
         `;
-        const result = await query(sql, [req.tenantId, req.params.id]);
+        const result = await query(sql, params);
         res.json({ success: true, categories: result.rows });
     }));
 
     // Get comprehensive category details (Admin - for detail panel)
     router.get('/categories/:id/details', authenticate, asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
         const categoryId = req.params.id;
+
+        // Permission Check
+        const { hasUnrestrictedAccess, allowedCategories } = await PermissionService.getUserCategoryAccess(req.tenantId, req.user.id);
+        if (!hasUnrestrictedAccess && !allowedCategories.some(id => id == categoryId)) {
+            return res.status(403).json({ error: 'Access denied to this category' });
+        }
 
         try {
             // 1. Get basic category info
@@ -148,7 +224,7 @@ function registerCategoryRoutes(router, eventBus) {
                     COUNT(DISTINCT CASE WHEN pc.category_id = $1 THEN pc.product_id END)::int as direct_product_count,
                     COUNT(DISTINCT pc.product_id)::int as total_product_count
                 FROM category_tree ct
-                LEFT JOIN product_categories pc ON pc.category_id = ct.id
+                    LEFT JOIN product_categories pc ON pc.category_id = ct.id
             `;
             const countRes = await query(productCountSql, [categoryId, req.tenantId]);
             category.direct_product_count = countRes.rows[0]?.direct_product_count || 0;
@@ -254,7 +330,14 @@ function registerCategoryRoutes(router, eventBus) {
 
     // Get category details for Admin Product Editor (Lightweight + Attributes)
     router.get('/categories/:id/admin', authenticate, asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
         const categoryId = req.params.id;
+
+        // Permission Check
+        const { hasUnrestrictedAccess, allowedCategories } = await PermissionService.getUserCategoryAccess(req.tenantId, req.user.id);
+        if (!hasUnrestrictedAccess && !allowedCategories.some(id => id == categoryId)) {
+            return res.status(403).json({ error: 'Access denied to this category' });
+        }
 
         try {
             // 1. Get basic category info
@@ -334,7 +417,14 @@ function registerCategoryRoutes(router, eventBus) {
 
     // Get paginated products for a category (including subcategories)
     router.get('/categories/:id/products', authenticate, asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
         const categoryId = req.params.id;
+
+        // Permission Check
+        const { hasUnrestrictedAccess, allowedCategories } = await PermissionService.getUserCategoryAccess(req.tenantId, req.user.id);
+        if (!hasUnrestrictedAccess && !allowedCategories.some(id => id == categoryId)) {
+            return res.status(403).json({ error: 'Access denied to this category' });
+        }
         const page = parseInt(req.query.page) || 1;
         const perPage = parseInt(req.query.per_page) || 20;
         const offset = (page - 1) * perPage;
