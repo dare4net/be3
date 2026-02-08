@@ -130,9 +130,9 @@ router.post('/signup', asyncHandler(async (req, res) => {
         });
         console.log('[Signup] User created:', user.id, user.email);
 
-        // Step 5: Assign Moderator Role to Personal User
-        await RoleService.assignRoleToUser(tenant.id, user.id, 'Moderator');
-        console.log('✓ Personal User assigned Moderator role');
+        // Step 5: Assign Store Manager Role to Personal User
+        await RoleService.assignRoleToUser(tenant.id, user.id, 'Store Manager');
+        console.log('✓ Personal User assigned Store Manager role');
 
         // Step 6: Generate tokens and auto-login as Personal User
         console.log('[Signup] Step 6: Generating tokens...');

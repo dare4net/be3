@@ -79,7 +79,7 @@ class SlugResolver {
 
                         return {
                             category: cat,
-                            attribute: { code: attr.code, label: attr.label, type: attr.type },
+                            attribute: { id: attr.id, code: attr.code, label: attr.label, type: attr.type },
                             clause,
                             title,
                             filter: `category_id=${cat.id}&${filterKey}=${encodeURIComponent(String(filterValue))}`,

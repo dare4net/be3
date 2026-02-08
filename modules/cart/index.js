@@ -118,19 +118,41 @@ async function bootstrap(context) {
                 return res.status(400).json({ error: 'Session ID required for guest cart' });
             }
 
-            // Add item
-            const item = await tenantInsert('cart_items', tenantId, {
-                cart_id: cart.id,
-                product_id,
-                variant_id,
-                quantity,
-                price,
-            });
+            // Check if item already exists in cart
+            const existingItemResult = await query(
+                `SELECT id, quantity FROM cart_items 
+                 WHERE cart_id = $1 AND product_id = $2 AND (variant_id = $3 OR (variant_id IS NULL AND $3 IS NULL)) AND tenant_id = $4`,
+                [cart.id, product_id, variant_id, tenantId]
+            );
+
+            let item;
+            if (existingItemResult.rows.length > 0) {
+                // Update existing item
+                const existingItem = existingItemResult.rows[0];
+                const newQuantity = (existingItem.quantity || 0) + (quantity || 1);
+                const updateResult = await query(
+                    `UPDATE cart_items SET quantity = $1, updated_at = NOW() 
+                     WHERE id = $2 RETURNING *`,
+                    [newQuantity, existingItem.id]
+                );
+                item = updateResult.rows[0];
+            } else {
+                // Add new item
+                item = await tenantInsert('cart_items', tenantId, {
+                    cart_id: cart.id,
+                    product_id,
+                    variant_id,
+                    quantity,
+                    price,
+                });
+            }
 
             eventBus.emitEvent('cart.item_added', {
                 tenantId,
                 cartId: cart.id,
                 productId: product_id,
+                quantity: quantity || 1,
+                is_increment: existingItemResult.rows.length > 0
             });
 
             res.status(201).json({ success: true, item });

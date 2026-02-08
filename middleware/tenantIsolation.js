@@ -28,11 +28,6 @@ async function tenantIdentifier(req, res, next) {
         // Check if this is a public route
         const isPublicRoute = publicRoutes.some(route => req.path.startsWith(route));
 
-        // Log for debugging
-        if (req.path.includes('admin')) {
-            console.log('[TenantIsolation] Admin route check:', req.path, 'isPublic:', isPublicRoute);
-        }
-
         if (isPublicRoute) {
             return next();
         }

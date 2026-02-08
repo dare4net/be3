@@ -157,7 +157,8 @@ function registerProductRoutes(router, eventBus) {
             rules: req.body.rules ? JSON.stringify(req.body.rules) : '[]',
             manual_product_ids: req.body.manual_product_ids || [],
             excluded_product_ids: req.body.excluded_product_ids || [],
-            is_active: req.body.is_active !== undefined ? req.body.is_active : true
+            is_active: req.body.is_active !== undefined ? req.body.is_active : true,
+            created_by: req.user.id
         });
 
         eventBus.emitEvent('collection.created', {

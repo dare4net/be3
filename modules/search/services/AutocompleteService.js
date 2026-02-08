@@ -302,6 +302,7 @@ class AutocompleteService {
                 text: item.suggestion,
                 type: 'content',
                 content_type: item.content_type,
+                id: item.content_id, // Standardize ID field
                 content_id: item.content_id,
                 image_url: item.metadata?.image_url || null,
                 price: item.metadata?.price || null,

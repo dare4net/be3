@@ -1,0 +1,153 @@
+[
+  {
+    "id": "a15ebfba-3bc6-4819-867c-ae57b74ce4b6",
+    "code": "j",
+    "label": "storage",
+    "clauses": [
+      {
+        "name": "u",
+        "label": "under 1000",
+        "value": "1000",
+        "prefix": "minimal storage",
+        "suffix": "for students",
+        "operator": "<=",
+        "seo_template": "",
+        "excluded_category_ids": [
+          "95bdfdb6-47ee-4faf-8f92-d3887ad4cf6b"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "7b125323-a6eb-47a5-9c5d-3fd98ca31dca",
+    "code": "p",
+    "label": "price tier",
+    "clauses": [
+      {
+        "name": "p",
+        "label": "affordable",
+        "value": [
+          "budget",
+          "midrange"
+        ],
+        "prefix": "cheap",
+        "suffix": "",
+        "operator": "LIKE",
+        "seo_template": "",
+        "excluded_category_ids": [
+          "d64b240e-3146-4386-a98a-418057f66614",
+          "349f5c65-17ea-4de0-ba85-6079bbca62ab",
+          "2ca7dc14-667b-4050-adbf-8ef3615ec1a9",
+          "3e010193-84c6-4a1b-8e8d-77f63fdec648"
+        ]
+      },
+      {
+        "name": "e",
+        "label": "Costly",
+        "value": [
+          "premium",
+          "flagship"
+        ],
+        "prefix": "expensive",
+        "suffix": "",
+        "operator": "LIKE",
+        "seo_template": "",
+        "excluded_category_ids": []
+      }
+    ]
+  },
+  {
+    "id": "2eaf76d8-8872-46f3-8f96-e56e36b9a32c",
+    "code": "b",
+    "label": "brand",
+    "clauses": [
+      {
+        "name": "a",
+        "label": "apple product",
+        "value": [
+          "apple"
+        ],
+        "prefix": "",
+        "suffix": "by apple",
+        "operator": "LIKE",
+        "seo_template": "",
+        "excluded_category_ids": [
+          "5cba5153-0772-450a-b8b7-8a4fa532ecc1",
+          "63173747-a5b2-4cdb-942c-032a122631ad",
+          "0534dfd3-7f1b-47bb-8891-c0bf6033425e",
+          "d64b240e-3146-4386-a98a-418057f66614",
+          "349f5c65-17ea-4de0-ba85-6079bbca62ab",
+          "2ca7dc14-667b-4050-adbf-8ef3615ec1a9",
+          "3e010193-84c6-4a1b-8e8d-77f63fdec648"
+        ]
+      },
+      {
+        "name": "i",
+        "label": "infinix product",
+        "value": [
+          "infinix"
+        ],
+        "prefix": "",
+        "suffix": "by infinix",
+        "operator": "LIKE",
+        "seo_template": "",
+        "excluded_category_ids": []
+      },
+      {
+        "name": "m",
+        "label": "Microsoft product",
+        "value": [
+          "microsoft"
+        ],
+        "prefix": "Microsoft",
+        "suffix": "",
+        "operator": "LIKE",
+        "seo_template": "",
+        "excluded_category_ids": []
+      }
+    ]
+  },
+  {
+    "id": "b078374b-efeb-412e-8a46-bc6c383fb5e8",
+    "code": "c",
+    "label": "color",
+    "clauses": [
+      {
+        "name": "v",
+        "label": "vibrant color",
+        "value": [
+          "red",
+          "green",
+          "blue",
+          "yellow",
+          "pink",
+          "grey",
+          "white"
+        ],
+        "prefix": "vibrant",
+        "suffix": "for ladies",
+        "operator": "=",
+        "seo_template": ""
+      }
+    ]
+  },
+  {
+    "id": "4d7af189-7f57-405a-8cc3-d9e87eadacdc",
+    "code": "q",
+    "label": "quality",
+    "clauses": [
+      {
+        "name": "t",
+        "label": "top-grade",
+        "value": [
+          "Grade A"
+        ],
+        "prefix": "High quality",
+        "suffix": "",
+        "operator": "=",
+        "seo_template": "",
+        "excluded_category_ids": []
+      }
+    ]
+  }
+]
