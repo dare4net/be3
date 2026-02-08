@@ -29,7 +29,6 @@ async function bootstrap(context) {
             if (activeLayout) {
                 targetLayoutId = activeLayout.id;
             } else {
-                // Fallback to 'Default' if no active layout found
                 const defaultLayout = await Layout.findDefault(req.tenantId);
                 targetLayoutId = defaultLayout ? defaultLayout.id : null;
             }
@@ -46,7 +45,52 @@ async function bootstrap(context) {
             targetLayoutId,
             includeInactive === 'true'
         );
-        res.json({ success: true, widgets, layoutId: targetLayoutId });
+
+        // Waterfall Killer: Server-Side Master Plan Injection
+        let randomizationPlan = null;
+        const randomizedWidgets = widgets
+            .filter(w => w.config?.randomize?.enabled)
+            .map(w => ({
+                id: w.id,
+                intent: {
+                    allowedTypes: w.config.randomize.allowedTypes || (w.widget_type.includes('category') ? ['category'] : ['category', 'collection', 'clause']),
+                    count: w.config.randomize.count || (w.widget_type.includes('category') ? (w.config.randomCount || 6) : 1),
+                    sourceType: w.config.sourceType,
+                    parentCategoryId: w.config.parentCategoryId,
+                    manualCategoryIds: w.config.manualCategoryIds
+                },
+                config: w.config
+            }));
+
+        if (randomizedWidgets.length > 0) {
+            try {
+                const RandomizationService = require('../search/services/RandomizationService');
+                const results = await RandomizationService.getSnapshotPlan(req.tenantId, page, randomizedWidgets);
+
+                // Convert to map for easy frontend consumption
+                randomizationPlan = {};
+                results.forEach(res => {
+                    const sourceWidget = randomizedWidgets.find(w => w.id === res.widgetId);
+                    const rawFreq = sourceWidget?.config?.randomize?.frequency || sourceWidget?.config?.randomize?.interval;
+                    const frequency = rawFreq === 'page_load' ? 'always' : (rawFreq || 'always');
+
+                    randomizationPlan[res.widgetId] = {
+                        ...res,
+                        frequency,
+                        _timestamp: Date.now()
+                    };
+                });
+            } catch (err) {
+                console.error('[PageBuilder] Failed to inject randomization plan:', err);
+            }
+        }
+
+        res.json({
+            success: true,
+            widgets,
+            layoutId: targetLayoutId,
+            randomizationPlan
+        });
     }));
 
     // Get single widget (PUBLIC - for storefront display)

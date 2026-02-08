@@ -5,6 +5,7 @@
  */
 
 const { query } = require('../../../config/database');
+const { getRandomizationSnapshot, setRandomizationSnapshot, isRedisHealthy } = require('../../../config/redis');
 const SearchService = require('./SearchService');
 const CollectionService = require('../../products/services/CollectionService');
 
@@ -14,12 +15,124 @@ class RandomizationService {
     }
 
     /**
+     * Get or create a snapshot plan for a specific tenant and page
+     */
+    async getSnapshotPlan(tenantId, pageHandle, widgets) {
+        const minuteWindow = 15;
+        const bucketTimestamp = Math.floor(Date.now() / (minuteWindow * 60 * 1000));
+        const bucketKey = `15m_${bucketTimestamp}`;
+        const prevBucketKey = `15m_${bucketTimestamp - 1}`;
+
+        console.log(`[RandomizationService] Checking snapshot for ${tenantId}/${pageHandle} bucket ${bucketKey}`);
+
+        try {
+            // 1. Current Bucket (Redis)
+            const redisPlan = await getRandomizationSnapshot(tenantId, pageHandle, bucketKey);
+            if (redisPlan) {
+                console.log(`[RandomizationService] Redis HIT for ${tenantId}/${pageHandle}`);
+                return redisPlan;
+            }
+
+            // 2. Current Bucket (SQL)
+            const existing = await query(
+                'SELECT plan_data FROM randomization_snapshots WHERE tenant_id = $1 AND page_handle = $2 AND bucket_key = $3',
+                [tenantId, pageHandle, bucketKey]
+            );
+
+            if (existing.rows.length > 0) {
+                console.log(`[RandomizationService] SQL HIT for ${tenantId}/${pageHandle}. Warm-loading Redis...`);
+                const planData = this.parsePlanData(existing.rows[0].plan_data);
+                setRandomizationSnapshot(tenantId, pageHandle, bucketKey, planData);
+                return planData;
+            }
+
+            // 3. Stale-While-Revalidate
+            console.log(`[RandomizationService] Current snapshot MISS. Searching for stale snapshot (${prevBucketKey})...`);
+
+            const staleRedisPlan = await getRandomizationSnapshot(tenantId, pageHandle, prevBucketKey);
+            let stalePlan = staleRedisPlan;
+
+            if (!stalePlan) {
+                const prevExisting = await query(
+                    'SELECT plan_data FROM randomization_snapshots WHERE tenant_id = $1 AND page_handle = $2 AND bucket_key = $3',
+                    [tenantId, pageHandle, prevBucketKey]
+                );
+                if (prevExisting.rows.length > 0) {
+                    stalePlan = this.parsePlanData(prevExisting.rows[0].plan_data);
+                }
+            }
+
+            if (stalePlan) {
+                console.log(`[RandomizationService] SWR TRIGGERED: Serving stale snapshot for ${tenantId}/${pageHandle}`);
+                // Fire-and-forget
+                this.revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets).catch(e => {
+                    console.error('[RandomizationService] Background revalidation fail', e);
+                });
+                return stalePlan;
+            }
+
+            // 4. Fresh Resolution
+            console.log(`[RandomizationService] Absolute MISS for ${tenantId}/${pageHandle}. Resolving fresh...`);
+            const plan = await this.resolveMasterPlan(tenantId, widgets);
+            await this.persistSnapshot(tenantId, pageHandle, bucketKey, plan);
+            return plan;
+
+        } catch (error) {
+            console.error('[RandomizationService] Snapshot management failed', error);
+            return this.resolveMasterPlan(tenantId, widgets);
+        }
+    }
+
+    parsePlanData(data) {
+        if (!data) return null;
+        if (typeof data === 'string') {
+            try { return JSON.parse(data); } catch (e) { return null; }
+        }
+        return data;
+    }
+
+    async persistSnapshot(tenantId, pageHandle, bucketKey, plan) {
+        try {
+            await Promise.all([
+                query(
+                    `INSERT INTO randomization_snapshots (tenant_id, page_handle, bucket_key, plan_data)
+                     VALUES ($1, $2, $3, $4)
+                     ON CONFLICT (tenant_id, page_handle, bucket_key) DO UPDATE SET plan_data = $4`,
+                    [tenantId, pageHandle, bucketKey, JSON.stringify(plan)]
+                ),
+                setRandomizationSnapshot(tenantId, pageHandle, bucketKey, plan)
+            ]);
+
+            if (Math.random() < 0.1) {
+                query(
+                    'DELETE FROM randomization_snapshots WHERE tenant_id = $1 AND page_handle = $2 AND created_at < NOW() - INTERVAL \'3 hours\'',
+                    [tenantId, pageHandle]
+                ).catch(e => { });
+            }
+            console.log(`[RandomizationService] Persist success for ${bucketKey}`);
+        } catch (e) {
+            console.error('[RandomizationService] Persist failed', e);
+        }
+    }
+
+    async revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets) {
+        try {
+            console.log(`[RandomizationService] Background resolution starting for ${bucketKey}...`);
+            const plan = await this.resolveMasterPlan(tenantId, widgets);
+            await this.persistSnapshot(tenantId, pageHandle, bucketKey, plan);
+            console.log(`[RandomizationService] Background revalidation complete for ${bucketKey}`);
+        } catch (err) {
+            console.error('[RandomizationService] Background task failed', err);
+        }
+    }
+
+    /**
      * Resolve a master plan for a set of widget intents
      * @param {string} tenantId 
      * @param {Array} widgets - Array of { id, intent, config }
      */
     async resolveMasterPlan(tenantId, widgets) {
-        console.log(`[RandomizationService] Resolving plan for ${widgets.length} widgets`);
+        console.log(`[RandomizationService] Resolving fresh plan for ${widgets.length} widgets`);
 
         // 1. Gather all pools with product counts
         const pools = await this.getFreshPools(tenantId);
@@ -50,7 +163,7 @@ class RandomizationService {
     async getFreshPools(tenantId) {
         // Categories with products (including descendants)
         const categoriesRes = await query(
-            `SELECT c.id, c.name, c.slug, c.image_url
+            `SELECT c.id, c.name, c.slug, c.image_url, c.parent_id
              FROM categories c
              WHERE c.tenant_id = $1 AND c.is_active = true
              AND EXISTS (
@@ -101,14 +214,22 @@ class RandomizationService {
     async resolveWidget(tenantId, widget, pools, used) {
         const { intent, config } = widget;
         const allowedTypes = intent.allowedTypes || ['category', 'collection', 'clause'];
-        const count = intent.count || 1;
+        const count = intent.count || intent.randomCount || 1;
 
         const selections = [];
 
         for (let i = 0; i < count; i++) {
             // Filter out types that don't have enough remaining unique items
             const viableTypes = allowedTypes.filter(type => {
-                if (type === 'category') return pools.categories.some(c => !used.categories.has(c.id));
+                if (type === 'category') {
+                    let cats = pools.categories;
+                    if (intent.sourceType === 'top-level') cats = cats.filter(c => !c.parent_id);
+                    else if (intent.sourceType === 'subcategories' && intent.parentCategoryId) cats = cats.filter(c => c.parent_id == intent.parentCategoryId);
+                    else if (intent.sourceType === 'all-subcategories') cats = cats.filter(c => c.parent_id);
+                    else if (intent.sourceType === 'manual' && intent.manualCategoryIds?.length > 0) cats = cats.filter(c => intent.manualCategoryIds.map(String).includes(String(c.id)));
+
+                    return cats.some(c => !used.categories.has(c.id));
+                }
                 if (type === 'collection') return pools.collections.some(c => !used.collections.has(c.id));
                 if (type === 'clause') return pools.clauses.some(c => !used.clauses.has(`${c.attribute.code}:${c.clause.name}`));
                 return false;
@@ -132,50 +253,98 @@ class RandomizationService {
             let selection = null;
 
             if (selectedType === 'category') {
-                const available = pools.categories.filter(c => !used.categories.has(c.id));
+                let available = pools.categories;
+
+                // Rule: allowedCategories (if any)
+                if (config.randomize?.allowedCategories?.length > 0) {
+                    const allowedIds = config.randomize.allowedCategories.map(String);
+                    available = available.filter(c => allowedIds.includes(String(c.id)));
+                }
+
+                if (intent.sourceType === 'top-level') available = available.filter(c => !c.parent_id);
+                else if (intent.sourceType === 'subcategories' && intent.parentCategoryId) available = available.filter(c => c.parent_id == intent.parentCategoryId);
+                else if (intent.sourceType === 'all-subcategories') available = available.filter(c => c.parent_id);
+                else if (intent.sourceType === 'manual' && intent.manualCategoryIds?.length > 0) available = available.filter(c => intent.manualCategoryIds.map(String).includes(String(c.id)));
+
+                available = available.filter(c => !used.categories.has(c.id));
                 selection = available[Math.floor(Math.random() * available.length)];
                 if (selection) used.categories.add(selection.id);
             } else if (selectedType === 'collection') {
-                const available = pools.collections.filter(c => !used.collections.has(c.id));
+                let available = pools.collections;
+
+                // Rule: allowedCollections (if any)
+                if (config.randomize?.allowedCollections?.length > 0) {
+                    const allowedIds = config.randomize.allowedCollections.map(String);
+                    available = available.filter(c => allowedIds.includes(String(c.id)));
+                }
+
+                available = available.filter(c => !used.collections.has(c.id));
                 selection = available[Math.floor(Math.random() * available.length)];
                 if (selection) used.collections.add(selection.id);
             } else if (selectedType === 'clause') {
-                const available = pools.clauses.filter(c => !used.clauses.has(`${c.attribute.code}:${c.clause.name}`));
+                let available = pools.clauses;
+
+                // Rule: allowedAttributes (if any)
+                if (config.randomize?.allowedAttributes?.length > 0) {
+                    const allowedCodes = config.randomize.allowedAttributes.map(String);
+                    available = available.filter(c => allowedCodes.includes(String(c.attribute.code)));
+                }
+
+                available = available.filter(c => !used.clauses.has(`${c.attribute.code}:${c.clause.name}`));
                 selection = available[Math.floor(Math.random() * available.length)];
                 if (selection) used.clauses.add(`${selection.attribute.code}:${selection.clause.name}`);
             }
 
             if (selection) {
-                const meta = await this.hydrateSelectionMeta(tenantId, selectedType, selection, config);
+                const meta = await this.hydrateSelectionMeta(tenantId, selectedType, selection, intent);
 
                 // Randomize Sort Order if enabled
                 let resolvedSort = config.sort || 'relevance';
                 if (config.randomize?.randomizeSort && config.randomize?.allowedSorts?.length > 0) {
-                    const allowed = config.randomize.allowedSorts.filter(s => s !== 'random'); // Avoid 'random' keyword recursion if present
+                    const allowed = config.randomize.allowedSorts.filter(s => s !== 'random');
                     if (allowed.length > 0) {
                         resolvedSort = allowed[Math.floor(Math.random() * allowed.length)];
                     }
+                }
+
+                // Randomize Limit if enabled
+                let resolvedLimit = config.limit || 8;
+                if (config.randomize?.randomizeLimit && config.randomize?.limitRange) {
+                    const { min = 4, max = 12 } = config.randomize.limitRange;
+                    resolvedLimit = Math.floor(Math.random() * (max - min + 1)) + min;
+                }
+
+                // Randomize Featured if enabled
+                let resolvedFeatured = config.showFeaturedOnly ?? false;
+                if (config.randomize?.randomizeFeatured) {
+                    resolvedFeatured = Math.random() > 0.5;
                 }
 
                 selections.push({
                     resolvedType: selectedType,
                     selection,
                     meta,
-                    resolvedSort
+                    resolvedSort,
+                    resolvedLimit,
+                    resolvedFeatured
                 });
             }
         }
 
         if (selections.length === 0) {
-            return { resolvedType: 'all', selection: null, meta: null };
+            return { widgetId: widget.id, resolvedType: 'all', selection: null, meta: null };
         }
 
         // Maintain compatibility: if count is 1, return flat, else return the selections array wrapper
         if (count === 1) {
-            return selections[0];
+            return {
+                widgetId: widget.id,
+                ...selections[0]
+            };
         }
 
         return {
+            widgetId: widget.id,
             multiple: true,
             selections
         };
@@ -184,7 +353,7 @@ class RandomizationService {
     /**
      * Build title, filters, and pretty URLs for the selection
      */
-    async hydrateSelectionMeta(tenantId, type, item, config) {
+    async hydrateSelectionMeta(tenantId, type, item, intent = {}) {
         console.log(`[RandomizationService] Hydrating meta for type: ${type}`);
 
         if (type === 'category') {
@@ -208,7 +377,7 @@ class RandomizationService {
             console.log(`[RandomizationService] Clause hydration - attribute: ${attribute.code}, clause: ${clause.name}`);
 
             // Resolve random eligible category for the clause
-            const eligibleCats = await this.getEligibleCategoriesForClause(tenantId, attribute.code, clause);
+            const eligibleCats = await this.getEligibleCategoriesForClause(tenantId, attribute.code, clause, intent);
             console.log(`[RandomizationService] Found ${eligibleCats.length} eligible categories for clause`);
 
             const pickedCat = eligibleCats[Math.floor(Math.random() * eligibleCats.length)];
@@ -243,7 +412,7 @@ class RandomizationService {
         return null;
     }
 
-    async getEligibleCategoriesForClause(tenantId, attributeCode, clause) {
+    async getEligibleCategoriesForClause(tenantId, attributeCode, clause, intent = {}) {
         console.log(`[RandomizationService] getEligibleCategoriesForClause called with:`, {
             tenantId,
             attributeCode,
@@ -274,7 +443,7 @@ class RandomizationService {
                 SELECT c.id as category_id, ea.attribute_id, c.tenant_id
                 FROM categories c JOIN effective_attrs ea ON c.parent_id = ea.category_id WHERE c.tenant_id = ea.tenant_id
             )
-            SELECT DISTINCT c.id, c.name, c.slug, c.image_url
+            SELECT DISTINCT c.id, c.name, c.slug, c.image_url, c.parent_id
             FROM effective_attrs ea
             JOIN attributes a ON a.id = ea.attribute_id AND a.tenant_id = ea.tenant_id
             JOIN categories c ON c.id = ea.category_id AND c.tenant_id = ea.tenant_id
@@ -296,7 +465,15 @@ class RandomizationService {
         const filtered = res.rows.filter(c => !excluded.includes(String(c.id)));
         console.log(`[RandomizationService] After exclusion filter: ${filtered.length} categories`);
 
-        return filtered;
+        // Apply intent constraints
+        let final = filtered;
+        if (intent.sourceType === 'top-level') final = final.filter(c => !c.parent_id);
+        else if (intent.sourceType === 'subcategories' && intent.parentCategoryId) final = final.filter(c => c.parent_id == intent.parentCategoryId);
+        else if (intent.sourceType === 'all-subcategories') final = final.filter(c => c.parent_id);
+        else if (intent.sourceType === 'manual' && intent.manualCategoryIds?.length > 0) final = final.filter(c => intent.manualCategoryIds.map(String).includes(String(c.id)));
+
+        console.log(`[RandomizationService] After intent filter: ${final.length} categories`);
+        return final;
     }
 }
 

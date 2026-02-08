@@ -270,7 +270,7 @@ function registerSearchRoutes(router) {
 
     // Master Plan Randomization Resolver
     router.post('/randomization/resolve', optionalAuth, asyncHandler(async (req, res) => {
-        const { widgets } = req.body;
+        const { widgets, pageHandle = 'home' } = req.body;
 
         if (!widgets || !Array.isArray(widgets)) {
             return res.status(400).json({
@@ -279,7 +279,63 @@ function registerSearchRoutes(router) {
             });
         }
 
-        const results = await RandomizationService.resolveMasterPlan(req.tenantId, widgets);
+        const results = await RandomizationService.getSnapshotPlan(req.tenantId, pageHandle, widgets);
+
+        res.json({
+            success: true,
+            results
+        });
+    }));
+
+    /**
+     * Batch Product Resolution API
+     * Executes parallel searches for multiple randomized widgets in one call
+     */
+    router.post('/randomization/batch-products', optionalAuth, asyncHandler(async (req, res) => {
+        const { widgets } = req.body; // Array of { widgetId, filter, sort, perPage }
+        const searchService = new SearchService();
+
+        if (!widgets || !Array.isArray(widgets)) {
+            return res.status(400).json({ success: false, error: 'widgets array is required' });
+        }
+
+        const results = {};
+        const searchPromises = widgets.map(async (w) => {
+            try {
+                const filters = {};
+                // Parse "category_id=123&attribute.color=red" string into filters object
+                if (w.filter) {
+                    const params = new URLSearchParams(w.filter);
+                    for (const [key, value] of params.entries()) {
+                        filters[key] = value;
+                    }
+                }
+
+                // Merge enriched filters object if provided
+                if (w.filters && typeof w.filters === 'object') {
+                    Object.assign(filters, w.filters);
+                }
+
+                const searchRes = await searchService.search(req.tenantId, {
+                    query: '',
+                    contentTypes: ['product'],
+                    filters,
+                    sort: filters.sort || w.sort || 'relevance',
+                    page: 1,
+                    perPage: parseInt(filters.limit) || parseInt(w.perPage) || 12
+                });
+
+                results[w.widgetId] = {
+                    results: searchRes.results,
+                    pagination: searchRes.pagination
+                };
+            } catch (err) {
+                console.error(`[Search] Batch resolution failed for widget ${w.widgetId}:`, err);
+                results[w.widgetId] = { error: 'Failed to resolve products', results: [] };
+            }
+        });
+
+        await Promise.all(searchPromises);
 
         res.json({
             success: true,

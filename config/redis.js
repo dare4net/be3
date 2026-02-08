@@ -212,6 +212,27 @@ async function clearRateLimitForTenant(tenantId) {
     }, 0);
 }
 
+async function getRandomizationSnapshot(tenantId, pageHandle, bucketKey) {
+    return safeCall(async () => {
+        const key = `randomization:snapshot:${tenantId}:${pageHandle}:${bucketKey}`;
+        const cached = await redisClient.get(key);
+        if (!cached) return null;
+        return typeof cached === 'string' ? JSON.parse(cached) : cached;
+    });
+}
+
+async function setRandomizationSnapshot(tenantId, pageHandle, bucketKey, planData, expirySeconds = 1200) { // 20 mins expiry (slightly more than 15m window)
+    return safeCall(async () => {
+        const key = `randomization:snapshot:${tenantId}:${pageHandle}:${bucketKey}`;
+        const val = JSON.stringify(planData);
+        if (isUpstash) {
+            await redisClient.set(key, val, { ex: expirySeconds });
+        } else {
+            await redisClient.setEx(key, expirySeconds, val);
+        }
+    });
+}
+
 module.exports = {
     redisClient,
     isRedisHealthy,
@@ -223,4 +244,6 @@ module.exports = {
     setModuleAccessCache,
     clearTenantCache,
     clearRateLimitForTenant,
+    getRandomizationSnapshot,
+    setRandomizationSnapshot,
 };
