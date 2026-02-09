@@ -61,7 +61,7 @@ async function authenticate(req, res, next) {
 
         // Cross-Tenant Validation
         // Ensure the token's tenant matches the request's tenant context
-        if (req.tenantId && req.tenantId !== decoded.tenantId) {
+        if (req.tenantId && String(req.tenantId) !== String(decoded.tenantId)) {
             console.warn(`[Authenticate] Cross-Tenant Access Attempt! Request Tenant: ${req.tenantId}, Token Tenant: ${decoded.tenantId}`);
             return res.status(403).json({
                 error: 'CrossTenantAccessForbidden',

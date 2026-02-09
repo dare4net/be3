@@ -21,7 +21,26 @@ const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { createTenantRateLimiter } = require('./middleware/rateLimiter');
 const moduleBootstrapper = require('./utils/moduleBootstrapper');
 
+const http = require('http');
+const socketIo = require('socket.io');
+
 const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+    cors: {
+        origin: [
+            process.env.FRONTEND_URL || 'http://localhost:3000',
+            process.env.ADMIN_URL || 'http://localhost:3001',
+            /\.render\.com$/
+        ],
+        methods: ["GET", "POST"],
+        credentials: true
+    }
+});
+
+// Attach io to app for access in modules
+app.set('io', io);
+
 const PORT = process.env.PORT || 3000;
 
 /**
@@ -114,9 +133,10 @@ async function startServer() {
     try {
         await initializeApp();
 
-        app.listen(PORT, '0.0.0.0', () => {
+        server.listen(PORT, '0.0.0.0', () => {
             console.log(`\n========================================`);
             console.log(`  Server running on port ${PORT}`);
+            console.log(`  Realtime (Socket.io) initialized`);
             console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
             console.log(`========================================\n`);
         });
@@ -157,4 +177,6 @@ process.on('SIGTERM', async () => {
 // initializeApp().then(() => { ... }) is not used here as startServer calls it.
 startServer();
 
+
+// Force restart for env reload and module update
 module.exports = app;

@@ -172,4 +172,12 @@ module.exports = {
         { name: 'system.logs', module: 'system', description: 'View system logs' },
         { name: 'system.maintenance', module: 'system', description: 'Perform system maintenance' },
     ],
+    // ============================================
+    // CHAT PERMISSIONS
+    // ============================================
+    CHAT: [
+        { name: 'chat.access', module: 'chat', description: 'Access chat inbox' },
+        { name: 'chat.manage', module: 'chat', description: 'Manage all conversations' },
+        { name: 'chat.settings', module: 'chat', description: 'Configure chat settings' },
+    ],
 };
