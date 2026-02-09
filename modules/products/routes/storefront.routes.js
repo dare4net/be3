@@ -166,6 +166,20 @@ function registerStorefrontRoutes(router) {
         );
         product.categories = catsRes.rows;
 
+        // Get Vendor Locations (all)
+        if (product.created_by) {
+            const locationRes = await query(
+                `SELECT id, scope, continent, country, state, city, address, is_primary
+                 FROM vendor_locations 
+                 WHERE tenant_id = $1 AND vendor_id = $2`,
+                [req.tenantId, product.created_by]
+            );
+
+            const allLocs = locationRes.rows;
+            product.vendor_location = allLocs.find(l => l.is_primary) || allLocs[0] || null;
+            product.other_locations = allLocs.filter(l => l.id !== product.vendor_location?.id);
+        }
+
         // Fetch breadcrumb for the first category found
         if (product.categories.length > 0) {
             const primaryCat = product.categories[0];

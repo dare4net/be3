@@ -1,6 +1,8 @@
 super-admin-web/
 storefront-web/
 admin-dashboard-web/
+be3-WA/
+be3_translator/
 .env.example
 node_modules/
 .env

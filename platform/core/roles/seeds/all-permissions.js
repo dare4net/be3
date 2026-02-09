@@ -180,4 +180,14 @@ module.exports = {
         { name: 'chat.manage', module: 'chat', description: 'Manage all conversations' },
         { name: 'chat.settings', module: 'chat', description: 'Configure chat settings' },
     ],
+    // ============================================
+    // LOCATION PERMISSIONS
+    // ============================================
+    LOCATION: [
+        { name: 'location.view', module: 'location', description: 'View business locations' },
+        { name: 'location.create', module: 'location', description: 'Create new locations' },
+        { name: 'location.edit', module: 'location', description: 'Edit existing locations' },
+        { name: 'location.delete', module: 'location', description: 'Delete locations' },
+        { name: 'location.manage', module: 'location', description: 'Full location management' },
+    ],
 };
