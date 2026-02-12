@@ -1,0 +1,23 @@
+{
+    "ignore": [
+        "*.txt",
+        "*.log",
+        "sessions/*",
+        "tests/*",
+        "scripts/*",
+        "database/*",
+        ".git/*",
+        "node_modules",
+        "be3-WA/sessions/*"
+    ],
+    "watch": [
+        "server.js",
+        "middleware",
+        "modules",
+        "config",
+        "platform",
+        "utils",
+        "lib"
+    ],
+    "ext": "js,json"
+}

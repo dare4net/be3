@@ -1,0 +1,21 @@
+﻿[dotenv@17.2.4] injecting env (31) from .env -- tip: ÔÜÖ´©Å  write to custom object with { processEnv: myObject }
+[dotenv@17.2.4] injecting env (0) from .env -- tip: ­ƒöæ add access controls to secrets: https://dotenvx.com/ops
+[HOLISTIC DEBUG 13:48:11] Dynamically loaded 7 attributes for tenant cbe1df05-45ed-455a-9ce6-156b0bd45713.
+[HOLISTIC] Dynamically loaded 7 attributes for tenant cbe1df05-45ed-455a-9ce6-156b0bd45713.
+--- START TEST ---
+[HOLISTIC DEBUG 13:48:11] START RESOLUTION for: "premium phones"
+[HOLISTIC DEBUG 13:48:11] BASE IDENTITY identified: term="Smartphones", type="category", id="7b8b5bb4-7878-4203-a550-a0941e1e3eb9"
+[HOLISTIC DEBUG 13:48:11] Cache MISS: "premium" -> Querying DB/Translator
+[HOLISTIC DEBUG 13:48:11] API Call: Requesting translator for "premium"...
+[HOLISTIC DEBUG 13:48:12] API Match (Attribute): "premium" -> code:p
+[HOLISTIC DEBUG 13:48:12] Filter FOUND: type=attribute, value=premium, display="price tier"
+[HOLISTIC DEBUG 13:48:12] Final Parsed Filters: attribute:premium
+[HOLISTIC DEBUG 13:48:12] FINAL Deduplicated Filters (1): price tier
+BASE OBJECT:
+{
+  "type": "category",
+  "id": "7b8b5bb4-7878-4203-a550-a0941e1e3eb9",
+  "category_id": "7b8b5bb4-7878-4203-a550-a0941e1e3eb9",
+  "term": "Smartphones"
+}
+--- END TEST ---

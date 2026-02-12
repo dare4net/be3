@@ -117,6 +117,7 @@ class ModuleBootstrapper {
             { name: 'vendor', path: path.join(__dirname, '../modules/vendor'), envVar: 'MODULE_VENDOR_ENABLED' },
             { name: 'chat', path: path.join(__dirname, '../modules/chat'), envVar: 'MODULE_CHAT_ENABLED' },
             { name: 'location', path: path.join(__dirname, '../modules/location'), envVar: 'MODULE_LOCATION_ENABLED' },
+            { name: 'wishlist', path: path.join(__dirname, '../modules/wishlist'), envVar: 'MODULE_WISHLIST_ENABLED' },
         ];
 
         console.log('\n=== Loading Feature Modules ===');

@@ -79,7 +79,7 @@ function registerStorefrontRoutes(router) {
         const countResult = await query(countSQL, queryParams.slice(0, queryParams.length - 2));
         const total = parseInt(countResult.rows[0].count);
 
-        // Fetch categories/images for each product
+        // Fetch categories/images and stats for each product
         for (let product of result.rows) {
             // Get Images
             const imgs = await query(
@@ -96,6 +96,18 @@ function registerStorefrontRoutes(router) {
                 [product.id]
             );
             product.categories = cats.rows;
+
+            // Get Stats (Impressions & Wishlist Count)
+            const statsRes = await query(`
+                SELECT 
+                    (SELECT COUNT(*) FROM analytics_events WHERE entity_type = 'product' AND entity_id = $1 AND event_type = 'impression') as impressions,
+                    (SELECT COUNT(*) FROM wishlists WHERE product_id = $1) as wishlist_count
+            `, [product.id]);
+
+            product.stats = {
+                impressions: parseInt(statsRes.rows[0]?.impressions || 0),
+                wishlist_count: parseInt(statsRes.rows[0]?.wishlist_count || 0)
+            };
         }
 
         // Fetch category context for metadata/titles if filtered
