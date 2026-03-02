@@ -220,6 +220,47 @@ async function bootstrap(context) {
             res.json({ success: true, message: 'Item removed' });
         }));
 
+        // Clear entire cart
+        router.delete('/', optionalAuth, asyncHandler(async (req, res) => {
+            const { tenantId, user } = req;
+            const { session_id } = req.query;
+
+            if (!user && !session_id) {
+                return res.status(400).json({ error: 'Session ID required' });
+            }
+
+            let result;
+            if (user) {
+                result = await query(
+                    `DELETE FROM carts WHERE tenant_id = $1 AND user_id = $2 RETURNING id`,
+                    [tenantId, user.id]
+                );
+            } else {
+                result = await query(
+                    `DELETE FROM carts WHERE tenant_id = $1 AND session_id = $2 RETURNING id`,
+                    [tenantId, session_id]
+                );
+            }
+
+            if (result.rows.length > 0) {
+                const cartId = result.rows[0].id;
+                // Items cascade delete usually, but if not, we should rely on database constraints or add manual deletion here if foreign keys aren't set to CASCADE.
+                // Assuming CASCADE for now or that we just want to invalidate the cart.
+
+                // Manually delete items just in case CASCADE isn't set (safety)
+                await query('DELETE FROM cart_items WHERE cart_id = $1', [cartId]);
+
+                eventBus.emitEvent('cart.cleared', {
+                    tenantId,
+                    cartId,
+                    userId: user ? user.id : null,
+                    sessionId: session_id
+                });
+            }
+
+            res.json({ success: true, message: 'Cart cleared' });
+        }));
+
         app.use('/cart', router);
         console.log('[Cart] Module initialized');
 

@@ -42,9 +42,9 @@ class QueryProcessor {
             const cleanTerm = term.replace(/[^\w]/g, '');
             if (synonymMap.has(cleanTerm)) {
                 const synonyms = synonymMap.get(cleanTerm);
-                return `(${synonyms.join(' | ')})`;
+                return `(${synonyms.map(s => s.replace(/[^\w]/g, '') + ':*').join(' | ')})`;
             }
-            return cleanTerm;
+            return cleanTerm + ':*';
         });
 
         return expandedTerms.join(' &');
@@ -56,11 +56,12 @@ class QueryProcessor {
      * @returns {string}
      */
     sanitizeQuery(query) {
-        // Remove special characters and convert to tsquery format
+        // Remove special characters and convert to tsquery format with prefix matching
         return query
             .replace(/[^\w\s]/g, ' ')
             .split(/\s+/)
             .filter(t => t.length > 0)
+            .map(t => t + ':*')
             .join(' & ');
     }
 }

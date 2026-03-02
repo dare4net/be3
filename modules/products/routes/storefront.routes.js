@@ -11,13 +11,28 @@ const { mergeProductSEO, mergeCategorySEO } = require('../../../lib/seoHelpers')
 function registerStorefrontRoutes(router) {
     // PUBLIC STOREFRONT ENDPOINT (No Auth, but requires Subscription/Module Access)
     router.get('/storefront', subscriptionGuard('products'), asyncHandler(async (req, res) => {
-        const { featured, category, category_id, limit, exclude, sort } = req.query;
+        const { featured, category, category_id, limit, exclude, sort, q, price_min, price_max } = req.query;
         const page = parseInt(req.query.page) || 1;
         const perPage = parseInt(limit || req.query.per_page) || 20;
         const offset = (page - 1) * perPage;
 
         let queryParams = [req.tenantId];
         let whereConditions = [`p.tenant_id = $1`, `p.status = 'active'`];
+
+        if (q) {
+            queryParams.push(`%${q}%`);
+            whereConditions.push(`(p.name ILIKE $${queryParams.length} OR p.description ILIKE $${queryParams.length})`);
+        }
+
+        if (price_min) {
+            queryParams.push(parseFloat(price_min));
+            whereConditions.push(`p.price >= $${queryParams.length}`);
+        }
+
+        if (price_max) {
+            queryParams.push(parseFloat(price_max));
+            whereConditions.push(`p.price <= $${queryParams.length}`);
+        }
 
         if (featured === 'true') {
             queryParams.push(true);

@@ -32,7 +32,10 @@ function registerSearchRoutes(router) {
             collection_id,
             collection_slug,
             status,
-            is_featured
+            is_featured,
+            id,
+            tag,
+            tags
         } = req.query;
 
         // Parse content types
@@ -45,6 +48,7 @@ function registerSearchRoutes(router) {
 
         // Build filters object
         const filters = {};
+        if (id) filters.id = id;
         if (price_min) filters.price_min = price_min;
         if (price_max) filters.price_max = price_max;
         if (category_id) filters.category_id = category_id;
@@ -57,6 +61,10 @@ function registerSearchRoutes(router) {
         if (is_featured !== undefined) filters.is_featured = is_featured === 'true';
         if (collection_id) filters.collection_id = collection_id;
         if (collection_slug) filters.collection_slug = collection_slug;
+        if (tag) filters.tag = tag;
+        if (tags) {
+            filters.tags = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim());
+        }
 
         // Parse attribute filters (e.g., attribute.color=red)
         Object.keys(req.query).forEach(key => {
@@ -112,6 +120,58 @@ function registerSearchRoutes(router) {
             seo
         });
     }));
+
+    /**
+     * Specialized Product Search
+     * Forces content_type = 'product' and supports category slugs
+     */
+    router.get('/products', optionalAuth, asyncHandler(async (req, res) => {
+        const searchService = new SearchService();
+        const {
+            q: searchQuery = '',
+            category, // Supports slug or ID
+            page = 1,
+            per_page = 20,
+            sort = 'relevance',
+            price_min,
+            price_max,
+            vendor,
+            tag,
+            tags
+        } = req.query;
+
+        const filters = {};
+        if (price_min) filters.price_min = price_min;
+        if (price_max) filters.price_max = price_max;
+        if (category) filters.category_id = category; // SearchService.search resolves slug via CategoryResolver
+        if (vendor) filters['attribute.vendor'] = vendor;
+        if (tag) filters.tag = tag;
+        if (tags) {
+            filters.tags = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim());
+        }
+
+        // Perform search forced to 'product' type
+        const searchResults = await searchService.search(req.tenantId, {
+            query: searchQuery,
+            contentTypes: ['product'],
+            filters,
+            sort,
+            page: parseInt(page),
+            perPage: parseInt(per_page)
+        });
+
+        res.json({
+            success: true,
+            products: searchResults.results,
+            total: searchResults.pagination.total,
+            pagination: searchResults.pagination,
+            category: searchResults.category,
+            collection: searchResults.collection,
+            attribute: searchResults.attribute,
+            clause: searchResults.clause
+        });
+    }));
+
 
     // Autocomplete endpoint
     router.get('/autocomplete', asyncHandler(async (req, res) => {
@@ -336,6 +396,69 @@ function registerSearchRoutes(router) {
         });
 
         await Promise.all(searchPromises);
+
+        // --- ENRICHMENT STEP: Fetch Stats ---
+        try {
+            // 1. Collect all product IDs across all widgets
+            const allProductIds = new Set();
+            Object.values(results).forEach(widgetData => {
+                if (widgetData.results && Array.isArray(widgetData.results)) {
+                    widgetData.results.forEach(p => allProductIds.add(p.id));
+                }
+            });
+
+            if (allProductIds.size > 0) {
+                const productIdList = Array.from(allProductIds);
+
+                // 2. Query Analytics (Impressions)
+                // Assuming analytics_events table structure from prior context
+                // Count 'view_item' events for 'product' type
+                const analyticsRes = await query(`
+                    SELECT entity_id, COUNT(*) as count
+                    FROM analytics_events
+                    WHERE tenant_id = $1
+                    AND event_type = 'impression'
+                    AND entity_type = 'product'
+                    AND entity_id = ANY($2)
+                    GROUP BY entity_id
+                `, [req.tenantId, productIdList]);
+
+                // 3. Query Wishlists
+                const wishlistRes = await query(`
+                    SELECT product_id, COUNT(*) as count
+                    FROM wishlists
+                    WHERE tenant_id = $1
+                    AND product_id = ANY($2)
+                    GROUP BY product_id
+                `, [req.tenantId, productIdList]);
+
+                // 4. Map stats
+                const statsMap = {}; // { productId: { impressions, wishlist_count } }
+
+                analyticsRes.rows.forEach(row => {
+                    if (!statsMap[row.entity_id]) statsMap[row.entity_id] = { impressions: 0, wishlist_count: 0 };
+                    statsMap[row.entity_id].impressions = parseInt(row.count);
+                });
+
+                wishlistRes.rows.forEach(row => {
+                    if (!statsMap[row.product_id]) statsMap[row.product_id] = { impressions: 0, wishlist_count: 0 };
+                    statsMap[row.product_id].wishlist_count = parseInt(row.count);
+                });
+
+                // 5. Inject back into results
+                Object.values(results).forEach(widgetData => {
+                    if (widgetData.results && Array.isArray(widgetData.results)) {
+                        widgetData.results.forEach(p => {
+                            p.stats = statsMap[p.id] || { impressions: 0, wishlist_count: 0 };
+                        });
+                    }
+                });
+            }
+        } catch (err) {
+            console.error('[Search] Failed to enrich batch results with stats:', err);
+            // Don't fail the request, just log error. Stats will be missing/undefined.
+        }
+        // ------------------------------------
 
         res.json({
             success: true,

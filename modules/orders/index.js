@@ -203,11 +203,13 @@ async function bootstrap(context) {
 
             const orderNumber = `WA-${Date.now()}`;
 
+            // Convert "platform" string to null for database UUID compatibility
+            const dbVendorId = vendorId === 'platform' ? null : vendorId;
+
             const order = await tenantInsert('orders', tenantId, {
                 order_number: orderNumber,
                 user_id: user ? user.id : null,
-                session_id: session_id || null,
-                vendor_id: vendorId,
+                vendor_id: dbVendorId,
                 status: 'pending_whatsapp',
                 payment_status: 'pending',
                 subtotal: total,
@@ -246,6 +248,61 @@ async function bootstrap(context) {
             // If we have a cartId, mark those specific items as removed/completed
             // or let the frontend handles clearing them.
             // For now, we'll return the order.
+            res.json({ success: true, order });
+        }));
+
+        // Record In-House Pre-Order (Bot checkout for vendors with dashboard)
+        router.post('/inhouse-preorder', optionalAuth, asyncHandler(async (req, res) => {
+            const { tenantId, user } = req;
+            const { cartId, vendorId, items, total, customerName, customerEmail, session_id } = req.body;
+
+            console.log(`[Orders] Recording in-house pre-order for vendor: ${vendorId}`);
+
+            const orderNumber = `PRE-${Date.now()}`;
+
+            // Convert "platform" string to null for database UUID compatibility
+            const dbVendorId = vendorId === 'platform' ? null : vendorId;
+
+            const order = await tenantInsert('orders', tenantId, {
+                order_number: orderNumber,
+                user_id: user ? user.id : null,
+                vendor_id: dbVendorId,
+                status: 'pending',
+                payment_status: 'pending',
+                subtotal: total,
+                total: total,
+                currency: 'USD',
+                customer_email: customerEmail || (user ? user.email : null),
+                metadata: {
+                    is_bot_preorder: true,
+                    customer_name: customerName,
+                    cart_id: cartId,
+                    session_id: session_id
+                }
+            });
+
+            // Insert order items
+            for (const item of items) {
+                await tenantInsert('order_items', tenantId, {
+                    order_id: order.id,
+                    product_id: item.product_id,
+                    variant_id: item.variant_id,
+                    product_name: item.product_name,
+                    quantity: item.quantity,
+                    price: item.price,
+                    total: parseFloat(item.price) * item.quantity,
+                    image_url: item.image_url
+                });
+            }
+
+            // Emit event
+            eventBus.emitEvent('order.created', {
+                tenantId,
+                orderId: order.id,
+                orderNumber: order.order_number,
+                isPreOrder: true
+            });
+
             res.json({ success: true, order });
         }));
 

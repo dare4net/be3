@@ -44,14 +44,14 @@ class FilterSQLBuilder {
                                     const descendants = await this.categoryResolver.getDescendantCategoryIds(tenantId, id);
                                     resolvedCatIds.push(...descendants);
                                 }
-                                ruleConditions.push(`si.metadata->'category_ids' ?| $${index}`);
+                                ruleConditions.push(`si.metadata->'category_ids' ?| $${index}::text[]`);
                                 queryParams.push([...new Set(resolvedCatIds)]);
                                 index++;
                             }
                             break;
                         case 'tag':
                             if (Array.isArray(value)) {
-                                ruleConditions.push(`si.metadata->'tags' ?| $${index}`);
+                                ruleConditions.push(`si.metadata->'tags' ?| $${index}::text[]`);
                             } else {
                                 ruleConditions.push(`si.metadata->'tags' ? $${index}`);
                             }
@@ -153,6 +153,13 @@ class FilterSQLBuilder {
             sql += ` AND ${colSQL}`;
         }
 
+        // Direct ID filter (content_id)
+        if (filters.id) {
+            sql += ` AND si.content_id = $${index}`;
+            queryParams.push(filters.id);
+            index++;
+        }
+
         // Price range filter
         if (filters.price_min !== undefined && filters.price_min !== null) {
             sql += ` AND (si.metadata->>'price')::numeric >= $${index}`;
@@ -174,7 +181,7 @@ class FilterSQLBuilder {
         }
 
         if (filters.category_ids && Array.isArray(filters.category_ids)) {
-            sql += ` AND si.metadata->'category_ids' ?| $${index}`;
+            sql += ` AND si.metadata->'category_ids' ?| $${index}::text[]`;
             queryParams.push(filters.category_ids);
             index++;
         }
@@ -195,7 +202,7 @@ class FilterSQLBuilder {
 
         // Tag filter
         if (filters.tags && Array.isArray(filters.tags) && filters.tags.length > 0) {
-            sql += ` AND si.metadata->'tags' ?| $${index}`;
+            sql += ` AND si.metadata->'tags' ?| $${index}::text[]`;
             queryParams.push(filters.tags);
             index++;
         } else if (filters.tag) {

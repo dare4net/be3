@@ -67,6 +67,27 @@ class CategoryResolver {
         let currentId = categoryId;
 
         while (true) {
+            // First, check if the current category itself has products directly assigned to it.
+            // If it does, don't auto-drill — the user is browsing a category with its own products.
+            const directProducts = await query(
+                `SELECT 1 FROM search_indexes si
+                 WHERE si.tenant_id = $1 AND si.is_active = true
+                 AND si.content_type = 'product'
+                 AND si.metadata->'category_ids' ? $2::text
+                 AND NOT EXISTS (
+                    SELECT 1 FROM categories c
+                    WHERE c.tenant_id = $1 AND c.parent_id = $2::uuid AND c.is_active = true
+                    AND si.metadata->'category_ids' ? c.id::text
+                 )
+                 LIMIT 1`,
+                [tenantId, currentId]
+            );
+
+            if (directProducts.rows.length > 0) {
+                // This category has products assigned directly to it (not just in children), stop here.
+                break;
+            }
+
             // Find children that actually have products in the index (directly or in descendants)
             // We use the search_indexes as the source of truth for "active" products
             const result = await query(
