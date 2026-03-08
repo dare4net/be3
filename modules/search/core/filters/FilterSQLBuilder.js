@@ -97,7 +97,9 @@ class FilterSQLBuilder {
                             const clauseName = value;
                             if (acattrCode && clauseName) {
                                 const attrRes = await query(
-                                    `SELECT clauses, type FROM attributes WHERE tenant_id = $1 AND code = $2`,
+                                    `SELECT clauses, type FROM attributes WHERE tenant_id = $1 AND code = $2
+                                     UNION ALL
+                                     SELECT '[]'::jsonb as clauses, type FROM system_attributes WHERE code = $2`,
                                     [tenantId, acattrCode]
                                 );
                                 if (attrRes.rows[0]) {
@@ -223,7 +225,9 @@ class FilterSQLBuilder {
 
                 if (clauseName) {
                     const attrRes = await query(
-                        `SELECT clauses, type FROM attributes WHERE tenant_id = $1 AND code = $2`,
+                        `SELECT clauses, type FROM attributes WHERE tenant_id = $1 AND code = $2
+                         UNION ALL
+                         SELECT '[]'::jsonb as clauses, type FROM system_attributes WHERE code = $2`,
                         [tenantId, attrCode]
                     );
 

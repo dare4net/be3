@@ -1,7 +1,11 @@
 /**
  * Vendor Module Bootstrapper
  * 
- * Handles multi-vendor logic, automatic tagging, and vendor isolation.
+ * Handles multi-vendor logic, automatic tagging, vendor isolation,
+ * and system attribute management for vendor identification.
+ * 
+ * PRINCIPLE: Modules do not import other modules
+ * PRINCIPLE: All inter-module communication is event-based
  */
 
 async function bootstrap(context) {
@@ -9,6 +13,44 @@ async function bootstrap(context) {
 
     const RoleService = require('../../platform/core/roles/services/RoleService');
     const VendorService = require('./services/VendorService');
+
+    // ─── Register Variables ───────────────────────────────────────────
+    // Register vendor-specific variables that the Variables module can resolve.
+    // This uses events so the vendor module doesn't depend on the variables module.
+    eventBus.emitEvent('variable.register_many', {
+        variables: [
+            {
+                name: 'BUSINESS_NAME',
+                description: 'The business name of the vendor (from user profile). Falls back to store name.',
+                resolver: async (context) => {
+                    if (!context.tenantId) return null;
+                    const { query: dbQuery } = require('../../config/database');
+                    // Try user's business name first
+                    if (context.userId) {
+                        const User = require('../../platform/core/auth/models/User');
+                        const user = await User.findById(context.tenantId, context.userId);
+                        const businessName = user?.business_name || `${user?.first_name || ''} ${user?.last_name || ''}`.trim();
+                        if (businessName) return businessName;
+                    }
+                    // Fallback: resolve [STORE_NAME] variable
+                    const VariableRegistry = require('../../modules/variables/services/VariableRegistry');
+                    return await VariableRegistry.resolve('STORE_NAME', context) || 'Store';
+                }
+            },
+            {
+                name: 'STORE_NAME',
+                description: 'The tenant store name. Used in footers, widgets, and as a fallback for BUSINESS_NAME.',
+                resolver: async (context) => {
+                    if (!context.tenantId) return null;
+                    const { query } = require('../../config/database');
+                    const result = await query('SELECT name FROM tenants WHERE id = $1', [context.tenantId]);
+                    return result.rows[0]?.name || 'Store';
+                }
+            }
+        ]
+    });
+
+    // ─── Event Listeners ──────────────────────────────────────────────
 
     // Listen for module enablement to seed vendor roles
     eventBus.on('module.enabled', async (event) => {
@@ -18,6 +60,9 @@ async function bootstrap(context) {
                 console.log(`[Vendor] Module enabled for tenant ${data.tenantId}, seeding roles...`);
                 // RoleService.seedDefaultRoles is idempotent and includes the Vendor role
                 await RoleService.seedDefaultRoles(data.tenantId);
+
+                // Ensure the system "Vendor" attribute exists for this tenant
+                await VendorService.ensureVendorAttribute(data.tenantId);
             } catch (error) {
                 console.error(`[Vendor] Failed to seed roles for tenant ${data.tenantId}:`, error);
             }

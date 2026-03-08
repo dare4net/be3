@@ -12,7 +12,7 @@ class QueryProcessor {
      * @param {string} tenantId
      * @returns {string} - Expanded query with synonyms
      */
-    async expandQuery(searchQuery, tenantId) {
+    async expandQuery(searchQuery, tenantId, mode = 'AND') {
         if (!searchQuery || searchQuery.trim() === '') {
             return '';
         }
@@ -22,7 +22,7 @@ class QueryProcessor {
 
         if (synonyms.length === 0) {
             // No synonyms, return sanitized query
-            return this.sanitizeQuery(searchQuery);
+            return this.sanitizeQuery(searchQuery, mode);
         }
 
         // Build synonym map
@@ -47,22 +47,25 @@ class QueryProcessor {
             return cleanTerm + ':*';
         });
 
-        return expandedTerms.join(' &');
+        const connector = mode === 'OR' ? ' | ' : ' & ';
+        return expandedTerms.join(connector);
     }
 
     /**
      * Sanitize query for PostgreSQL tsquery
      * @param {string} query
+     * @param {string} mode - 'AND' or 'OR'
      * @returns {string}
      */
-    sanitizeQuery(query) {
+    sanitizeQuery(query, mode = 'AND') {
         // Remove special characters and convert to tsquery format with prefix matching
+        const connector = mode === 'OR' ? ' | ' : ' & ';
         return query
             .replace(/[^\w\s]/g, ' ')
             .split(/\s+/)
             .filter(t => t.length > 0)
             .map(t => t + ':*')
-            .join(' & ');
+            .join(connector);
     }
 }
 

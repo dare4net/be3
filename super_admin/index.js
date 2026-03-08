@@ -273,8 +273,8 @@ async function bootstrap(context) {
             synced.push(mod.name);
         }
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             message: `Synced ${synced.length} modules`,
             modules: synced
         });
@@ -284,7 +284,7 @@ async function bootstrap(context) {
     router.get('/tenants/:tenantId/modules', asyncHandler(async (req, res) => {
         // Get all available modules
         const allModulesRes = await query(`SELECT * FROM modules WHERE is_core = false ORDER BY name`);
-        
+
         // Get enabled modules for this tenant
         const enabledRes = await query(
             `SELECT * FROM tenant_modules WHERE tenant_id = $1 AND is_enabled = true`,
@@ -294,8 +294,8 @@ async function bootstrap(context) {
         // Map enabled status
         const modules = allModulesRes.rows.map(mod => {
             const isEnabled = enabledRes.rows.some(em => em.module_name === mod.name);
-            return { 
-                ...mod, 
+            return {
+                ...mod,
                 is_enabled: isEnabled,
                 enabled_at: enabledRes.rows.find(em => em.module_name === mod.name)?.enabled_at || null
             };
@@ -332,10 +332,140 @@ async function bootstrap(context) {
         // Update cache
         await setModuleAccessCache(req.params.tenantId, req.params.moduleName, is_enabled);
 
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             message: `Module ${is_enabled ? 'enabled' : 'disabled'}`,
             module: result.rows[0] || { module_name: req.params.moduleName, is_enabled }
+        });
+    }));
+
+    // ─── Global System Attributes ─────────────────────────────────────
+    // These are platform-wide, NOT tenant-scoped. Available for all tenants.
+
+    // List all system attributes
+    router.get('/system-attributes', asyncHandler(async (req, res) => {
+        const result = await query(
+            `SELECT * FROM system_attributes ORDER BY label ASC`
+        );
+        // Parse options for each
+        const data = result.rows.map(attr => ({
+            ...attr,
+            options: typeof attr.options === 'string' ? JSON.parse(attr.options || '[]') : (attr.options || [])
+        }));
+        res.json({ success: true, data });
+    }));
+
+    // Create a system attribute
+    router.post('/system-attributes', asyncHandler(async (req, res) => {
+        const { code, label, default_value, description } = req.body;
+
+        const result = await query(
+            `INSERT INTO system_attributes (code, label, type, default_value, description, is_searchable)
+             VALUES ($1, $2, 'text', $3, $4, true) RETURNING *`,
+            [code, label, default_value || null, description || null]
+        );
+        res.status(201).json({ success: true, attribute: result.rows[0] });
+    }));
+
+    // Update a system attribute
+    router.put('/system-attributes/:id', asyncHandler(async (req, res) => {
+        const { code, label, default_value, description } = req.body;
+
+        const result = await query(
+            `UPDATE system_attributes SET code = $1, label = $2, default_value = $3, 
+             description = $4, updated_at = NOW()
+             WHERE id = $5 RETURNING *`,
+            [code, label, default_value || null, description || null, req.params.id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'System attribute not found' });
+        }
+        res.json({ success: true, attribute: result.rows[0] });
+    }));
+
+    // Delete a system attribute
+    router.delete('/system-attributes/:id', asyncHandler(async (req, res) => {
+        const result = await query(
+            `DELETE FROM system_attributes WHERE id = $1 RETURNING *`,
+            [req.params.id]
+        );
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'System attribute not found' });
+        }
+        res.json({ success: true, message: 'System attribute deleted' });
+    }));
+
+    // ─── Variables Listing ────────────────────────────────────────────
+    // Returns all registered variables from the VariableRegistry
+    router.get('/variables', asyncHandler(async (req, res) => {
+        try {
+            const VariableRegistry = require('../modules/variables/services/VariableRegistry');
+            const variables = VariableRegistry.list();
+            res.json({ success: true, variables });
+        } catch (error) {
+            // Variables module might not be loaded
+            res.json({ success: true, variables: [], note: 'Variables module not loaded' });
+        }
+    }));
+
+    // ─── Backfill System Attributes ─────────────────────────────────────
+    // Apply system attributes to ALL existing products across all tenants
+    router.post('/system-attributes/backfill', asyncHandler(async (req, res) => {
+        const sysAttrs = await query(`SELECT code, default_value FROM system_attributes WHERE default_value IS NOT NULL`);
+        if (sysAttrs.rows.length === 0) {
+            return res.json({ success: true, message: 'No system attributes with values to backfill', updated: 0 });
+        }
+
+        let VariableRegistry;
+        try { VariableRegistry = require('../modules/variables/services/VariableRegistry'); } catch { }
+
+        // Get all tenants
+        const tenants = await query(`SELECT id FROM tenants`);
+        let totalUpdated = 0;
+
+        for (const tenant of tenants.rows) {
+            const products = await query(
+                `SELECT id, attributes, created_by FROM products WHERE tenant_id = $1`,
+                [tenant.id]
+            );
+
+            for (const product of products.rows) {
+                let attrs = product.attributes || {};
+                if (typeof attrs === 'string') {
+                    try { attrs = JSON.parse(attrs); } catch { attrs = {}; }
+                }
+
+                let changed = false;
+                for (const sa of sysAttrs.rows) {
+                    let value = sa.default_value;
+                    // Resolve variables
+                    if (VariableRegistry && value && /\[[A-Z_][A-Z0-9_]*\]/.test(value)) {
+                        value = await VariableRegistry.resolveText(value, {
+                            tenantId: tenant.id,
+                            userId: product.created_by
+                        });
+                    }
+                    if (attrs[sa.code] !== value) {
+                        attrs[sa.code] = value;
+                        changed = true;
+                    }
+                }
+
+                if (changed) {
+                    await query(
+                        `UPDATE products SET attributes = $1, updated_at = NOW() WHERE id = $2`,
+                        [JSON.stringify(attrs), product.id]
+                    );
+                    totalUpdated++;
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            message: `Backfill complete: updated ${totalUpdated} products across ${tenants.rows.length} tenants`,
+            updated: totalUpdated,
+            tenants: tenants.rows.length
         });
     }));
 

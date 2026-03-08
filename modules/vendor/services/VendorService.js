@@ -4,8 +4,44 @@ const User = require('../../../platform/core/auth/models/User');
 
 class VendorService {
     /**
+     * Ensure the global system "Vendor" attribute exists.
+     * This is a platform-wide attribute in the system_attributes table,
+     * automatically available for all tenants.
+     * 
+     * @returns {object} The vendor system attribute record
+     */
+    static async ensureVendorAttribute() {
+        console.log(`[VendorService] Ensuring global system "Vendor" attribute`);
+
+        try {
+            // Check if it already exists in the global system_attributes table
+            const existing = await query(
+                `SELECT id FROM system_attributes WHERE code = 'vendor'`
+            );
+
+            if (existing.rows.length > 0) {
+                console.log(`[VendorService] Global "Vendor" system attribute already exists (${existing.rows[0].id})`);
+                return existing.rows[0];
+            }
+
+            // Create the global system attribute
+            const result = await query(
+                `INSERT INTO system_attributes (code, label, type, options, is_filterable, is_searchable, description)
+                 VALUES ('vendor', 'Vendor', 'select', '[]', true, true, 'Automatically managed vendor identification attribute')
+                 RETURNING *`
+            );
+
+            console.log(`[VendorService] Created global "Vendor" system attribute (${result.rows[0].id})`);
+            return result.rows[0];
+        } catch (error) {
+            console.error(`[VendorService] Error ensuring vendor attribute (system_attributes table may not exist):`, error.message);
+            return null;
+        }
+    }
+
+    /**
      * Initialize a vendor
-     * Creates a collection for the vendor based on their business name
+     * Creates a collection and assigns the system vendor attribute to their products.
      * @param {string} tenantId 
      * @param {string} userId 
      */
@@ -25,7 +61,13 @@ class VendorService {
             const vendorBackdrop = user.business_backdrop || null;
             const slug = `${vendorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-${userId.split('-')[0]}`;
 
-            // 2. Check if collection already exists for this vendor using created_by
+            // 2. Ensure the global system vendor attribute exists and includes this vendor name
+            const vendorAttribute = await this.ensureVendorAttribute();
+            if (vendorAttribute) {
+                await this.ensureVendorOption(vendorAttribute.id, vendorName);
+            }
+
+            // 3. Check if collection already exists for this vendor using created_by
             const existing = await query(
                 `SELECT id, name, slug, thumbnail_url, image_url FROM collections WHERE tenant_id = $1 AND created_by = $2`,
                 [tenantId, userId]
@@ -47,7 +89,8 @@ class VendorService {
                 if (nameChanged || thumbnailChanged || backdropChanged) {
                     const rules = [
                         {
-                            field: 'tag',
+                            field: 'attribute',
+                            attribute_code: 'vendor',
                             operator: 'eq',
                             value: vendorName
                         }
@@ -69,10 +112,11 @@ class VendorService {
                     });
                 }
             } else {
-                // 3. Create Collection with tag rule and created_by
+                // 4. Create Collection with attribute rule and created_by
                 const rules = [
                     {
-                        field: 'tag',
+                        field: 'attribute',
+                        attribute_code: 'vendor',
                         operator: 'eq',
                         value: vendorName
                     }
@@ -100,8 +144,8 @@ class VendorService {
 
             console.log(`[VendorService] Successfully created/verified collection '${vendorName}' for vendor ${userId}`);
 
-            // 4. Update existing products (and cleanup old tags if it's a rename)
-            await this.reTagExistingProducts(tenantId, userId, vendorName, oldVendorName);
+            // 5. Update existing products: set the vendor attribute + keep legacy tag for backward compat
+            await this.assignVendorAttributeToProducts(tenantId, userId, vendorName, oldVendorName);
 
             return { id: collectionId, name: vendorName };
         } catch (error) {
@@ -111,38 +155,77 @@ class VendorService {
     }
 
     /**
-     * Re-tag all products for this vendor
-     * Useful when business name changes
+     * Ensure a vendor name exists as an option in the global system Vendor attribute.
+     * @param {string} attributeId - ID in system_attributes table
+     * @param {string} vendorName 
      */
-    static async reTagExistingProducts(tenantId, userId, vendorName, oldVendorName = null) {
-        console.log(`[VendorService] Re-tagging products for vendor ${userId}. New: ${vendorName}, Old: ${oldVendorName || 'None'}`);
+    static async ensureVendorOption(attributeId, vendorName) {
+        const result = await query(
+            `SELECT options FROM system_attributes WHERE id = $1`,
+            [attributeId]
+        );
+
+        if (result.rows.length === 0) return;
+
+        let options = result.rows[0].options;
+        if (typeof options === 'string') {
+            try { options = JSON.parse(options); } catch { options = []; }
+        }
+        options = options || [];
+
+        if (!options.includes(vendorName)) {
+            options.push(vendorName);
+            await query(
+                `UPDATE system_attributes SET options = $1, updated_at = NOW() WHERE id = $2`,
+                [JSON.stringify(options), attributeId]
+            );
+            console.log(`[VendorService] Added "${vendorName}" to global Vendor attribute options`);
+        }
+    }
+
+    /**
+     * Assign the system vendor attribute to all products for a vendor.
+     * Also handles renaming (removes old vendor name, sets new one).
+     * Maintains backward-compatible tags as well.
+     */
+    static async assignVendorAttributeToProducts(tenantId, userId, vendorName, oldVendorName = null) {
+        console.log(`[VendorService] Assigning vendor attribute for ${userId}. New: ${vendorName}, Old: ${oldVendorName || 'None'}`);
 
         try {
             const products = await query(
-                `SELECT id, tags FROM products WHERE tenant_id = $1 AND created_by = $2`,
+                `SELECT id, tags, attributes FROM products WHERE tenant_id = $1 AND created_by = $2`,
                 [tenantId, userId]
             );
 
             for (const product of products.rows) {
                 let tags = product.tags || [];
                 const originalTags = [...tags];
+                let attributes = product.attributes || {};
+                if (typeof attributes === 'string') {
+                    try { attributes = JSON.parse(attributes); } catch { attributes = {}; }
+                }
+                const originalAttributes = { ...attributes };
 
-                // 1. Remove old vendor name tag if it's a rename
+                // 1. Update the vendor attribute on the product
+                attributes.vendor = vendorName;
+
+                // 2. Legacy tag management (backward compat)
                 if (oldVendorName && oldVendorName !== vendorName) {
                     tags = tags.filter(t => t !== oldVendorName);
                 }
-
-                // 2. Add new vendor name tag
                 if (!tags.includes(vendorName)) {
                     tags.push(vendorName);
                 }
 
-                // If tags changed, update
-                if (JSON.stringify(tags) !== JSON.stringify(originalTags)) {
-                    console.log(`[VendorService] Updating product ${product.id} tags: ${originalTags.join(',')} -> ${tags.join(',')}`);
+                // Only update if something changed
+                const tagsChanged = JSON.stringify(tags) !== JSON.stringify(originalTags);
+                const attrsChanged = JSON.stringify(attributes) !== JSON.stringify(originalAttributes);
+
+                if (tagsChanged || attrsChanged) {
+                    console.log(`[VendorService] Updating product ${product.id}: vendor="${vendorName}"`);
                     await query(
-                        `UPDATE products SET tags = $1::text[] WHERE id = $2`,
-                        [tags, product.id]
+                        `UPDATE products SET tags = $1::text[], attributes = $2 WHERE id = $3`,
+                        [tags, JSON.stringify(attributes), product.id]
                     );
 
                     // Emit product.updated for search indexing
@@ -153,10 +236,18 @@ class VendorService {
                     });
                 }
             }
-            console.log(`[VendorService] Re-tagged ${products.rows.length} products`);
+            console.log(`[VendorService] Updated ${products.rows.length} products with vendor attribute`);
         } catch (error) {
-            console.error(`[VendorService] Error re-tagging products:`, error);
+            console.error(`[VendorService] Error assigning vendor attribute:`, error);
         }
+    }
+
+    /**
+     * @deprecated Use assignVendorAttributeToProducts instead.
+     * Kept for backward compatibility.
+     */
+    static async reTagExistingProducts(tenantId, userId, vendorName, oldVendorName = null) {
+        return this.assignVendorAttributeToProducts(tenantId, userId, vendorName, oldVendorName);
     }
 }
 

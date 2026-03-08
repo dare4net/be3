@@ -146,7 +146,13 @@ class FacetedFiltersAggregator {
         const attrCodesFound = Object.keys(facets.attributes);
         let enrichedAttributes = [];
         if (attrCodesFound.length > 0) {
-            const attrMetaRes = await query(`SELECT id, code, label, type, clauses FROM attributes WHERE tenant_id = $1 AND code = ANY($2)`, [tenantId, attrCodesFound]);
+            // Fetch both tenant attributes and global system attributes
+            const attrMetaRes = await query(`
+                SELECT id, code, label, type, clauses FROM attributes WHERE tenant_id = $1 AND code = ANY($2)
+                UNION ALL
+                SELECT id, code, label, type, '[]'::jsonb as clauses FROM system_attributes WHERE code = ANY($2)
+            `, [tenantId, attrCodesFound]);
+
             enrichedAttributes = attrMetaRes.rows.map(attr => {
                 const metaValues = facets.attributes[attr.code] || {};
                 const clauses = (typeof attr.clauses === 'string' ? JSON.parse(attr.clauses) : attr.clauses) || [];

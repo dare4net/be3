@@ -132,7 +132,7 @@ async function findByIdTenant(tableName, tenantId, id) {
  * Paginated tenant query
  * Handles filtering (status, search), pagination, and ordering
  */
-async function paginatedTenantQuery(tableName, tenantId, options = {}) {
+async function paginatedTenantQuery(tableName, tenantId, options = {}, extraWhere = '') {
     const {
         page = 1,
         perPage = 20,
@@ -188,7 +188,12 @@ async function paginatedTenantQuery(tableName, tenantId, options = {}) {
     }
 
     // Construct SQL
-    const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+    let whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+
+    // Append any extra WHERE conditions (raw SQL, no params)
+    if (extraWhere) {
+        whereClause += ` ${extraWhere}`;
+    }
 
     // Debug logging
     console.log(`[DB Helper] ${tableName} Query: ${whereClause}`);

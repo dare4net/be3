@@ -256,6 +256,30 @@ function registerProductRoutes(router, eventBus) {
             tags.push(vendorName);
         }
 
+        // Auto-apply system attributes
+        let productAttributes = req.body.attributes || {};
+        try {
+            const sysAttrResult = await query(`SELECT code, default_value FROM system_attributes WHERE default_value IS NOT NULL`);
+            if (sysAttrResult.rows.length > 0) {
+                let VariableRegistry;
+                try { VariableRegistry = require('../../variables/services/VariableRegistry'); } catch { }
+
+                for (const sa of sysAttrResult.rows) {
+                    let value = sa.default_value;
+                    // Resolve variables like [BUSINESS_NAME]
+                    if (VariableRegistry && value && /\[[A-Z_][A-Z0-9_]*\]/.test(value)) {
+                        value = await VariableRegistry.resolveText(value, {
+                            tenantId: req.tenantId,
+                            userId: req.user.id
+                        });
+                    }
+                    productAttributes[sa.code] = value;
+                }
+            }
+        } catch (e) {
+            console.warn('[Products] Could not auto-apply system attributes:', e.message);
+        }
+
         const product = await tenantInsert('products', req.tenantId, {
             name: req.body.name,
             description: req.body.description,
@@ -266,7 +290,7 @@ function registerProductRoutes(router, eventBus) {
             inventory_quantity: req.body.inventory_quantity || 0,
             status: req.body.status || 'draft',
             created_by: req.user.id,
-            attributes: req.body.attributes ? JSON.stringify(req.body.attributes) : '{}', // Custom Fields
+            attributes: JSON.stringify(productAttributes),
             is_featured: req.body.is_featured || false,
             tags: tags,
             seo_title: req.body.seo_title,

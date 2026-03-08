@@ -21,7 +21,7 @@ class QueryPreprocessor {
 
         // 0. Initial Normalization: Strip common "junk" phrases
         let processedQuery = searchQuery
-            .replace(/\b(show me|looking for|find|search for|list of|i want|model|latest|product|item|version|type)\b/gi, '')
+            .replace(/\b(show me|looking for|find|search for|list of|i want)\b/gi, '')
             .trim();
 
         // 1. Fetch all attributes with clauses for this tenant

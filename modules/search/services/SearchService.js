@@ -84,9 +84,6 @@ class SearchService {
         // Detect Attribute Clause filters for metadata (for return object)
         let attribute = null;
         let clause = null;
-        // Logic to extract attribute/clause meta for the response
-        // We can replicate the logic that was here or move it to a helper, but it's small enough to keep or we can fetch it.
-        // For now, let's keep the logic to extract metadata for the response object.
         for (const key of Object.keys(filters)) {
             if (key.startsWith('attribute.')) {
                 const val = filters[key];
@@ -101,7 +98,11 @@ class SearchService {
                 }
 
                 if (attrCode && clauseName) {
-                    const attrRes = await query(`SELECT id, code, label, clauses FROM attributes WHERE code = $1 AND tenant_id = $2`, [attrCode, tenantId]);
+                    const attrRes = await query(`
+                        SELECT id, code, label, clauses FROM attributes WHERE code = $1 AND tenant_id = $2
+                        UNION ALL
+                        SELECT id, code, label, '[]'::jsonb as clauses FROM system_attributes WHERE code = $1
+                    `, [attrCode, tenantId]);
                     if (attrRes.rows[0]) {
                         attribute = {
                             id: attrRes.rows[0].id,
@@ -117,106 +118,136 @@ class SearchService {
             }
         }
 
-        // Expand query with synonyms
-        const expandedQuery = finalQuery ? await this.queryProcessor.expandQuery(finalQuery, tenantId) : '';
+        // Waterfall Strategy: Try AND first, then OR if filters exist
+        const modes = ['AND'];
 
-        // Build base search query
-        let sql = '';
-        const queryParams = [];
-        let paramIndex = 1;
-
-        if (expandedQuery) {
-            sql = `
-                SELECT 
-                    si.*,
-                    ts_rank(si.search_vector, query) as rank
-                FROM search_indexes si,
-                to_tsquery('english', $${paramIndex}) query
-                WHERE si.tenant_id = $${paramIndex + 1}
-                AND si.is_active = true
-                AND si.search_vector @@ query
-            `;
-            queryParams.push(expandedQuery, tenantId);
-            paramIndex = 3;
-        } else {
-            sql = `
-                SELECT 
-                    si.*,
-                    1 as rank
-                FROM search_indexes si
-                WHERE si.tenant_id = $${paramIndex}
-                AND si.is_active = true
-            `;
-            queryParams.push(tenantId);
-            paramIndex = 2;
+        // Determine if relaxation is allowed (requires at least one filter context)
+        const hasFilters = Object.keys(filters).length > 0 || originalCategoryId || collection;
+        if (hasFilters && finalQuery) {
+            modes.push('OR');
         }
 
-        // Apply content type filter
-        if (contentTypes && contentTypes.length > 0) {
-            sql += ` AND si.content_type = ANY($${paramIndex})`;
-            queryParams.push(contentTypes);
-            paramIndex++;
+        let lastAttempt = null;
+
+        for (const mode of modes) {
+            const expandedQuery = finalQuery ? await this.queryProcessor.expandQuery(finalQuery, tenantId, mode) : '';
+
+            // Build base search query
+            let sql = '';
+            const queryParams = [];
+            let paramIndex = 1;
+
+            if (expandedQuery) {
+                sql = `
+                    SELECT 
+                        si.*,
+                        ts_rank(si.search_vector, query) as rank
+                    FROM search_indexes si,
+                    to_tsquery('english', $${paramIndex}) query
+                    WHERE si.tenant_id = $${paramIndex + 1}
+                    AND si.is_active = true
+                    AND si.search_vector @@ query
+                `;
+                queryParams.push(expandedQuery, tenantId);
+                paramIndex = 3;
+            } else {
+                sql = `
+                    SELECT 
+                        si.*,
+                        1 as rank
+                    FROM search_indexes si
+                    WHERE si.tenant_id = $${paramIndex}
+                    AND si.is_active = true
+                `;
+                queryParams.push(tenantId);
+                paramIndex = 2;
+            }
+
+            // Apply content type filter
+            if (contentTypes && contentTypes.length > 0) {
+                sql += ` AND si.content_type = ANY($${paramIndex})`;
+                queryParams.push(contentTypes);
+                paramIndex++;
+            }
+
+            // Apply faceted filters using Builder
+            const currentParams = [...queryParams];
+            const filterSQL = await this.filterSQLBuilder.buildFilterSQL(tenantId, filters, currentParams, paramIndex);
+            sql += filterSQL.sql;
+            const finalIndex = filterSQL.nextIndex;
+
+            // Apply sorting using Builder
+            sql += this.sortSQLBuilder.buildSortSQL(sort);
+
+            // Apply pagination
+            sql += ` LIMIT $${finalIndex} OFFSET $${finalIndex + 1}`;
+            currentParams.push(perPage, (page - 1) * perPage);
+
+            const searchResults = await query(sql, currentParams);
+
+            // Get total count
+            let countSQL = '';
+            const countParams = [];
+            let countParamIndex = 1;
+
+            if (expandedQuery) {
+                countSQL = `
+                    SELECT COUNT(*) as total
+                    FROM search_indexes si,
+                    to_tsquery('english', $${countParamIndex}) query
+                    WHERE si.tenant_id = $${countParamIndex + 1}
+                    AND si.is_active = true
+                    AND si.search_vector @@ query
+                `;
+                countParams.push(expandedQuery, tenantId);
+                countParamIndex = 3;
+            } else {
+                countSQL = `
+                    SELECT COUNT(*) as total
+                    FROM search_indexes si
+                    WHERE si.tenant_id = $${countParamIndex}
+                    AND si.is_active = true
+                `;
+                countParams.push(tenantId);
+                countParamIndex = 2;
+            }
+
+            if (contentTypes && contentTypes.length > 0) {
+                countSQL += ` AND si.content_type = ANY($${countParamIndex})`;
+                countParams.push(contentTypes);
+                countParamIndex++;
+            }
+
+            const countFilterSQL = await this.filterSQLBuilder.buildFilterSQL(tenantId, filters, countParams, countParamIndex);
+            countSQL += countFilterSQL.sql;
+
+            const countResult = await query(countSQL, countParams);
+            const total = parseInt(countResult.rows[0]?.total || 0);
+
+            lastAttempt = {
+                results: searchResults.rows,
+                total,
+                mode
+            };
+
+            // If we found results, stop the waterfall
+            if (total > 0) {
+                if (mode === 'OR') console.log(`[Search] ⚡ Relaxed search successful for: "${finalQuery}"`);
+                break;
+            }
+
+            // If and failed but we have OR mode left, continue
+            if (mode === 'AND' && modes.includes('OR')) {
+                console.log(`[Search] 🔍 No results for strict AND, retrying with relaxed OR: "${finalQuery}"`);
+            }
         }
 
-        // Apply faceted filters using Builder
-        const filterSQL = await this.filterSQLBuilder.buildFilterSQL(tenantId, filters, queryParams, paramIndex);
-        sql += filterSQL.sql;
-        paramIndex = filterSQL.nextIndex;
-
-        // Get total count before pagination
-        let countSQL = '';
-        const countParams = [];
-        let countParamIndex = 1;
-
-        if (expandedQuery) {
-            countSQL = `
-                SELECT COUNT(*) as total
-                FROM search_indexes si,
-                to_tsquery('english', $${countParamIndex}) query
-                WHERE si.tenant_id = $${countParamIndex + 1}
-                AND si.is_active = true
-                AND si.search_vector @@ query
-            `;
-            countParams.push(expandedQuery, tenantId);
-            countParamIndex = 3;
-        } else {
-            countSQL = `
-                SELECT COUNT(*) as total
-                FROM search_indexes si
-                WHERE si.tenant_id = $${countParamIndex}
-                AND si.is_active = true
-            `;
-            countParams.push(tenantId);
-            countParamIndex = 2;
-        }
-
-        if (contentTypes && contentTypes.length > 0) {
-            countSQL += ` AND si.content_type = ANY($${countParamIndex})`;
-            countParams.push(contentTypes);
-            countParamIndex++;
-        }
-
-        const countFilterSQL = await this.filterSQLBuilder.buildFilterSQL(tenantId, filters, countParams, countParamIndex);
-        countSQL += countFilterSQL.sql;
-
-        const countResult = await query(countSQL, countParams);
-        const total = parseInt(countResult.rows[0]?.total || 0);
-
-        // Apply sorting using Builder
-        sql += this.sortSQLBuilder.buildSortSQL(sort);
-
-        // Apply pagination
-        sql += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-        queryParams.push(perPage, (page - 1) * perPage);
-
-        const searchResults = await query(sql, queryParams);
-
-        // Map and flat results for product consumption in widgets
-        const results = searchResults.rows.map(row => {
+        // Map and flat results
+        const results = lastAttempt.results.map(row => {
             if (row.content_type === 'product' && row.metadata) {
                 return {
                     ...row,
-                    id: row.content_id, // Ensure id is content_id
+                    id: row.content_id,
                     name: row.title || row.metadata.name,
                     price: row.metadata.price || 0,
                     image_url: row.metadata.image_url,
@@ -224,7 +255,7 @@ class SearchService {
                     is_featured: row.metadata.is_featured || false,
                     status: row.metadata.status || 'active',
                     sku: row.metadata.sku,
-                    description: row.metadata.description || row.content, // Prioritize clean description
+                    description: row.metadata.description || row.content,
                     attributes: row.metadata.attributes || {},
                     tags: row.metadata.tags || []
                 };
@@ -232,10 +263,11 @@ class SearchService {
             return row;
         });
 
-        // Get faceted filter counts using Aggregator (passing contextCategoryId for smart subcategory filtering)
-        const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, expandedQuery, contentTypes, filters, originalCategoryId);
+        // Get faceted filter counts (only if we have results or after final attempt)
+        const expandedQueryForFacets = finalQuery ? await this.queryProcessor.expandQuery(finalQuery, tenantId, lastAttempt.mode) : '';
+        const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, expandedQueryForFacets, contentTypes, filters, originalCategoryId);
 
-        // Fetch category context for SEO if filtered by category
+        // Fetch category context for SEO
         let category = null;
         const rawCatId = originalCategoryId || filters.category_id || (filters.category_ids && filters.category_ids[0]);
         if (rawCatId && !Array.isArray(rawCatId)) {
@@ -253,11 +285,13 @@ class SearchService {
             collection,
             attribute,
             clause,
+            mode: lastAttempt.mode,
+            is_relaxed: lastAttempt.mode === 'OR',
             pagination: {
                 page,
                 perPage,
-                total,
-                totalPages: Math.ceil(total / perPage)
+                total: lastAttempt.total,
+                totalPages: Math.ceil(lastAttempt.total / perPage)
             }
         };
     }

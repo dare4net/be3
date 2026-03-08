@@ -10,17 +10,37 @@ const { asyncHandler } = require('../../../middleware/errorHandler');
 
 function registerAttributeRoutes(router) {
     // List Global Attributes (All - for Admin dropdowns)
+    // Merges tenant-specific attributes with global system attributes
     router.get('/attributes/all', authenticate, asyncHandler(async (req, res) => {
-        const result = await query(
-            `SELECT * FROM attributes WHERE tenant_id = $1 ORDER BY label`,
+        // 1. Get tenant-specific attributes (exclude any with is_system flag)
+        const tenantResult = await query(
+            `SELECT * FROM attributes WHERE tenant_id = $1 AND (is_system = false OR is_system IS NULL) ORDER BY label`,
             [req.tenantId]
         );
-        res.json({ success: true, data: result.rows });
+
+        // 2. Get global system attributes (gracefully handle if table doesn't exist)
+        let systemRows = [];
+        try {
+            const systemResult = await query(`SELECT * FROM system_attributes ORDER BY label`);
+            systemRows = systemResult.rows.map(attr => ({
+                ...attr,
+                is_system: true,
+                _source: 'system'
+            }));
+        } catch (e) {
+            // system_attributes table may not exist yet
+        }
+
+        // 3. Merge: system attributes first, then tenant attributes
+        const merged = [...systemRows, ...tenantResult.rows];
+        res.json({ success: true, data: merged });
     }));
 
-    // List Global Attributes
+    // List Global Attributes (paginated, excludes system attributes)
     router.get('/attributes', authenticate, asyncHandler(async (req, res) => {
-        const result = await paginatedTenantQuery('attributes', req.tenantId, {});
+        const includeSystem = req.query.include_system === 'true';
+        const extraWhere = includeSystem ? '' : `AND (is_system = false OR is_system IS NULL)`;
+        const result = await paginatedTenantQuery('attributes', req.tenantId, {}, extraWhere);
         res.json({ success: true, ...result });
     }));
 
@@ -49,8 +69,17 @@ function registerAttributeRoutes(router) {
         res.status(201).json({ success: true, attribute });
     }));
 
-    // Update Global Attribute
+    // Update Global Attribute (blocks system attributes from admin edits)
     router.put('/attributes/:id', authenticate, asyncHandler(async (req, res) => {
+        // Check if this is a system attribute
+        const existing = await query(
+            `SELECT is_system FROM attributes WHERE id = $1 AND tenant_id = $2`,
+            [req.params.id, req.tenantId]
+        );
+        if (existing.rows.length > 0 && existing.rows[0].is_system && req.query.force !== 'superadmin') {
+            return res.status(403).json({ success: false, error: 'System attributes cannot be modified from the admin dashboard' });
+        }
+
         let options = req.body.options;
         // Ensure options is a JSON string for DB
         if (options && typeof options === 'object') {
@@ -74,8 +103,17 @@ function registerAttributeRoutes(router) {
         res.json({ success: true, attribute });
     }));
 
-    // Delete Global Attribute
+    // Delete Global Attribute (blocks system attributes from admin deletion)
     router.delete('/attributes/:id', authenticate, asyncHandler(async (req, res) => {
+        // Check if this is a system attribute
+        const existing = await query(
+            `SELECT is_system FROM attributes WHERE id = $1 AND tenant_id = $2`,
+            [req.params.id, req.tenantId]
+        );
+        if (existing.rows.length > 0 && existing.rows[0].is_system && req.query.force !== 'superadmin') {
+            return res.status(403).json({ success: false, error: 'System attributes cannot be deleted from the admin dashboard' });
+        }
+
         await tenantDelete('attributes', req.tenantId, req.params.id);
         res.json({ success: true, message: 'Attribute deleted' });
     }));

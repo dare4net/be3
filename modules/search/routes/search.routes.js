@@ -117,6 +117,8 @@ function registerSearchRoutes(router) {
             collection: searchResults.collection,
             attribute: searchResults.attribute,
             clause: searchResults.clause,
+            mode: searchResults.mode,
+            is_relaxed: searchResults.is_relaxed,
             seo
         });
     }));
@@ -168,7 +170,9 @@ function registerSearchRoutes(router) {
             category: searchResults.category,
             collection: searchResults.collection,
             attribute: searchResults.attribute,
-            clause: searchResults.clause
+            clause: searchResults.clause,
+            mode: searchResults.mode,
+            is_relaxed: searchResults.is_relaxed
         });
     }));
 
