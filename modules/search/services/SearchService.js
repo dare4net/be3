@@ -13,6 +13,7 @@ const SortSQLBuilder = require('../core/builders/SortSQLBuilder');
 const QueryPreprocessor = require('../core/query/QueryPreprocessor');
 const QueryProcessor = require('../core/query/QueryProcessor');
 const FacetedFiltersAggregator = require('../core/filters/FacetedFiltersAggregator');
+const VectorEngine = require('../../vector/services/VectorEngine');
 
 class SearchService {
     constructor() {
@@ -23,6 +24,7 @@ class SearchService {
         this.queryPreprocessor = new QueryPreprocessor();
         this.queryProcessor = new QueryProcessor();
         this.facetedFiltersAggregator = new FacetedFiltersAggregator(this.categoryResolver, this.filterSQLBuilder);
+        this.vectorEngine = new VectorEngine();
     }
 
     /**
@@ -37,7 +39,9 @@ class SearchService {
             filters = {},
             sort = 'relevance',
             page = 1,
-            perPage = 20
+            perPage = 20,
+            mode: searchMode = 'keyword', // 'keyword', 'vector', 'similar'
+            similar_to: similarTo = null
         } = params;
 
         // Recursive Category Fetch + Auto Drill-down
@@ -116,6 +120,95 @@ class SearchService {
                     }
                 }
             }
+        }
+
+        // --- NEW: Vector Search Branch ---
+        if (searchMode === 'vector' || searchMode === 'similar') {
+            let vectorResults = [];
+            let total = 0;
+
+            if (searchMode === 'similar' && similarTo) {
+                console.log(`[Search] 🧠 Similarity search for ${similarTo}`);
+                const simRes = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, { limit: perPage });
+                vectorResults = simRes;
+                total = simRes.length; // Approximate
+            } else if (finalQuery) {
+                console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}"`);
+                const vecRes = await this.vectorEngine.semanticSearch(tenantId, finalQuery, { 
+                    limit: perPage,
+                    categoryId: originalCategoryId
+                });
+                vectorResults = vecRes;
+                total = vecRes.length; // Approximate
+            }
+
+            // Map vector results to standard search index format
+            const results = vectorResults.map(p => ({
+                content_id: p.id,
+                content_type: 'product',
+                title: p.name,
+                content: p.description,
+                rank: p.similarity / 100,
+                metadata: {
+                    name: p.name,
+                    price: p.price,
+                    description: p.description,
+                    image_url: p.image_url,
+                    handle: p.handle,
+                    status: p.status,
+                    tags: p.tags,
+                    attributes: p.attributes || {}
+                }
+            }));
+
+            // Standardize results using the existing mapper
+            const finalResults = results.map(row => {
+                return {
+                    ...row,
+                    id: row.content_id,
+                    name: row.title || row.metadata.name,
+                    price: row.metadata.price || 0,
+                    image_url: row.metadata.image_url,
+                    slug: row.metadata.handle || row.metadata.slug,
+                    is_featured: row.metadata.is_featured || false,
+                    status: row.metadata.status || 'active',
+                    sku: row.metadata.sku,
+                    description: row.metadata.description || row.content,
+                    attributes: row.metadata.attributes || {},
+                    tags: row.metadata.tags || []
+                };
+            });
+
+            // Get facets (preserved behavior)
+            const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, '', ['product'], filters, originalCategoryId);
+
+            // Fetch SEO context (preserved behavior)
+            let category = null;
+            const rawCatId = originalCategoryId || filters.category_id || (filters.category_ids && filters.category_ids[0]);
+            if (rawCatId && !Array.isArray(rawCatId)) {
+                const resolvedId = await this.categoryResolver.resolveCategoryId(tenantId, rawCatId);
+                const catRes = await query(`SELECT id, name, slug, description FROM categories WHERE id = $1 AND tenant_id = $2`, [resolvedId, tenantId]);
+                if (catRes.rows[0]) {
+                    category = catRes.rows[0];
+                }
+            }
+
+            return {
+                results: finalResults,
+                facets,
+                category,
+                collection,
+                attribute,
+                clause,
+                mode: searchMode,
+                is_relaxed: false,
+                pagination: {
+                    page,
+                    perPage,
+                    total: total,
+                    totalPages: Math.ceil(total / perPage)
+                }
+            };
         }
 
         // Waterfall Strategy: Try AND first, then OR if filters exist

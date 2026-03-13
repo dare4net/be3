@@ -14,9 +14,9 @@ CREATE TABLE IF NOT EXISTS user_category_permissions (
 );
 
 -- Indexes for performance
-CREATE INDEX idx_user_category_permissions_tenant_id ON user_category_permissions(tenant_id);
-CREATE INDEX idx_user_category_permissions_user_id ON user_category_permissions(user_id);
-CREATE INDEX idx_user_category_permissions_category_id ON user_category_permissions(category_id);
+CREATE INDEX IF NOT EXISTS idx_user_category_permissions_tenant_id ON user_category_permissions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_user_category_permissions_user_id ON user_category_permissions(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_category_permissions_category_id ON user_category_permissions(category_id);
 
 -- Comments
 COMMENT ON TABLE user_category_permissions IS 'Category-level access control for users. If a user has NO entries, they can access ALL categories. If they have ANY entries, they can ONLY access those specific categories.';

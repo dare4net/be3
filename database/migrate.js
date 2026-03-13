@@ -19,17 +19,28 @@ async function runMigrations() {
         'migrations/022_create_layouts_system.sql',
         'migrations/027_search_module.sql',
         'migrations/028_tenant_rate_limit_exempt.sql',
-        'migrations/029_user_category_permissions.sql'
+        'migrations/029_user_category_permissions.sql',
+        'migrations/051_enable_pgvector.js',
+        'migrations/052_register_missing_modules.js'
     ];
 
     for (const schemaPath of schemas) {
         const fullPath = path.join(__dirname, '..', schemaPath);
-        if (fs.existsSync(fullPath)) {
-            const sql = fs.readFileSync(fullPath, 'utf8');
-            console.log(`✓ Running: ${schemaPath}`);
-            await pool.query(sql);
-        } else {
+        if (!fs.existsSync(fullPath)) {
             console.log(`⚠ Skipped (not found): ${schemaPath}`);
+            continue;
+        }
+
+        console.log(`✓ Running: ${schemaPath}`);
+
+        if (schemaPath.endsWith('.js')) {
+            // JS migrations export { up, down }
+            const migration = require(fullPath);
+            if (migration.up) await migration.up();
+        } else {
+            // SQL migrations run directly
+            const sql = fs.readFileSync(fullPath, 'utf8');
+            await pool.query(sql);
         }
     }
 
