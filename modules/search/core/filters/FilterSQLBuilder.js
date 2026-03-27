@@ -334,6 +334,67 @@ class FilterSQLBuilder {
 
         return { sql, nextIndex: index };
     }
+
+    /**
+     * Build filter SQL for the 'products' table (aliased as 'p')
+     * Used by Vector Search and Similarity Search
+     */
+    async buildProductFilterSQL(tenantId, filters, queryParams, startIndex) {
+        let sql = '';
+        let index = startIndex;
+
+        // Price range
+        if (filters.price_min !== undefined && filters.price_min !== null) {
+            sql += ` AND p.price >= $${index}`;
+            queryParams.push(parseFloat(filters.price_min));
+            index++;
+        }
+
+        if (filters.price_max !== undefined && filters.price_max !== null) {
+            sql += ` AND p.price <= $${index}`;
+            queryParams.push(parseFloat(filters.price_max));
+            index++;
+        }
+
+        // Category filter (primary)
+        if (filters.category_id) {
+            sql += ` AND p.category_id = $${index}`;
+            queryParams.push(filters.category_id);
+            index++;
+        }
+
+        // Category filters (resolved descendants)
+        if (filters.category_ids && Array.isArray(filters.category_ids)) {
+            // Note: If the products table only has one category_id, we use = ANY
+            // If it uses many-to-many, we'd need a join which is better handled in SearchService
+            sql += ` AND p.category_id = ANY($${index})`;
+            queryParams.push(filters.category_ids);
+            index++;
+        }
+
+        // Custom attribute filters
+        const attributeKeys = Object.keys(filters).filter(k => k.startsWith('attribute.'));
+        for (const key of attributeKeys) {
+            const parts = key.replace('attribute.', '').split(':');
+            const attrCode = parts[0];
+            const filterValue = filters[key];
+
+            // For speed in vector search, we only support direct equality or basic numeric comparisons
+            // Complex clauses are ignored for now to keep performance high
+            const isArray = Array.isArray(filterValue) || (typeof filterValue === 'string' && filterValue.includes(','));
+            const val = Array.isArray(filterValue) ? filterValue : (typeof filterValue === 'string' && filterValue.includes(',') ? filterValue.split(',').map(v => v.trim()) : filterValue);
+
+            if (isArray) {
+                sql += ` AND p.attributes->>$${index} = ANY($${index + 1})`;
+            } else {
+                sql += ` AND p.attributes->>$${index} = $${index + 1}`;
+            }
+            queryParams.push(attrCode, val);
+            index += 2;
+        }
+
+        return { sql, nextIndex: index };
+    }
 }
 
 module.exports = FilterSQLBuilder;

@@ -89,9 +89,10 @@ async function bootstrap(context) {
             }
 
             const order = orderResult.rows[0];
+            const orderSessionId = order.session_id || order.metadata?.session_id || null;
 
             // Security: If session_id is provided, must match
-            if (!user && req.query.session_id && order.session_id !== req.query.session_id) {
+            if (!user && req.query.session_id && orderSessionId !== req.query.session_id) {
                 // For now, allow bot to see it if it has the number, but in production we'd be stricter
             }
 
@@ -162,6 +163,7 @@ async function bootstrap(context) {
             }
 
             const order = orderResult.rows[0];
+            const orderSessionId = order.session_id || order.metadata?.session_id || null;
 
             // Security check
             if (user) {
@@ -172,7 +174,7 @@ async function bootstrap(context) {
                     if (!isAdmin) return res.status(403).json({ error: 'Unauthorized' });
                 }
             } else if (session_id) {
-                if (order.session_id !== session_id) {
+                if (orderSessionId !== session_id) {
                     // In a simulation/bot environment, we might be more lenient if the order_number matches exactly
                     // For now, let's allow it if the number is specific enough
                 }
@@ -209,6 +211,7 @@ async function bootstrap(context) {
             const order = await tenantInsert('orders', tenantId, {
                 order_number: orderNumber,
                 user_id: user ? user.id : null,
+                session_id: session_id || null,
                 vendor_id: dbVendorId,
                 status: 'pending_whatsapp',
                 payment_status: 'pending',
@@ -266,6 +269,7 @@ async function bootstrap(context) {
             const order = await tenantInsert('orders', tenantId, {
                 order_number: orderNumber,
                 user_id: user ? user.id : null,
+                session_id: session_id || null,
                 vendor_id: dbVendorId,
                 status: 'pending',
                 payment_status: 'pending',

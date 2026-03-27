@@ -416,6 +416,15 @@ class VectorEngine {
             paramIndex++;
         }
 
+        // Apply external filters (from FilterSQLBuilder)
+        if (options.filter && options.filter.sql) {
+            sql += options.filter.sql;
+            if (options.filter.params && options.filter.params.length > 0) {
+                params.push(...options.filter.params);
+                paramIndex += options.filter.params.length;
+            }
+        }
+
         sql += ` ORDER BY p.embedding <=> $1::vector ASC LIMIT $${paramIndex}`;
         params.push(limit);
 
@@ -450,7 +459,7 @@ class VectorEngine {
     async findSimilarProducts(tenantId, productId, options = {}) {
         const { limit = 5, threshold = 0.5 } = options;
 
-        const sql = `
+        let sql = `
             SELECT 
                 p.id,
                 p.name,
@@ -464,11 +473,24 @@ class VectorEngine {
               AND p.embedding IS NOT NULL
               AND p.id != $1
               AND 1 - (p.embedding <=> source.embedding) >= $3
-            ORDER BY p.embedding <=> source.embedding ASC
-            LIMIT $4
         `;
 
-        const result = await query(sql, [productId, tenantId, threshold, limit], tenantId);
+        const params = [productId, tenantId, threshold];
+        let paramIndex = 4;
+
+        // Apply external filters (from FilterSQLBuilder)
+        if (options.filter && options.filter.sql) {
+            sql += options.filter.sql;
+            if (options.filter.params && options.filter.params.length > 0) {
+                params.push(...options.filter.params);
+                paramIndex += options.filter.params.length;
+            }
+        }
+
+        sql += ` ORDER BY p.embedding <=> source.embedding ASC LIMIT $${paramIndex}`;
+        params.push(limit);
+
+        const result = await query(sql, params, tenantId);
 
         return result.rows.map(row => ({
             id: row.id,

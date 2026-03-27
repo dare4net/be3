@@ -21,7 +21,8 @@ async function runMigrations() {
         'migrations/028_tenant_rate_limit_exempt.sql',
         'migrations/029_user_category_permissions.sql',
         'migrations/051_enable_pgvector.js',
-        'migrations/052_register_missing_modules.js'
+        'migrations/052_register_missing_modules.js',
+        'migrations/053_add_session_id_to_orders.js'
     ];
 
     for (const schemaPath of schemas) {

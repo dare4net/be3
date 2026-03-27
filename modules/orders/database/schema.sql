@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL,
   user_id UUID,
+  session_id VARCHAR(255),
   order_number VARCHAR(50) NOT NULL,
   status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'paid', 'processing', 'shipped', 'completed', 'cancelled', 'refunded')),
   subtotal DECIMAL(10, 2) NOT NULL,
@@ -61,6 +62,8 @@ CREATE TABLE IF NOT EXISTS refunds (
 -- Indexes
 CREATE INDEX idx_orders_tenant_id ON orders(tenant_id);
 CREATE INDEX idx_orders_user_id ON orders(user_id);
+CREATE INDEX idx_orders_session_id ON orders(session_id);
+CREATE INDEX idx_orders_tenant_session ON orders(tenant_id, session_id);
 CREATE INDEX idx_orders_order_number ON orders(order_number);
 CREATE INDEX idx_orders_status ON orders(status);
 CREATE INDEX idx_order_items_order_id ON order_items(order_id);

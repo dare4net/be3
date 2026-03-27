@@ -35,7 +35,9 @@ function registerSearchRoutes(router) {
             is_featured,
             id,
             tag,
-            tags
+            tags,
+            mode,
+            similar_to: similarTo
         } = req.query;
 
         // Parse content types
@@ -80,7 +82,9 @@ function registerSearchRoutes(router) {
             filters,
             sort,
             page: parseInt(page),
-            perPage: parseInt(per_page)
+            perPage: parseInt(per_page),
+            mode,
+            similar_to: similarTo
         });
 
         // Track search analytics
@@ -139,7 +143,9 @@ function registerSearchRoutes(router) {
             price_max,
             vendor,
             tag,
-            tags
+            tags,
+            mode,
+            similar_to: similarTo
         } = req.query;
 
         const filters = {};
@@ -159,7 +165,9 @@ function registerSearchRoutes(router) {
             filters,
             sort,
             page: parseInt(page),
-            perPage: parseInt(per_page)
+            perPage: parseInt(per_page),
+            mode,
+            similar_to: similarTo
         });
 
         res.json({

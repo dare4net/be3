@@ -127,16 +127,31 @@ class SearchService {
             let vectorResults = [];
             let total = 0;
 
+            // NEW: Build dynamic filters for vector/similarity search
+            const vectorFilters = { ...filters };
+            const vectorQueryParams = [];
+            const vectorFilterStartIndex = (searchMode === 'vector' && originalCategoryId) ? 5 : 4;
+            const { sql: vectorFilterSql } = await this.filterSQLBuilder.buildProductFilterSQL(
+                tenantId, 
+                vectorFilters, 
+                vectorQueryParams, 
+                vectorFilterStartIndex
+            );
+
             if (searchMode === 'similar' && similarTo) {
-                console.log(`[Search] 🧠 Similarity search for ${similarTo}`);
-                const simRes = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, { limit: perPage });
+                console.log(`[Search] 🧠 Similarity search for ${similarTo} with ${vectorQueryParams.length} filters`);
+                const simRes = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, { 
+                    limit: perPage,
+                    filter: { sql: vectorFilterSql, params: vectorQueryParams }
+                });
                 vectorResults = simRes;
-                total = simRes.length; // Approximate
+                total = simRes.length; 
             } else if (finalQuery) {
-                console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}"`);
+                console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}" with ${vectorQueryParams.length} filters`);
                 const vecRes = await this.vectorEngine.semanticSearch(tenantId, finalQuery, { 
                     limit: perPage,
-                    categoryId: originalCategoryId
+                    categoryId: originalCategoryId,
+                    filter: { sql: vectorFilterSql, params: vectorQueryParams }
                 });
                 vectorResults = vecRes;
                 total = vecRes.length; // Approximate
