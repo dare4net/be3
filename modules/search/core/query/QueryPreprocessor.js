@@ -14,10 +14,33 @@ class QueryPreprocessor {
      * @param {string} categoryId - Optional current category context
      * @returns {Object} - { processedQuery, additionalFilters }
      */
-    async preprocessQuery(tenantId, searchQuery, categoryId = null) {
+    async preprocessQuery(tenantId, searchQuery, categoryId = null, explicitFilters = {}) {
         if (!searchQuery) return { processedQuery: null, additionalFilters: {} };
 
         const additionalFilters = {};
+        const debugEnabled = String(process.env.DEBUG_QUERY_PREPROCESSOR || '').toLowerCase() === 'true'
+            || String(process.env.DEBUG_QUERY_PREPROCESSOR || '') === '1';
+
+        const explicitKeys = explicitFilters && typeof explicitFilters === 'object' ? Object.keys(explicitFilters) : [];
+        const hasExplicitCategory =
+            !!categoryId ||
+            Object.prototype.hasOwnProperty.call(explicitFilters || {}, 'category_id') ||
+            Object.prototype.hasOwnProperty.call(explicitFilters || {}, 'category_ids');
+
+        const hasExplicitAttributeCode = (attrCode) => {
+            if (!attrCode) return false;
+            const code = String(attrCode).toLowerCase();
+            return explicitKeys.some((k) => {
+                if (!k || !k.startsWith('attribute.')) return false;
+                // k examples:
+                // - attribute.c
+                // - attribute.c:v
+                // - attribute.vendor
+                const rhs = k.slice('attribute.'.length);
+                const existingCode = rhs.split(':')[0]?.toLowerCase();
+                return existingCode === code;
+            });
+        };
 
         // 0. Initial Normalization: Strip common "junk" phrases
         let processedQuery = searchQuery
@@ -51,6 +74,9 @@ class QueryPreprocessor {
             const match = processedQuery.match(regex);
 
             if (match) {
+                // If user already constrained this attribute, reject inference and keep query intact.
+                if (hasExplicitAttributeCode(attr.code)) continue;
+
                 const operatorWord = match[2].toLowerCase();
                 let value = parseFloat(match[4]);
                 const unit = (match[5] || '').toLowerCase();
@@ -60,6 +86,7 @@ class QueryPreprocessor {
 
                 const clauseKey = `attribute.${attr.code}:_nlq_${operatorWord}_${value}`;
                 additionalFilters[clauseKey] = value;
+                // Used inference => strip matched phrase from query.
                 processedQuery = processedQuery.replace(match[0], '').trim();
             }
         }
@@ -84,6 +111,8 @@ class QueryPreprocessor {
             const match = processedQuery.match(regex);
 
             if (match) {
+                if (hasExplicitAttributeCode(attr.code)) continue;
+
                 const searchValue = match[2].trim();
                 const clauses = (typeof attr.clauses === 'string' ? JSON.parse(attr.clauses) : attr.clauses) || [];
 
@@ -98,7 +127,7 @@ class QueryPreprocessor {
                 } else {
                     additionalFilters[`attribute.${attr.code}`] = searchValue;
                 }
-
+                // Used inference => strip matched substring from query.
                 processedQuery = processedQuery.replace(match[0], '').trim();
             }
         }
@@ -123,8 +152,11 @@ class QueryPreprocessor {
                     const regex = new RegExp(`\\b${escaped}(s|es)?\\b`, 'i');
 
                     if (processedQuery.match(regex)) {
+                        if (hasExplicitAttributeCode(attr.code)) break;
+
                         const clauseKey = `attribute.${attr.code}:${clause.name}`;
                         additionalFilters[clauseKey] = clause.value ?? 1;
+                        // Used inference => strip matched phrase from query.
                         processedQuery = processedQuery.replace(regex, '').trim();
                         break;
                     }
@@ -138,9 +170,12 @@ class QueryPreprocessor {
                         const escapedVal = val.toString().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
                         const vRegex = new RegExp(`\\b${escapedVal}(s|es)?\\b`, 'i');
                         if (processedQuery.match(vRegex)) {
+                            if (hasExplicitAttributeCode(attr.code)) break;
+
                             const clauseKey = `attribute.${attr.code}:${clause.name}`;
                             if (!additionalFilters[clauseKey]) {
                                 additionalFilters[clauseKey] = clause.value ?? 1;
+                                // Used inference => strip matched value from query.
                                 processedQuery = processedQuery.replace(vRegex, '').trim();
                             }
                             break;
@@ -151,15 +186,21 @@ class QueryPreprocessor {
         }
 
         // 4. Standalone Category detection (Plural Tolerant)
-        if (processedQuery.length > 0) {
+        // If categoryId is already known (user explicitly filtered by category), avoid re-inferencing + rewriting query.
+        if (!hasExplicitCategory && processedQuery.length > 0) {
             const tokens = processedQuery.split(/\s+/).filter(t => t.length >= 3);
             if (tokens.length > 0) {
                 const stems = tokens.map(t => t.replace(/(s|es)$/i, ''));
                 const searchTerms = new Set([...tokens.map(t => t.toLowerCase()), ...stems.map(s => s.toLowerCase())]);
 
+                if (debugEnabled) {
+                    console.log('[QueryPreprocessor:DEBUG] categoryDetection tokens=', JSON.stringify(tokens));
+                    console.log('[QueryPreprocessor:DEBUG] categoryDetection searchTerms=', JSON.stringify(Array.from(searchTerms)));
+                }
+
                 // Try to find matching category for any token
                 const catRes = await query(
-                    `SELECT id, name FROM categories
+                    `SELECT id, name, slug FROM categories
                      WHERE tenant_id = $1
                      AND (name ILIKE ANY($2) OR slug ILIKE ANY($2))
                      AND is_active = true
@@ -170,13 +211,51 @@ class QueryPreprocessor {
 
                 if (catRes.rows.length > 0) {
                     additionalFilters.category_id = catRes.rows[0].id;
-                    // Remove matching word from query
-                    for (const term of searchTerms) {
-                        const r = new RegExp(`\\b${term}\\b`, 'i');
-                        processedQuery = processedQuery.replace(r, '').trim();
+                    if (debugEnabled) {
+                        console.log('[QueryPreprocessor:DEBUG] categoryMatch=', JSON.stringify(catRes.rows[0]));
+                        console.log('[QueryPreprocessor:DEBUG] strippingFromProcessedQuery(before)=', JSON.stringify(processedQuery));
+                    }
+
+                    // Used inference => strip only the tokens that actually match the resolved category name/slug.
+                    const catName = String(catRes.rows[0].name || '').toLowerCase();
+                    const catSlug = String(catRes.rows[0].slug || '').toLowerCase();
+                    const catWords = new Set(
+                        `${catName} ${catSlug}`
+                            .split(/[^a-z0-9]+/g)
+                            .filter(Boolean)
+                    );
+
+                    const termsToStrip = Array.from(searchTerms).filter((t) => {
+                        if (!t) return false;
+                        if (catWords.has(t)) return true;
+                        // allow stripping of stems/prefixes that map to a category word (e.g. game -> gaming)
+                        for (const w of catWords) {
+                            if (w.startsWith(t)) return true;
+                        }
+                        return false;
+                    });
+
+                    for (const term of termsToStrip) {
+                        const r = new RegExp(`\\b${term}\\b`, 'ig');
+                        processedQuery = processedQuery.replace(r, ' ').replace(/\s+/g, ' ').trim();
+                        if (debugEnabled) {
+                            console.log('[QueryPreprocessor:DEBUG] stripped category term=', JSON.stringify(term), '-> processedQuery now=', JSON.stringify(processedQuery));
+                        }
+                    }
+
+                    if (debugEnabled) {
+                        console.log('[QueryPreprocessor:DEBUG] strippingFromProcessedQuery(after)=', JSON.stringify(processedQuery));
                     }
                 }
             }
+        }
+
+        // Debugging (opt-in via env): prints how query was rewritten + inferred filters.
+        // Enable with: DEBUG_QUERY_PREPROCESSOR=true (or 1)
+        if (debugEnabled) {
+            console.log('[QueryPreprocessor:DEBUG] inputQuery=', JSON.stringify(searchQuery));
+            console.log('[QueryPreprocessor:DEBUG] processedQuery=', JSON.stringify(processedQuery));
+            console.log('[QueryPreprocessor:DEBUG] additionalFilters=', JSON.stringify(additionalFilters));
         }
 
         return {

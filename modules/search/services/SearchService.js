@@ -58,10 +58,27 @@ class SearchService {
             delete filters.category_id;
         }
 
-        const { processedQuery, additionalFilters } = await this.queryPreprocessor.preprocessQuery(tenantId, searchQuery || '', originalCategoryId);
-        // Fix: Ensure finalQuery is trimmed if it's not null, otherwise use original search query
-        const finalQuery = (processedQuery === null) ? (searchQuery || '') : processedQuery.trim();
-        Object.assign(filters, additionalFilters);
+        // In vector/similar mode, do NOT perform query preprocessing or inference.
+        // Use only the query + filters the caller supplied.
+        let finalQuery = (searchQuery || '').trim();
+        if (searchMode !== 'vector' && searchMode !== 'similar') {
+            const { processedQuery, additionalFilters } = await this.queryPreprocessor.preprocessQuery(
+                tenantId,
+                searchQuery || '',
+                originalCategoryId,
+                filters
+            );
+            // Fix: Ensure finalQuery is trimmed if it's not null, otherwise use original search query
+            finalQuery = (processedQuery === null) ? (searchQuery || '') : processedQuery.trim();
+
+            // Guardrail: don't overwrite explicit user filters with inferred ones.
+            // (Important for category/attribute correctness.)
+            for (const [k, v] of Object.entries(additionalFilters || {})) {
+                if (!Object.prototype.hasOwnProperty.call(filters, k)) {
+                    filters[k] = v;
+                }
+            }
+        }
 
         // Resolve Collection if provided
         let collection = null;
