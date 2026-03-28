@@ -211,7 +211,7 @@ function registerProductRoutes(router, eventBus) {
         let params = [req.params.id, req.tenantId];
 
         if (isVendor && vendorName && !hasUnrestrictedAccess) {
-            sql += ` AND (tags @> ARRAY[$3]::text[] OR created_by = $4)`;
+            sql += ` AND (tags @> ARRAY[$3]::text[] OR attributes->>'vendor' = $4)`;
             params.push(vendorName, req.user.id);
         }
 
@@ -342,7 +342,7 @@ function registerProductRoutes(router, eventBus) {
 
         // Security check for vendor ownership
         if (isVendor && vendorName && !hasUnrestrictedAccess) {
-            const check = await query(`SELECT id FROM products WHERE id = $1 AND tenant_id = $2 AND (tags @> ARRAY[$3]::text[] OR created_by = $4)`, [req.params.id, req.tenantId, vendorName, req.user.id]);
+            const check = await query(`SELECT id FROM products WHERE id = $1 AND tenant_id = $2 AND (tags @> ARRAY[$3]::text[] OR attributes->>'vendor' = $4)`, [req.params.id, req.tenantId, vendorName, req.user.id]);
             if (check.rows.length === 0) {
                 return res.status(403).json({ error: 'Access denied: You do not own this product' });
             }

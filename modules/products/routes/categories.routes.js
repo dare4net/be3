@@ -214,11 +214,11 @@ function registerCategoryRoutes(router, eventBus) {
             // 2. Get product counts (direct and total with descendants)
             const productCountSql = `
                 WITH RECURSIVE category_tree AS (
-                    SELECT id FROM categories WHERE id = $1 AND tenant_id = $2
+                    SELECT id, 0 as depth FROM categories WHERE id = $1 AND tenant_id = $2
                     UNION ALL
-                    SELECT c.id FROM categories c
+                    SELECT c.id, ct.depth + 1 FROM categories c
                     INNER JOIN category_tree ct ON c.parent_id = ct.id
-                    WHERE c.tenant_id = $2
+                    WHERE c.tenant_id = $2 AND ct.depth < 10
                 )
                 SELECT 
                     COUNT(DISTINCT CASE WHEN pc.category_id = $1 THEN pc.product_id END)::int as direct_product_count,
@@ -248,7 +248,7 @@ function registerCategoryRoutes(router, eventBus) {
                         SELECT c.id, c.parent_id, c.name, ct.depth + 1
                         FROM categories c
                         INNER JOIN category_tree ct ON c.id = ct.parent_id
-                        WHERE c.tenant_id = $2
+                        WHERE c.tenant_id = $2 AND ct.depth < 10
                     )
                     SELECT DISTINCT ON (a.id)
                         a.id, a.code, a.label, a.type, a.image_url, a.clauses, a.options,
@@ -272,12 +272,12 @@ function registerCategoryRoutes(router, eventBus) {
             // 5. Get recent products (limit 10) - from category tree with direct products first
             try {
                 const productsRes = await query(
-                    `WITH category_tree AS (
-                        SELECT id FROM categories WHERE id = $1 AND tenant_id = $2
+                    `WITH RECURSIVE category_tree AS (
+                        SELECT id, 0 as depth FROM categories WHERE id = $1 AND tenant_id = $2
                         UNION ALL
-                        SELECT c.id FROM categories c
+                        SELECT c.id, ct.depth + 1 FROM categories c
                         INNER JOIN category_tree ct ON c.parent_id = ct.id
-                        WHERE c.tenant_id = $2
+                        WHERE c.tenant_id = $2 AND ct.depth < 10
                     )
                     SELECT p.id, p.name, p.image_url, p.price, p.status,
                            CASE WHEN pc.category_id = $1 THEN 0 ELSE 1 END as sort_order
@@ -306,7 +306,7 @@ function registerCategoryRoutes(router, eventBus) {
                         SELECT c.id, c.name, c.parent_id, cp.level + 1
                         FROM categories c
                         INNER JOIN category_path cp ON c.id = cp.parent_id
-                        WHERE c.tenant_id = $2
+                        WHERE c.tenant_id = $2 AND cp.level < 10
                     )
                     SELECT id, name FROM category_path ORDER BY level DESC
                 `;
@@ -363,7 +363,7 @@ function registerCategoryRoutes(router, eventBus) {
                         SELECT c.id, c.parent_id, c.name, ct.depth + 1
                         FROM categories c
                         INNER JOIN category_tree ct ON c.id = ct.parent_id
-                        WHERE c.tenant_id = $2
+                        WHERE c.tenant_id = $2 AND ct.depth < 10
                     )
                     SELECT DISTINCT ON (a.id)
                         a.id, a.code, a.label, a.type, a.image_url, a.clauses, a.options,
@@ -394,7 +394,7 @@ function registerCategoryRoutes(router, eventBus) {
                         SELECT c.id, c.name, c.parent_id, cp.level + 1
                         FROM categories c
                         INNER JOIN category_path cp ON c.id = cp.parent_id
-                        WHERE c.tenant_id = $2
+                        WHERE c.tenant_id = $2 AND cp.level < 10
                     )
                     SELECT id, name FROM category_path ORDER BY level DESC
                 `;
@@ -433,11 +433,11 @@ function registerCategoryRoutes(router, eventBus) {
             // Get total count
             const countSql = `
                 WITH RECURSIVE category_tree AS (
-                    SELECT id FROM categories WHERE id = $1 AND tenant_id = $2
+                    SELECT id, 0 as depth FROM categories WHERE id = $1 AND tenant_id = $2
                     UNION ALL
-                    SELECT c.id FROM categories c
+                    SELECT c.id, ct.depth + 1 FROM categories c
                     INNER JOIN category_tree ct ON c.parent_id = ct.id
-                    WHERE c.tenant_id = $2
+                    WHERE c.tenant_id = $2 AND ct.depth < 10
                 )
                 SELECT COUNT(DISTINCT p.id)::int as total
                 FROM products p
@@ -451,11 +451,11 @@ function registerCategoryRoutes(router, eventBus) {
             // Get paginated products (direct products first)
             const productsSql = `
                 WITH RECURSIVE category_tree AS (
-                    SELECT id FROM categories WHERE id = $1 AND tenant_id = $2
+                    SELECT id, 0 as depth FROM categories WHERE id = $1 AND tenant_id = $2
                     UNION ALL
-                    SELECT c.id FROM categories c
+                    SELECT c.id, ct.depth + 1 FROM categories c
                     INNER JOIN category_tree ct ON c.parent_id = ct.id
-                    WHERE c.tenant_id = $2
+                    WHERE c.tenant_id = $2 AND ct.depth < 10
                 )
                 SELECT DISTINCT ON (p.id)
                     p.id, p.name, p.image_url, p.price, p.status, p.sku,

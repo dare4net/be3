@@ -121,7 +121,8 @@ function registerAttributeRoutes(router) {
     // Get Categories for an Attribute
     router.get('/attributes/:id/categories', authenticate, asyncHandler(async (req, res) => {
         const result = await query(
-            `SELECT category_id FROM category_attributes WHERE attribute_id = $1 AND tenant_id = $2`,
+            `SELECT category_id FROM category_attributes 
+             WHERE attribute_id = $1 AND tenant_id = $2 AND is_ignored = false`,
             [req.params.id, req.tenantId]
         );
         res.json({ success: true, category_ids: result.rows.map(r => r.category_id) });
@@ -131,19 +132,22 @@ function registerAttributeRoutes(router) {
     router.get('/attributes/:id/affected-categories', authenticate, asyncHandler(async (req, res) => {
         const sql = `
             WITH RECURSIVE affected_tree AS (
-                -- Anchor: Direct links
+                -- Anchor: Direct links (not ignored)
                 SELECT c.id, c.name, c.parent_id, 0 as depth
                 FROM categories c
                 JOIN category_attributes ca ON ca.category_id = c.id
-                WHERE ca.attribute_id = $1 AND c.tenant_id = $2
+                WHERE ca.attribute_id = $1 AND c.tenant_id = $2 AND ca.is_ignored = false
                 
                 UNION ALL
                 
-                -- Recursive: Descendants
+                -- Recursive: Descendants (unless they specifically ignore the attribute)
                 SELECT c.id, c.name, c.parent_id, at.depth + 1
                 FROM categories c
                 JOIN affected_tree at ON c.parent_id = at.id
+                LEFT JOIN category_attributes ca ON (ca.category_id = c.id AND ca.attribute_id = $1)
                 WHERE c.tenant_id = $2
+                  AND (ca.is_ignored = false OR ca.is_ignored IS NULL)
+                  AND at.depth < 10
             )
             SELECT DISTINCT ON (id) id, name, parent_id, depth FROM affected_tree ORDER BY id, depth ASC
         `;
