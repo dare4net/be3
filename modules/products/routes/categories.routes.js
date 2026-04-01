@@ -8,6 +8,7 @@ const { tenantInsert, tenantUpdate } = require('../../../utils/dbHelpers');
 const { authenticate } = require('../../../platform/core/auth/middleware/authenticate');
 const authorize = require('../../../platform/core/roles/middleware/authorize');
 const { asyncHandler } = require('../../../middleware/errorHandler');
+const ProductService = require('../services/ProductService');
 
 function registerCategoryRoutes(router, eventBus) {
     // Get all categories (PUBLIC - for storefront and widget editors)
@@ -193,7 +194,7 @@ function registerCategoryRoutes(router, eventBus) {
         const categoryId = req.params.id;
 
         // Permission Check
-        const { hasUnrestrictedAccess, allowedCategories } = await PermissionService.getUserCategoryAccess(req.tenantId, req.user.id);
+        const { isVendor, vendorName, categoryAccess: { hasUnrestrictedAccess, allowedCategories } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
         if (!hasUnrestrictedAccess && !allowedCategories.some(id => id == categoryId)) {
             return res.status(403).json({ error: 'Access denied to this category' });
         }
@@ -224,9 +225,12 @@ function registerCategoryRoutes(router, eventBus) {
                     COUNT(DISTINCT CASE WHEN pc.category_id = $1 THEN pc.product_id END)::int as direct_product_count,
                     COUNT(DISTINCT pc.product_id)::int as total_product_count
                 FROM category_tree ct
-                    LEFT JOIN product_categories pc ON pc.category_id = ct.id
+                LEFT JOIN product_categories pc ON pc.category_id = ct.id
+                JOIN products p ON p.id = pc.product_id
+                WHERE p.tenant_id = $2
+                AND (NOT $3::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 4, 5)})
             `;
-            const countRes = await query(productCountSql, [categoryId, req.tenantId]);
+            const countRes = await query(productCountSql, [categoryId, req.tenantId, isVendor, vendorName, req.user.id]);
             category.direct_product_count = countRes.rows[0]?.direct_product_count || 0;
             category.total_product_count = countRes.rows[0]?.total_product_count || 0;
 
@@ -285,11 +289,17 @@ function registerCategoryRoutes(router, eventBus) {
                     JOIN product_categories pc ON p.id = pc.product_id
                     JOIN category_tree ct ON pc.category_id = ct.id
                     WHERE p.tenant_id = $2
+                    AND (NOT $3::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 4, 5)})
                     ORDER BY sort_order ASC, p.created_at DESC
                     LIMIT 10`,
-                    [categoryId, req.tenantId]
+                    [categoryId, req.tenantId, isVendor, vendorName, req.user.id]
                 );
-                category.recent_products = productsRes.rows || [];
+                const recentProducts = productsRes.rows || [];
+
+                // Resolve dynamic tags for recent products
+                await ProductService.resolve(req.tenantId, req.user.id, recentProducts);
+                
+                category.recent_products = recentProducts;
             } catch (prodError) {
                 console.error('Error fetching products:', prodError);
                 category.recent_products = [];
@@ -421,7 +431,7 @@ function registerCategoryRoutes(router, eventBus) {
         const categoryId = req.params.id;
 
         // Permission Check
-        const { hasUnrestrictedAccess, allowedCategories } = await PermissionService.getUserCategoryAccess(req.tenantId, req.user.id);
+        const { isVendor, vendorName, categoryAccess: { hasUnrestrictedAccess, allowedCategories } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
         if (!hasUnrestrictedAccess && !allowedCategories.some(id => id == categoryId)) {
             return res.status(403).json({ error: 'Access denied to this category' });
         }
@@ -444,8 +454,9 @@ function registerCategoryRoutes(router, eventBus) {
                 JOIN product_categories pc ON p.id = pc.product_id
                 JOIN category_tree ct ON pc.category_id = ct.id
                 WHERE p.tenant_id = $2
+                AND (NOT $3::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 4, 5)})
             `;
-            const countRes = await query(countSql, [categoryId, req.tenantId]);
+            const countRes = await query(countSql, [categoryId, req.tenantId, isVendor, vendorName, req.user.id]);
             const total = countRes.rows[0]?.total || 0;
 
             // Get paginated products (direct products first)
@@ -466,10 +477,14 @@ function registerCategoryRoutes(router, eventBus) {
                 JOIN category_tree ct ON pc.category_id = ct.id
                 JOIN categories c ON pc.category_id = c.id
                 WHERE p.tenant_id = $2
+                AND (NOT $5::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 6, 7)})
                 ORDER BY p.id, sort_order ASC
                 OFFSET $3 LIMIT $4
             `;
-            const productsRes = await query(productsSql, [categoryId, req.tenantId, offset, perPage]);
+            const productsRes = await query(productsSql, [categoryId, req.tenantId, offset, perPage, isVendor, vendorName, req.user.id]);
+
+            // Resolve dynamic tags for products list
+            await ProductService.resolve(req.tenantId, req.user.id, productsRes.rows);
 
             // Sort by sort_order
             const products = productsRes.rows.sort((a, b) => {

@@ -430,10 +430,14 @@ class RandomizationService {
         let attributeCondition;
         if (operator === '=' || operator === '!=' || operator === 'LIKE' || operator === 'ILIKE' || operator === 'NOT LIKE') {
             // String or exact match or pattern match
-            attributeCondition = `(si.metadata->'attributes'->>$2 ${operator} $3 OR (si.metadata->'attributes'->$2)::text ${operator} $3)`;
+            // Handle both scalar extraction (->>) and potential json-wrapped extraction (->)
+            attributeCondition = `(LOWER(si.metadata->'attributes'->>$2) ${operator} LOWER($3) OR LOWER((si.metadata->'attributes'->$2)::text) ${operator} LOWER($3))`;
         } else {
             // Numeric comparison (<=, >=, <, >)
-            attributeCondition = `(si.metadata->'attributes'->>$2)::numeric ${operator} $3::numeric`;
+            const attrValTxt = `si.metadata->'attributes'->>$2`;
+            // Safe cast check: if it looks like a number, cast it; otherwise evaluate to NULL (which makes comparison false)
+            const safeAttr = `(CASE WHEN ${attrValTxt} ~ '^-?[0-9.]+$' THEN (${attrValTxt})::numeric ELSE NULL END)`;
+            attributeCondition = `${safeAttr} ${operator} $3::numeric`;
         }
 
         const res = await query(

@@ -7,6 +7,7 @@ const { query } = require('../../../config/database');
 const subscriptionGuard = require('../../../middleware/subscriptionGuard');
 const { asyncHandler } = require('../../../middleware/errorHandler');
 const { mergeProductSEO, mergeCategorySEO } = require('../../../lib/seoHelpers');
+const ProductService = require('../services/ProductService');
 
 function registerStorefrontRoutes(router) {
     // PUBLIC STOREFRONT ENDPOINT (No Auth, but requires Subscription/Module Access)
@@ -124,6 +125,9 @@ function registerStorefrontRoutes(router) {
                 wishlist_count: parseInt(statsRes.rows[0]?.wishlist_count || 0)
             };
         }
+
+        // Resolve dynamic tags (publicly using null userId context as resolve handles product.created_by)
+        await ProductService.resolve(req.tenantId, null, result.rows);
 
         // Fetch category context for metadata/titles if filtered
         let categoryMetadata = null;
@@ -250,7 +254,8 @@ function registerStorefrontRoutes(router) {
             });
         }
 
-        // SEO Inheritance
+        // Resolve dynamic tags (publicly using null userId context as resolve handles product.created_by)
+        await ProductService.resolve(req.tenantId, null, product);
         const primaryCategory = product.categories[0] || null; // Fallback to first if no explicit primary
         // Ideally we'd match product.category_id but simpler logic for now matches first found
 

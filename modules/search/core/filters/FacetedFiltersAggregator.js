@@ -154,13 +154,27 @@ class FacetedFiltersAggregator {
             `, [tenantId, attrCodesFound]);
 
             enrichedAttributes = attrMetaRes.rows.map(attr => {
-                const metaValues = facets.attributes[attr.code] || {};
+                const metaValues = facets.attributes[attr.code] || {}; // e.g. { "XL": 5, "L": 2 }
                 const clauses = (typeof attr.clauses === 'string' ? JSON.parse(attr.clauses) : attr.clauses) || [];
+                
+                // Pre-calculate lowercased mappings for case-insensitive lookup
+                const lowercasedMeta = {};
+                Object.entries(metaValues).forEach(([val, count]) => {
+                    const lVal = String(val).toLowerCase();
+                    lowercasedMeta[lVal] = (lowercasedMeta[lVal] || 0) + count;
+                });
+
                 const activeClauses = clauses.map(c => {
-                    const count = (Array.isArray(c.value) ? c.value : [c.value]).reduce((sum, v) => sum + (metaValues[v] || 0), 0);
+                    const valuesToSum = Array.isArray(c.value) ? c.value : [c.value];
+                    const count = valuesToSum.reduce((sum, v) => sum + (lowercasedMeta[String(v).toLowerCase()] || 0), 0);
                     return count > 0 ? { ...c, count } : null;
                 }).filter(Boolean);
-                return { ...attr, options: Object.entries(metaValues).map(([value, count]) => ({ value, count })), clauses: activeClauses };
+                
+                return { 
+                    ...attr, 
+                    options: Object.entries(metaValues).map(([value, count]) => ({ value, count })), 
+                    clauses: activeClauses 
+                };
             });
         }
 

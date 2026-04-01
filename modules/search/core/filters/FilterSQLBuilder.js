@@ -84,11 +84,15 @@ class FilterSQLBuilder {
                             }
                             if (attrCode && attrVal !== undefined) {
                                 if (Array.isArray(attrVal)) {
-                                    ruleConditions.push(`si.metadata->'attributes'->>$${index} = ANY($${index + 1})`);
+                                    // Case-insensitive array overlap
+                                    ruleConditions.push(`LOWER(si.metadata->'attributes'->>$${index}) = ANY($${index + 1})`);
                                 } else {
-                                    ruleConditions.push(`si.metadata->'attributes'->>$${index} = $${index + 1}`);
+                                    // Case-insensitive exact match
+                                    ruleConditions.push(`LOWER(si.metadata->'attributes'->>$${index}) = $${index + 1}`);
                                 }
-                                queryParams.push(attrCode, attrVal);
+                                // Ensure value is lowercased to match the LOWER() column
+                                const finalVal = Array.isArray(attrVal) ? attrVal.map(v => String(v).toLowerCase()) : String(attrVal).toLowerCase();
+                                queryParams.push(attrCode, finalVal);
                                 index += 2;
                             }
                             break;
@@ -114,14 +118,24 @@ class FilterSQLBuilder {
                                             op = (op === 'LIKE' || op === 'ILIKE') ? 'ILIKE ANY' : '= ANY';
                                         }
 
+                                        // Apply LOWER() to column for case-insensitive matching if op is '=' or '= ANY'
+                                        const columnExpr = (op === '=' || op === '= ANY') 
+                                            ? `LOWER(si.metadata->'attributes'->>$${index})`
+                                            : `si.metadata->'attributes'->>$${index}`;
+                                        
+                                        let finalVal = ruleVal;
+                                        if (op === '=' || op === '= ANY') {
+                                            finalVal = Array.isArray(ruleVal) ? ruleVal.map(v => String(v).toLowerCase()) : String(ruleVal).toLowerCase();
+                                        }
+
                                         if (type === 'number') {
                                             const attrVal = `si.metadata->'attributes'->>$${index}`;
                                             const safeAttr = `(CASE WHEN ${attrVal} ~ '^-?[0-9.]+$' THEN (${attrVal})::numeric ELSE NULL END)`;
                                             ruleConditions.push(`${safeAttr} ${op} (${isArray ? `$${index + 1}::numeric[]` : `$${index + 1}`})`);
                                         } else {
-                                            ruleConditions.push(`si.metadata->'attributes'->>$${index} ${op} ($${index + 1})`);
+                                            ruleConditions.push(`${columnExpr} ${op} ($${index + 1})`);
                                         }
-                                        queryParams.push(acattrCode, ruleVal);
+                                        queryParams.push(acattrCode, finalVal);
                                         index += 2;
                                     }
                                 }
@@ -255,9 +269,13 @@ class FilterSQLBuilder {
                                 if (type === 'number') {
                                     sql += ` AND (si.metadata->'attributes'->>$${index})::numeric ${finalOp}($${index + 1}::numeric[])`;
                                 } else {
-                                    sql += ` AND si.metadata->'attributes'->>$${index} ${finalOp}($${index + 1})`;
+                                    // Use LOWER() for case-insensitive array match
+                                    const colRef = (finalOp === '= ANY') ? `LOWER(si.metadata->'attributes'->>$${index})` : `si.metadata->'attributes'->>$${index}`;
+                                    sql += ` AND ${colRef} ${finalOp}($${index + 1})`;
                                 }
-                                queryParams.push(attrCode, val);
+                                // Canonicalize value to lowercase for the match
+                                const safeVal = Array.isArray(val) ? val.map(v => String(v).toLowerCase()) : String(val).toLowerCase();
+                                queryParams.push(attrCode, safeVal);
                                 index += 2;
                             } else if (type === 'number' || isNumericOp) {
                                 const attrVal = `si.metadata->'attributes'->>$${index}`;
@@ -273,9 +291,13 @@ class FilterSQLBuilder {
                                 queryParams.push(attrCode, val);
                                 index += 2;
                             } else {
-                                // Default text comparison
-                                sql += ` AND si.metadata->'attributes'->>$${index} ${op} $${index + 1}`;
-                                queryParams.push(attrCode, val);
+                                // Default text comparison: use LOWER() for case-insensitive exact match if operator is '='
+                                const effectiveOp = op === '=' ? op : op;
+                                const colRef = (op === '=') ? `LOWER(si.metadata->'attributes'->>$${index})` : `si.metadata->'attributes'->>$${index}`;
+                                const safeVal = (op === '=') ? String(val).toLowerCase() : val;
+                                
+                                sql += ` AND ${colRef} ${effectiveOp} $${index + 1}`;
+                                queryParams.push(attrCode, safeVal);
                                 index += 2;
                             }
                             continue;
@@ -311,9 +333,9 @@ class FilterSQLBuilder {
                     }
                     // If a clause was specified but not found in the defined clauses,
                     // treat the clauseName as the literal value to match (fallback/default)
-                    const val = clauseName;
-                    sql += ` AND si.metadata->'attributes'->>$${index} = $${index + 1}`;
-                    queryParams.push(attrCode, val);
+                    // Case-insensitive fallback
+                    sql += ` AND LOWER(si.metadata->'attributes'->>$${index}) = $${index + 1}`;
+                    queryParams.push(attrCode, String(clauseName).toLowerCase());
                     index += 2;
                     continue;
                 }
@@ -323,11 +345,14 @@ class FilterSQLBuilder {
                 const val = Array.isArray(filterValue) ? filterValue : (typeof filterValue === 'string' && filterValue.includes(',') ? filterValue.split(',').map(v => v.trim()) : filterValue);
 
                 if (isArray) {
-                    sql += ` AND si.metadata->'attributes'->>$${index} = ANY($${index + 1})`;
+                    // Case-insensitive array overlap
+                    sql += ` AND LOWER(si.metadata->'attributes'->>$${index}) = ANY($${index + 1})`;
                 } else {
-                    sql += ` AND si.metadata->'attributes'->>$${index} = $${index + 1}`;
+                    // Case-insensitive exact match
+                    sql += ` AND LOWER(si.metadata->'attributes'->>$${index}) = $${index + 1}`;
                 }
-                queryParams.push(attrCode, val);
+                const safeVal = Array.isArray(val) ? val.map(v => String(v).toLowerCase()) : String(val).toLowerCase();
+                queryParams.push(attrCode, safeVal);
                 index += 2;
             }
         }
@@ -385,11 +410,14 @@ class FilterSQLBuilder {
             const val = Array.isArray(filterValue) ? filterValue : (typeof filterValue === 'string' && filterValue.includes(',') ? filterValue.split(',').map(v => v.trim()) : filterValue);
 
             if (isArray) {
-                sql += ` AND p.attributes->>$${index} = ANY($${index + 1})`;
+                // Case-insensitive array overlap for vector search filter
+                sql += ` AND LOWER(p.attributes->>$${index}) = ANY($${index + 1})`;
             } else {
-                sql += ` AND p.attributes->>$${index} = $${index + 1}`;
+                // Case-insensitive exact match for vector search filter
+                sql += ` AND LOWER(p.attributes->>$${index}) = $${index + 1}`;
             }
-            queryParams.push(attrCode, val);
+            const safeVal = Array.isArray(val) ? val.map(v => String(v).toLowerCase()) : String(val).toLowerCase();
+            queryParams.push(attrCode, safeVal);
             index += 2;
         }
 

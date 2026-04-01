@@ -1,6 +1,7 @@
 const { query } = require('../../../config/database');
 const { tenantInsert } = require('../../../utils/dbHelpers');
 const User = require('../../../platform/core/auth/models/User');
+const ProductService = require('../../products/services/ProductService');
 
 class VendorService {
     /**
@@ -209,13 +210,8 @@ class VendorService {
                 // 1. Update the vendor attribute on the product
                 attributes.vendor = vendorName;
 
-                // 2. Legacy tag management (backward compat)
-                if (oldVendorName && oldVendorName !== vendorName) {
-                    tags = tags.filter(t => t !== oldVendorName);
-                }
-                if (!tags.includes(vendorName)) {
-                    tags.push(vendorName);
-                }
+                // 2. Variable-based tag management (using centralized service)
+                tags = ProductService.sanitizeTags(tags, true, vendorName);
 
                 // Only update if something changed
                 const tagsChanged = JSON.stringify(tags) !== JSON.stringify(originalTags);

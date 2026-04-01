@@ -47,10 +47,29 @@ class IndexService {
             });
         }
 
+        let VariableRegistry;
+        try { VariableRegistry = require('../../variables/services/VariableRegistry'); } catch { }
+
+        // Resolve dynamic tags (e.g., [BUSINESS_NAME])
+        const resolvedTags = [];
+        if (product.tags && product.tags.length > 0) {
+            for (const tag of product.tags) {
+                if (VariableRegistry && tag && tag.includes('[') && tag.includes(']')) {
+                    const resolved = await VariableRegistry.resolveText(tag, {
+                        tenantId: tenantId,
+                        userId: product.created_by
+                    });
+                    resolvedTags.push(resolved);
+                } else {
+                    resolvedTags.push(tag);
+                }
+            }
+        }
+
         const keywords = [
             product.name,
             product.sku || '',
-            ...(product.tags || []),
+            ...resolvedTags,
             ...Array.from(allCategoryNames),
             ...Array.from(allCategorySlugs),
             ...attrValues
@@ -66,7 +85,7 @@ class IndexService {
             sku: product.sku || null,
             handle: product.handle || null,
             image_url: product.image_url || null,
-            tags: product.tags || []
+            tags: resolvedTags
         };
 
         // Add product attributes if they exist

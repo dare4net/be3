@@ -46,6 +46,13 @@ async function bootstrap(context) {
                     const result = await query('SELECT name FROM tenants WHERE id = $1', [context.tenantId]);
                     return result.rows[0]?.name || 'Store';
                 }
+            },
+            {
+                name: 'VENDOR_ID',
+                description: 'The unique UUID of the vendor',
+                resolver: async (context) => {
+                    return context.userId || context.user_id || 'platform';
+                }
             }
         ]
     });

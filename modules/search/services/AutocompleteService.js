@@ -211,10 +211,10 @@ class AutocompleteService {
                     AND (
                         CASE 
                             WHEN jsonb_typeof(ma.cl_value_json) = 'array' 
-                            THEN si.metadata->'attributes'->>ma.attr_code = ANY(
-                                SELECT jsonb_array_elements_text(ma.cl_value_json)
+                            THEN LOWER(si.metadata->'attributes'->>ma.attr_code) = ANY(
+                                SELECT LOWER(jsonb_array_elements_text(ma.cl_value_json))
                             )
-                            ELSE si.metadata->'attributes'->>ma.attr_code = (ma.cl_value_json #>> '{}')
+                            ELSE LOWER(si.metadata->'attributes'->>ma.attr_code) = LOWER(ma.cl_value_json #>> '{}')
                         END
                     )
                     LIMIT 1

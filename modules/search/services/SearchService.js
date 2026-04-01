@@ -14,6 +14,7 @@ const QueryPreprocessor = require('../core/query/QueryPreprocessor');
 const QueryProcessor = require('../core/query/QueryProcessor');
 const FacetedFiltersAggregator = require('../core/filters/FacetedFiltersAggregator');
 const VectorEngine = require('../../vector/services/VectorEngine');
+const ProductService = require('../../products/services/ProductService');
 
 class SearchService {
     constructor() {
@@ -211,6 +212,9 @@ class SearchService {
                 };
             });
 
+            // Resolve dynamic tags (publicly)
+            await ProductService.resolve(tenantId, null, finalResults);
+
             // Get facets (preserved behavior)
             const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, '', ['product'], filters, originalCategoryId);
 
@@ -387,6 +391,9 @@ class SearchService {
             }
             return row;
         });
+
+        // Resolve dynamic tags (publicly)
+        await ProductService.resolve(tenantId, null, results);
 
         // Get faceted filter counts (only if we have results or after final attempt)
         const expandedQueryForFacets = finalQuery ? await this.queryProcessor.expandQuery(finalQuery, tenantId, lastAttempt.mode) : '';

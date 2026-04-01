@@ -8,6 +8,7 @@ const { paginatedTenantQuery, tenantInsert, tenantUpdate, tenantDelete } = requi
 const { authenticate } = require('../../../platform/core/auth/middleware/authenticate');
 const authorize = require('../../../platform/core/roles/middleware/authorize');
 const { asyncHandler } = require('../../../middleware/errorHandler');
+const ProductService = require('../services/ProductService');
 
 function registerProductRoutes(router, eventBus) {
     // List products (Admin)
@@ -50,7 +51,7 @@ function registerProductRoutes(router, eventBus) {
             FROM products p
             LEFT JOIN product_categories pc ON p.id = pc.product_id
             WHERE p.tenant_id = $1 
-            AND (NOT $5::boolean OR p.tags @> ARRAY[$6]::text[])
+            AND (NOT $5::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 6, 8)})
             AND ($7::boolean OR pc.category_id = ANY($2))
             ORDER BY p.created_at DESC
             LIMIT $3 OFFSET $4
@@ -61,17 +62,21 @@ function registerProductRoutes(router, eventBus) {
             FROM products p
             LEFT JOIN product_categories pc ON p.id = pc.product_id
             WHERE p.tenant_id = $1 
-            AND (NOT $3::boolean OR p.tags @> ARRAY[$4]::text[])
+            AND (NOT $3::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 4, 6)})
             AND ($5::boolean OR pc.category_id = ANY($2))
         `;
 
-        const shouldFilterByVendor = isVendor && !hasUnrestrictedAccess;
+        const shouldFilterByVendor = isVendor;
 
         const countRes = await query(countSql, [req.tenantId, allowedCategories, shouldFilterByVendor, vendorName, hasUnrestrictedAccess]);
         const total = countRes.rows[0]?.total || 0;
 
-        const productRes = await query(productsSql, [req.tenantId, allowedCategories, perPage, offset, shouldFilterByVendor, vendorName, hasUnrestrictedAccess]);
+        // Add user.id to params for attribute-based filtering
+        const productRes = await query(productsSql, [req.tenantId, allowedCategories, perPage, offset, shouldFilterByVendor, vendorName, hasUnrestrictedAccess, req.user.id]);
         const products = productRes.rows;
+
+        // Resolve dynamic tags (e.g., [BUSINESS_NAME])
+        await ProductService.resolve(req.tenantId, req.user.id, products);
 
         // Fetch categories for each product
         for (let product of products) {
@@ -107,7 +112,7 @@ function registerProductRoutes(router, eventBus) {
              WHERE c.tenant_id = $1 AND c.is_active = true`;
         const params = [req.tenantId];
 
-        if (isVendor && !hasUnrestrictedAccess) {
+        if (isVendor) {
             sql += ` AND c.created_by = $2`;
             params.push(req.user.id);
         }
@@ -128,7 +133,7 @@ function registerProductRoutes(router, eventBus) {
         const { isVendor, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
 
         const conditions = {};
-        if (isVendor && !hasUnrestrictedAccess) {
+        if (isVendor) {
             conditions.created_by = req.user.id;
         }
 
@@ -210,8 +215,8 @@ function registerProductRoutes(router, eventBus) {
         let sql = `SELECT * FROM products WHERE id = $1 AND tenant_id = $2`;
         let params = [req.params.id, req.tenantId];
 
-        if (isVendor && vendorName && !hasUnrestrictedAccess) {
-            sql += ` AND (tags @> ARRAY[$3]::text[] OR attributes->>'vendor' = $4)`;
+        if (isVendor && vendorName) {
+            sql += ` AND ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 3, 4)}`;
             params.push(vendorName, req.user.id);
         }
 
@@ -222,7 +227,8 @@ function registerProductRoutes(router, eventBus) {
 
         const product = result.rows[0];
 
-        // Get categories
+        // Resolve dynamic tags if they exist
+        await ProductService.resolve(req.tenantId, req.user.id, product);
         const cats = await query(
             `SELECT c.id, c.name, c.slug FROM categories c
              JOIN product_categories pc ON c.id = pc.category_id
@@ -251,10 +257,7 @@ function registerProductRoutes(router, eventBus) {
             handle = `${handle}-${randomSuffix}`;
         }
 
-        const tags = req.body.tags || [];
-        if (isVendor && vendorName && !hasUnrestrictedAccess && !tags.includes(vendorName)) {
-            tags.push(vendorName);
-        }
+        const tags = ProductService.sanitizeTags(req.body.tags || [], isVendor, vendorName);
 
         // Auto-apply system attributes
         let productAttributes = req.body.attributes || {};
@@ -341,18 +344,14 @@ function registerProductRoutes(router, eventBus) {
         const { isVendor, vendorName, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
 
         // Security check for vendor ownership
-        if (isVendor && vendorName && !hasUnrestrictedAccess) {
-            const check = await query(`SELECT id FROM products WHERE id = $1 AND tenant_id = $2 AND (tags @> ARRAY[$3]::text[] OR attributes->>'vendor' = $4)`, [req.params.id, req.tenantId, vendorName, req.user.id]);
+        if (isVendor && vendorName) {
+            const check = await query(`SELECT id FROM products WHERE id = $1 AND tenant_id = $2 AND ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 3, 4)}`, [req.params.id, req.tenantId, vendorName, req.user.id]);
             if (check.rows.length === 0) {
                 return res.status(403).json({ error: 'Access denied: You do not own this product' });
             }
 
-            // Ensure vendor tag remains
-            if (updateData.tags && Array.isArray(updateData.tags)) {
-                if (!updateData.tags.includes(vendorName)) {
-                    updateData.tags.push(vendorName);
-                }
-            }
+            // Ensure dynamic vendor tag remains and is sanitized
+            updateData.tags = ProductService.sanitizeTags(updateData.tags || [], isVendor, vendorName);
         }
 
         // Stringify attributes if provided
