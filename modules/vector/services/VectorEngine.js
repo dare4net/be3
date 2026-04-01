@@ -19,8 +19,12 @@ const TRANSFORMER_URL = process.env.TRANSFORMER_URL || 'http://localhost:3009';
 
 class VectorEngine {
     constructor() {
-        this.modelName = 'all-MiniLM-L6-v2';
-        this.dimensions = 384;
+        this.modelKey = (process.env.EMBEDDING_MODEL_KEY || '').toLowerCase().trim();
+        this.modelName = process.env.EMBEDDING_MODEL_NAME || 'all-MiniLM-L6-v2';
+        this.dimensions = process.env.EMBEDDING_DIMENSIONS ? parseInt(process.env.EMBEDDING_DIMENSIONS) : 384;
+        this.isBge = this.modelKey === 'bge-small' || this.modelName.toLowerCase().includes('bge');
+        
+        console.log(`[VectorEngine] Initialized: ${this.modelName} (BGE=${this.isBge}, ${this.dimensions}D)`);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -32,13 +36,19 @@ class VectorEngine {
      * @param {string} text - The text to embed
      * @returns {Promise<number[]>} - The embedding vector (384 dims)
      */
-    async getEmbedding(text) {
+    async getEmbedding(text, options = {}) {
         if (!text || typeof text !== 'string' || text.trim().length === 0) {
             throw new Error('Cannot embed empty text');
         }
 
         try {
-            const res = await axios.post(`${TRANSFORMER_URL}/embed`, { text: text.trim() });
+            const purpose = options.purpose || (this.isBge ? 'query' : undefined);
+            const body = { text: text.trim() };
+            if (purpose) body.purpose = purpose;
+            
+            console.log(`[VectorEngine] POST /embed | Text: "${text.substring(0, 50)}..." | Length: ${text.length} | Purpose: ${purpose}`);
+            
+            const res = await axios.post(`${TRANSFORMER_URL}/embed`, body);
             const embeddings = res.data?.embeddings;
             if (!embeddings || !Array.isArray(embeddings) || embeddings.length === 0) {
                 throw new Error('Transformer returned empty embeddings');
@@ -58,11 +68,17 @@ class VectorEngine {
      * @param {string[]} texts - Array of texts
      * @returns {Promise<number[][]>} - Array of embedding vectors
      */
-    async getEmbeddings(texts) {
+    async getEmbeddings(texts, options = {}) {
         if (!Array.isArray(texts) || texts.length === 0) return [];
 
         try {
-            const res = await axios.post(`${TRANSFORMER_URL}/embed`, { texts });
+            const purpose = options.purpose || (this.isBge ? 'passage' : undefined);
+            const body = { texts };
+            if (purpose) body.purpose = purpose;
+            
+            console.log(`[VectorEngine] POST /embed (Batch) | Count: ${texts.length} | Purpose: ${purpose}`);
+            
+            const res = await axios.post(`${TRANSFORMER_URL}/embed`, body);
             const embeddings = res.data?.embeddings;
             if (!embeddings || !Array.isArray(embeddings) || embeddings.length === 0) {
                 throw new Error('Transformer returned empty embeddings');
@@ -74,7 +90,7 @@ class VectorEngine {
             const results = [];
             for (const text of texts) {
                 try {
-                    const embedding = await this.getEmbedding(text);
+                    const embedding = await this.getEmbedding(text, { purpose: options.purpose });
                     results.push(embedding);
                 } catch (e) {
                     results.push(null);
@@ -102,36 +118,38 @@ class VectorEngine {
     buildProductText(product, attributeLabels = {}) {
         const parts = [];
 
-        // 1. Anchoring: Prepend name twice to boost its weight in the signal
+        // 1. Anchoring: Boost the name to repeat 3 times at the start
         if (product.name) {
-            parts.push(`${product.name} | ${product.name}`);
+            parts.push(`${product.name} | ${product.name} | ${product.name}`);
         }
 
-        // 2. Contextualize with category (Crucial for scaling!)
+        // 2. Contextualize with category
         if (product.category_name) {
             parts.push(`Category: ${product.category_name}`);
         }
 
-        // 3. Denoise: Keep description short (max 100 chars) to avoid dilution
-        if (product.description) {
-            const plain = product.description.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-            parts.push(plain.substring(0, 100));
-        }
-
-        if (Array.isArray(product.tags) && product.tags.length > 0) {
-            parts.push(product.tags.join(' '));
-        }
-
-        // Include key attributes normalized as sentences
+        // 3. Attributes: Higher signal than description, so we process them before the storytelling text
         if (product.attributes) {
             const attrs = typeof product.attributes === 'string' ? JSON.parse(product.attributes) : product.attributes;
             const attrParts = Object.entries(attrs)
                 .filter(([_, v]) => v !== null && v !== undefined && v !== '')
                 .map(([k, v]) => {
                     const label = attributeLabels[k] || k;
-                    return `${label} is ${v}`; // Sentence-like for better semantic mapping
+                    return `${label} is ${v}`; 
                 });
             if (attrParts.length > 0) parts.push(attrParts.join(', '));
+        }
+
+        // 4. Description: Moved to the END to avoid diluting the high-signal names/attrs
+        // Capacity is dynamic based on model (BGE = 1000, MiniLM = 100)
+        if (product.description) {
+            const descLimit = this.isBge ? 1000 : 100;
+            const plain = product.description.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+            parts.push(`Description: ${plain.substring(0, descLimit)}`);
+        }
+
+        if (Array.isArray(product.tags) && product.tags.length > 0) {
+            parts.push(product.tags.join(' '));
         }
 
         return parts.join(' | ');
@@ -163,7 +181,7 @@ class VectorEngine {
         const product = result.rows[0];
         const labels = await this.getAttributeLabels(tenantId);
         const text = this.buildProductText(product, labels);
-        const embedding = await this.getEmbedding(text);
+        const embedding = await this.getEmbedding(text, { purpose: this.isBge ? 'passage' : undefined });
 
         await this.upsertEmbedding(tenantId, productId, embedding);
 
@@ -233,7 +251,7 @@ class VectorEngine {
 
             try {
                 // 2. Get embeddings in one call
-                const embeddings = await this.getEmbeddings(batchTexts);
+                const embeddings = await this.getEmbeddings(batchTexts, { purpose: this.isBge ? 'passage' : undefined });
 
                 // 3. Persist batch results
                 // We use Promise.all for database updates within the batch for speed
@@ -380,7 +398,7 @@ class VectorEngine {
      * @returns {Promise<Array<{id, name, price, similarity, ...}>>}
      */
     async semanticSearch(tenantId, searchQuery, options = {}) {
-        const { limit = 20, threshold = 0.3, categoryId = null } = options;
+        const { limit = 20, offset = 0, threshold = 0.3, categoryId = null } = options;
 
         // 1. Get the query embedding from the transformer
         const queryEmbedding = await this.getEmbedding(searchQuery);
@@ -425,8 +443,8 @@ class VectorEngine {
             }
         }
 
-        sql += ` ORDER BY p.embedding <=> $1::vector ASC LIMIT $${paramIndex}`;
-        params.push(limit);
+        sql += ` ORDER BY p.embedding <=> $1::vector ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        params.push(limit, offset);
 
         const result = await query(sql, params, tenantId);
 
@@ -457,7 +475,7 @@ class VectorEngine {
      * @returns {Promise<Array>}
      */
     async findSimilarProducts(tenantId, productId, options = {}) {
-        const { limit = 5, threshold = 0.5 } = options;
+        const { limit = 5, offset = 0, threshold = 0.5 } = options;
 
         let sql = `
             SELECT 
@@ -487,8 +505,8 @@ class VectorEngine {
             }
         }
 
-        sql += ` ORDER BY p.embedding <=> source.embedding ASC LIMIT $${paramIndex}`;
-        params.push(limit);
+        sql += ` ORDER BY p.embedding <=> source.embedding ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        params.push(limit, offset);
 
         const result = await query(sql, params, tenantId);
 

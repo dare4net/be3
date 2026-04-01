@@ -114,8 +114,9 @@ class FilterSQLBuilder {
                                         const ruleVal = clause.value;
                                         const isArray = Array.isArray(ruleVal);
 
-                                        if (isArray && (op === '=' || op === 'LIKE' || op === 'ILIKE')) {
-                                            op = (op === 'LIKE' || op === 'ILIKE') ? 'ILIKE ANY' : '= ANY';
+                                        if (isArray && !op.includes(' ANY') && !op.includes(' ALL')) {
+                                            if (op === '!=') op = '!= ALL';
+                                            else op = `${op} ANY`;
                                         }
 
                                         // Apply LOWER() to column for case-insensitive matching if op is '=' or '= ANY'
@@ -131,7 +132,8 @@ class FilterSQLBuilder {
                                         if (type === 'number') {
                                             const attrVal = `si.metadata->'attributes'->>$${index}`;
                                             const safeAttr = `(CASE WHEN ${attrVal} ~ '^-?[0-9.]+$' THEN (${attrVal})::numeric ELSE NULL END)`;
-                                            ruleConditions.push(`${safeAttr} ${op} (${isArray ? `$${index + 1}::numeric[]` : `$${index + 1}`})`);
+                                            const rightSide = isArray ? `($${index + 1}::numeric[])` : `($${index + 1}::numeric)`;
+                                            ruleConditions.push(`${safeAttr} ${op} ${rightSide}`);
                                         } else {
                                             ruleConditions.push(`${columnExpr} ${op} ($${index + 1})`);
                                         }
@@ -178,13 +180,17 @@ class FilterSQLBuilder {
 
         // Price range filter
         if (filters.price_min !== undefined && filters.price_min !== null) {
-            sql += ` AND (si.metadata->>'price')::numeric >= $${index}`;
+            const priceVal = `(si.metadata->>'price')`;
+            const safePrice = `(CASE WHEN ${priceVal} ~ '^-?[0-9.]+$' THEN (${priceVal})::numeric ELSE 0 END)`;
+            sql += ` AND ${safePrice} >= $${index}`;
             queryParams.push(parseFloat(filters.price_min));
             index++;
         }
 
         if (filters.price_max !== undefined && filters.price_max !== null) {
-            sql += ` AND (si.metadata->>'price')::numeric <= $${index}`;
+            const priceVal = `(si.metadata->>'price')`;
+            const safePrice = `(CASE WHEN ${priceVal} ~ '^-?[0-9.]+$' THEN (${priceVal})::numeric ELSE 999999999 END)`;
+            sql += ` AND ${safePrice} <= $${index}`;
             queryParams.push(parseFloat(filters.price_max));
             index++;
         }
@@ -264,10 +270,12 @@ class FilterSQLBuilder {
                             // even if attribute type is technically 'text' in DB
                             const isNumericOp = ['<', '>', '<=', '>='].includes(op);
 
-                            if (isArray && (op === '=' || op === 'LIKE' || op === 'ILIKE')) {
-                                const finalOp = (op === 'LIKE' || op === 'ILIKE') ? 'ILIKE ANY' : '= ANY';
+                            if (isArray && !op.includes(' ANY') && !op.includes(' ALL')) {
+                                const finalOp = (op === '!=' || op === '<>') ? '!= ALL' : `${op} ANY`;
                                 if (type === 'number') {
-                                    sql += ` AND (si.metadata->'attributes'->>$${index})::numeric ${finalOp}($${index + 1}::numeric[])`;
+                                    const attrVal = `si.metadata->'attributes'->>$${index}`;
+                                    const safeAttr = `(CASE WHEN ${attrVal} ~ '^-?[0-9.]+$' THEN (${attrVal})::numeric ELSE NULL END)`;
+                                    sql += ` AND ${safeAttr} ${finalOp}($${index + 1}::numeric[])`;
                                 } else {
                                     // Use LOWER() for case-insensitive array match
                                     const colRef = (finalOp === '= ANY') ? `LOWER(si.metadata->'attributes'->>$${index})` : `si.metadata->'attributes'->>$${index}`;
@@ -283,7 +291,10 @@ class FilterSQLBuilder {
                                 const safeAttr = `(CASE WHEN ${attrVal} ~ '^-?[0-9.]+$' THEN (${attrVal})::numeric ELSE NULL END)`;
 
                                 if (isArray) {
-                                    sql += ` AND ${safeAttr} ${op} ($${index + 1}::numeric[])`;
+                                    const finalOp = !op.includes(' ANY') && !op.includes(' ALL') 
+                                        ? (op === '!=' || op === '<>' ? '!= ALL' : `${op} ANY`)
+                                        : op;
+                                    sql += ` AND ${safeAttr} ${finalOp}($${index + 1}::numeric[])`;
                                 } else {
                                     sql += ` AND ${safeAttr} ${op} $${index + 1}::numeric`;
                                 }

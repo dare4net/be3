@@ -1,0 +1,58 @@
+﻿                                               Table "public.products"
+       Column        |            Type             | Collation | Nullable |                 Default                  
+---------------------+-----------------------------+-----------+----------+------------------------------------------
+ id                  | uuid                        |           | not null | gen_random_uuid()
+ tenant_id           | uuid                        |           | not null | 
+ name                | character varying(255)      |           | not null | 
+ description         | text                        |           |          | 
+ sku                 | character varying(100)      |           |          | 
+ price               | numeric(10,2)               |           | not null | 
+ compare_at_price    | numeric(10,2)               |           |          | 
+ cost                | numeric(10,2)               |           |          | 
+ track_inventory     | boolean                     |           |          | true
+ inventory_quantity  | integer                     |           |          | 0
+ status              | character varying(20)       |           |          | 'active'::character varying
+ published_at        | timestamp without time zone |           |          | 
+ created_at          | timestamp without time zone |           |          | now()
+ updated_at          | timestamp without time zone |           |          | now()
+ deleted_at          | timestamp without time zone |           |          | 
+ attributes          | jsonb                       |           |          | '{}'::jsonb
+ is_featured         | boolean                     |           |          | false
+ seo_title           | character varying(255)      |           |          | 
+ seo_description     | text                        |           |          | 
+ handle              | character varying(255)      |           |          | 
+ tags                | text[]                      |           |          | 
+ image_url           | text                        |           |          | 
+ category_id         | uuid                        |           |          | 
+ meta_description    | text                        |           |          | 
+ og_title            | character varying(255)      |           |          | 
+ og_description      | text                        |           |          | 
+ og_image            | text                        |           |          | 
+ og_type             | character varying(50)       |           |          | 'product'::character varying
+ twitter_card        | character varying(20)       |           |          | 'summary_large_image'::character varying
+ twitter_title       | character varying(255)      |           |          | 
+ twitter_description | text                        |           |          | 
+ twitter_image       | text                        |           |          | 
+ canonical_url       | text                        |           |          | 
+ robots              | character varying(100)      |           |          | 'index,follow'::character varying
+ structured_data     | jsonb                       |           |          | 
+ created_by          | uuid                        |           |          | 
+Indexes:
+    "products_pkey" PRIMARY KEY, btree (id)
+    "idx_products_attributes" gin (attributes)
+    "idx_products_category" btree (tenant_id, category_id) WHERE category_id IS NOT NULL
+    "idx_products_featured" btree (tenant_id, is_featured) WHERE is_featured = true
+    "idx_products_handle" btree (tenant_id, handle)
+    "idx_products_sku" btree (sku)
+    "idx_products_status" btree (status)
+    "idx_products_tags" gin (tags)
+    "idx_products_tenant_id" btree (tenant_id)
+    "idx_products_unique_handle" UNIQUE, btree (tenant_id, handle) WHERE handle IS NOT NULL
+    "unique_sku_per_tenant" UNIQUE CONSTRAINT, btree (tenant_id, sku)
+Check constraints:
+    "products_status_check" CHECK (status::text = ANY (ARRAY['active'::character varying, 'draft'::character varying, 'archived'::character varying]::text[]))
+Foreign-key constraints:
+    "products_created_by_fkey" FOREIGN KEY (created_by) REFERENCES users(id)
+Referenced by:
+    TABLE "product_categories" CONSTRAINT "product_categories_product_id_fkey" FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+

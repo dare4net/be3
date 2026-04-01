@@ -59,14 +59,18 @@ async function tenantInsert(tableName, tenantId, data) {
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
     const keysList = keys.join(', ');
 
-    const sql = `
+  const sql = `
     INSERT INTO ${tableName} (${keysList})
     VALUES (${placeholders})
     RETURNING *
   `;
 
-    const result = await query(sql, values);
-    return result.rows[0];
+  if (tableName === 'products') {
+    // Standard product insertion
+  }
+
+  const result = await query(sql, values);
+  return result.rows[0];
 }
 
 /**

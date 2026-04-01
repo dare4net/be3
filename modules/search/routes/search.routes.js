@@ -84,7 +84,8 @@ function registerSearchRoutes(router) {
             page: parseInt(page),
             perPage: parseInt(per_page),
             mode,
-            similar_to: similarTo
+            similar_to: similarTo,
+            userId: req.user?.id || null
         });
 
         // Track search analytics
@@ -167,7 +168,8 @@ function registerSearchRoutes(router) {
             page: parseInt(page),
             perPage: parseInt(per_page),
             mode,
-            similar_to: similarTo
+            similar_to: similarTo,
+            userId: req.user?.id || null
         });
 
         res.json({

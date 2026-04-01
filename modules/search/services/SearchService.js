@@ -42,7 +42,8 @@ class SearchService {
             page = 1,
             perPage = 20,
             mode: searchMode = 'keyword', // 'keyword', 'vector', 'similar'
-            similar_to: similarTo = null
+            similar_to: similarTo = null,
+            userId = null
         } = params;
 
         // Recursive Category Fetch + Auto Drill-down
@@ -144,6 +145,7 @@ class SearchService {
         if (searchMode === 'vector' || searchMode === 'similar') {
             let vectorResults = [];
             let total = 0;
+            const offset = (page - 1) * perPage;
 
             // NEW: Build dynamic filters for vector/similarity search
             const vectorFilters = { ...filters };
@@ -157,22 +159,32 @@ class SearchService {
             );
 
             if (searchMode === 'similar' && similarTo) {
-                console.log(`[Search] 🧠 Similarity search for ${similarTo} with ${vectorQueryParams.length} filters`);
+                console.log(`[Search] 🧠 Similarity search for ${similarTo} with ${vectorQueryParams.length} filters (page ${page})`);
                 const simRes = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, { 
-                    limit: perPage,
+                    limit: perPage + 1, // Look-ahead: fetch 1 extra to see if next page exists
+                    offset: offset,
                     filter: { sql: vectorFilterSql, params: vectorQueryParams }
                 });
                 vectorResults = simRes;
-                total = simRes.length; 
             } else if (finalQuery) {
-                console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}" with ${vectorQueryParams.length} filters`);
+                console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}" with ${vectorQueryParams.length} filters (page ${page})`);
                 const vecRes = await this.vectorEngine.semanticSearch(tenantId, finalQuery, { 
-                    limit: perPage,
+                    limit: perPage + 1, // Look-ahead: fetch 1 extra to see if next page exists
+                    offset: offset,
                     categoryId: originalCategoryId,
                     filter: { sql: vectorFilterSql, params: vectorQueryParams }
                 });
                 vectorResults = vecRes;
-                total = vecRes.length; // Approximate
+            }
+
+            // --- LOOK-AHEAD PAGINATION LOGIC ---
+            // If we got the extra result, there is a next page.
+            const hasMore = vectorResults.length > perPage;
+            if (hasMore) {
+                vectorResults.pop(); // Remove the extra look-ahead result
+                total = page * perPage + 1; // Signal that at least one more exists
+            } else {
+                total = offset + vectorResults.length; // Exact total found so far
             }
 
             // Map vector results to standard search index format
@@ -397,7 +409,7 @@ class SearchService {
 
         // Get faceted filter counts (only if we have results or after final attempt)
         const expandedQueryForFacets = finalQuery ? await this.queryProcessor.expandQuery(finalQuery, tenantId, lastAttempt.mode) : '';
-        const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, expandedQueryForFacets, contentTypes, filters, originalCategoryId);
+        const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, expandedQueryForFacets, contentTypes, filters, originalCategoryId, userId);
 
         // Fetch category context for SEO
         let category = null;

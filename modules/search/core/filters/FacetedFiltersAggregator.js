@@ -5,6 +5,7 @@
  */
 
 const { query } = require('../../../../config/database');
+const ProductService = require('../../../products/services/ProductService');
 
 class FacetedFiltersAggregator {
     constructor(categoryResolver, filterSQLBuilder) {
@@ -19,9 +20,10 @@ class FacetedFiltersAggregator {
      * @param {Array} contentTypes
      * @param {Object} currentFilters
      * @param {string} contextCategoryId - The category context we are currently in (from URL/Page)
+     * @param {string} userId - Current user context (optional)
      * @returns {Object}
      */
-    async getFacetedFilters(tenantId, searchQuery, contentTypes, currentFilters, contextCategoryId = null) {
+    async getFacetedFilters(tenantId, searchQuery, contentTypes, currentFilters, contextCategoryId = null, userId = null) {
         // Step 1: Execute the result set query to find which IDs exist in the current search scope
         // IMPORTANT: To allow "sideways" navigation, we calculate category counts WITHOUT the category filter
         const filtersForCategoryFacet = { ...currentFilters };
@@ -73,6 +75,23 @@ class FacetedFiltersAggregator {
         };
 
         // 1. Process standard facets (filtered by everything)
+        // Extract unique raw tags for batch resolution
+        const rawTags = new Set();
+        filteredResults.rows.forEach(row => {
+            if (row.metadata?.tags) row.metadata.tags.forEach(t => rawTags.add(String(t)));
+        });
+
+        // Resolve tags (handles [BUSINESS_NAME] etc.)
+        const tagMap = {};
+        if (rawTags.size > 0) {
+            for (const tag of rawTags) {
+                // We resolve each tag individually against the registry (batching happens inside resolve if needed)
+                // Using a simpler resolution for facets: pass context to resolve
+                const resolved = await ProductService.resolve(tenantId, userId, { tags: [tag], created_by: userId });
+                tagMap[tag] = resolved.tags[0];
+            }
+        }
+
         filteredResults.rows.forEach(row => {
             const meta = row.metadata || {};
             // Price
@@ -83,7 +102,10 @@ class FacetedFiltersAggregator {
             }
             // Tags
             if (meta.tags && Array.isArray(meta.tags)) {
-                meta.tags.forEach(tag => facets.tags[tag] = (facets.tags[tag] || 0) + 1);
+                meta.tags.forEach(tag => {
+                    const resolvedTag = tagMap[String(tag)] || tag;
+                    facets.tags[resolvedTag] = (facets.tags[resolvedTag] || 0) + 1;
+                });
             }
             // Attributes
             if (meta.attributes && typeof meta.attributes === 'object') {
@@ -106,22 +128,30 @@ class FacetedFiltersAggregator {
         const catIdsFound = Object.keys(facets.categories);
         let enrichedCategories = [];
         let parentCategory = null;
+        let ancestryPath = [];
 
         if (catIdsFound.length > 0) {
             if (contextCategoryId) {
-                // Fetch Parent for "Back" navigation
-                const parentRes = await query(
-                    `SELECT p.id, p.name, p.slug FROM categories c 
-                     JOIN categories p ON c.parent_id = p.id 
-                     WHERE c.id = $1 AND c.tenant_id = $2`,
+                // Fetch Parent + Ancestry for "Back" navigation and Clause Exclusion
+                const pathRes = await query(
+                    `WITH RECURSIVE category_path AS (
+                        SELECT id, name, slug, parent_id, 0 as level
+                        FROM categories
+                        WHERE id = $1 AND tenant_id = $2
+                        UNION ALL
+                        SELECT c.id, c.name, c.slug, c.parent_id, cp.level + 1
+                        FROM categories c
+                        INNER JOIN category_path cp ON c.id = cp.parent_id
+                        WHERE c.tenant_id = $2
+                    )
+                    SELECT id, name, slug, parent_id FROM category_path ORDER BY level ASC`,
                     [contextCategoryId, tenantId]
                 );
-                if (parentRes.rows[0]) parentCategory = parentRes.rows[0];
+                
+                ancestryPath = pathRes.rows.map(r => String(r.id));
+                if (pathRes.rows[1]) parentCategory = pathRes.rows[1]; // Level 1 is parent
 
                 // Fetch Siblings (Sideways) + Children (Drill-down)
-                // Navigation Strategy: 
-                // 1. If we are in Category X, show its children.
-                // 2. ALSO show it's siblings so user can switch "sideways".
                 const navRes = await query(
                     `SELECT id, name, slug, parent_id FROM categories 
                      WHERE (parent_id = $1 OR parent_id = (SELECT parent_id FROM categories WHERE id = $1))
@@ -152,30 +182,60 @@ class FacetedFiltersAggregator {
                 UNION ALL
                 SELECT id, code, label, type, '[]'::jsonb as clauses FROM system_attributes WHERE code = ANY($2)
             `, [tenantId, attrCodesFound]);
-
-            enrichedAttributes = attrMetaRes.rows.map(attr => {
-                const metaValues = facets.attributes[attr.code] || {}; // e.g. { "XL": 5, "L": 2 }
+            enrichedAttributes = await Promise.all(attrMetaRes.rows.map(async attr => {
+                const metaValues = facets.attributes[attr.code] || {};
                 const clauses = (typeof attr.clauses === 'string' ? JSON.parse(attr.clauses) : attr.clauses) || [];
                 
-                // Pre-calculate lowercased mappings for case-insensitive lookup
-                const lowercasedMeta = {};
-                Object.entries(metaValues).forEach(([val, count]) => {
-                    const lVal = String(val).toLowerCase();
-                    lowercasedMeta[lVal] = (lowercasedMeta[lVal] || 0) + count;
+                const activeClausesPromises = clauses.map(async c => {
+                    // Check Hierarchical Exclusion (Hide clause entirely if context is forbidden)
+                    const excludedIds = Array.isArray(c.excluded_category_ids) ? c.excluded_category_ids.map(String) : [];
+                    const isContextExcluded = ancestryPath.some(id => excludedIds.includes(String(id)));
+                    if (isContextExcluded) return null;
+
+                    // Hierarchical Product Exclusion (Don't count products in forbidden subcategories)
+                    let forbiddenPool = new Set(excludedIds);
+                    if (excludedIds.length > 0) {
+                        const forbiddenDesRes = await query(
+                            `WITH RECURSIVE forbidden_tree AS (
+                                SELECT id FROM categories WHERE id = ANY($1::uuid[]) AND tenant_id = $2
+                                UNION ALL
+                                SELECT c.id FROM categories c 
+                                INNER JOIN forbidden_tree ft ON c.parent_id = ft.id
+                                WHERE c.tenant_id = $2
+                            )
+                            SELECT id FROM forbidden_tree`,
+                            [excludedIds, tenantId]
+                        );
+                        forbiddenDesRes.rows.forEach(r => forbiddenPool.add(String(r.id)));
+                    }
+
+                    // Calculate refined count
+                    let count = 0;
+                    const valuesToMatch = Array.isArray(c.value) ? c.value.map(v => String(v).toLowerCase()) : [String(c.value).toLowerCase()];
+                    
+                    filteredResults.rows.forEach(row => {
+                        const meta = row.metadata || {};
+                        const productCats = Array.isArray(meta.category_ids) ? meta.category_ids.map(String) : [];
+                        
+                        // EXCLUSION CHECK: If product is in ANY forbidden sub-category, skip it for this clause
+                        const isProductForbidden = productCats.some(id => forbiddenPool.has(id));
+                        if (isProductForbidden) return;
+
+                        const attrVal = String(meta.attributes?.[attr.code] || '').toLowerCase();
+                        if (valuesToMatch.includes(attrVal)) {
+                            count++;
+                        }
+                    });
+
+                    return count > 0 ? { ...c, count } : null;
                 });
 
-                const activeClauses = clauses.map(c => {
-                    const valuesToSum = Array.isArray(c.value) ? c.value : [c.value];
-                    const count = valuesToSum.reduce((sum, v) => sum + (lowercasedMeta[String(v).toLowerCase()] || 0), 0);
-                    return count > 0 ? { ...c, count } : null;
-                }).filter(Boolean);
-                
                 return { 
                     ...attr, 
                     options: Object.entries(metaValues).map(([value, count]) => ({ value, count })), 
-                    clauses: activeClauses 
+                    clauses: (await Promise.all(activeClausesPromises)).filter(Boolean)
                 };
-            });
+            }));
         }
 
         return {

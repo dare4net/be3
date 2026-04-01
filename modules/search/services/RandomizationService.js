@@ -464,10 +464,24 @@ class RandomizationService {
         console.log(`[RandomizationService] SQL returned ${res.rows.length} categories before exclusion filter`);
 
         const excluded = Array.isArray(clause.excluded_category_ids) ? clause.excluded_category_ids.map(String) : [];
-        console.log(`[RandomizationService] Excluded category IDs:`, excluded);
+        if (excluded.length === 0) return res.rows;
 
-        const filtered = res.rows.filter(c => !excluded.includes(String(c.id)));
-        console.log(`[RandomizationService] After exclusion filter: ${filtered.length} categories`);
+        // Hierarchical Exclusion: Find all forbidden categories (excluded + descendants)
+        const forbiddenRes = await query(
+            `WITH RECURSIVE forbidden_tree AS (
+                SELECT id FROM categories WHERE id = ANY($1::uuid[]) AND tenant_id = $2
+                UNION ALL
+                SELECT c.id FROM categories c 
+                INNER JOIN forbidden_tree ft ON c.parent_id = ft.id
+                WHERE c.tenant_id = $2
+            )
+            SELECT id FROM forbidden_tree`,
+            [excluded, tenantId]
+        );
+        const forbiddenIds = new Set(forbiddenRes.rows.map(r => String(r.id)));
+        const filtered = res.rows.filter(c => !forbiddenIds.has(String(c.id)));
+        
+        console.log(`[RandomizationService] After hierarchical exclusion filter: ${filtered.length} categories`);
 
         // Apply intent constraints
         let final = filtered;

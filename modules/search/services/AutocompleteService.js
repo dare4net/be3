@@ -145,7 +145,28 @@ class AutocompleteService {
                     OR EXISTS (SELECT 1 FROM query_tokens WHERE cl->>'label' ILIKE '%' || token || '%' OR a.label ILIKE '%' || token || '%' OR cl->>'prefix' ILIKE '%' || token || '%' OR cl->>'suffix' ILIKE '%' || token || '%')
                 )
             ),
-            -- 5. Final Rankings
+            -- 5. Hierarchical Exclusion Resolver
+            forbidden_clauses AS (
+                -- Direct exclusions
+                SELECT 
+                    a.id as attr_id, 
+                    (cl->>'name') as cl_name, 
+                    jsonb_array_elements_text(cl->'excluded_category_ids')::uuid as cat_id
+                FROM attributes a
+                CROSS JOIN LATERAL jsonb_array_elements(a.clauses) cl
+                WHERE a.tenant_id = $1 
+                AND (cl->'excluded_category_ids') IS NOT NULL 
+                AND jsonb_array_length(cl->'excluded_category_ids') > 0
+                
+                UNION ALL
+                
+                -- Inherited exclusions (descendants)
+                SELECT fc.attr_id, fc.cl_name, c.id
+                FROM categories c
+                JOIN forbidden_clauses fc ON c.parent_id = fc.cat_id
+                WHERE c.tenant_id = $1
+            ),
+            -- 6. Final Rankings
             final_pool AS (
                 -- TIER 0: Full Phrases (e.g. "Smartphones")
                 SELECT 
@@ -172,7 +193,6 @@ class AutocompleteService {
                 UNION ALL
                 
                 -- TIER 2: Branded Intersection (e.g. "Apple Laptop")
-                -- We show this if category name AND brand/clause name both have matches in the tokens
                 SELECT 
                     mc.id, mc.name, mc.slug, mc.image_url,
                     ma.attr_code, ma.attr_label, ma.cl_name, ma.cl_label,
@@ -182,12 +202,14 @@ class AutocompleteService {
                 JOIN effective_attrs ea ON ea.category_id = mc.id
                 JOIN matched_clauses ma ON ma.attr_id = ea.attribute_id
                 WHERE (mc.match_count > 0 AND ma.val_match_count > 0) -- HIT BOTH!
-                AND (ma.cl_excluded_ids IS NULL OR NOT (ma.cl_excluded_ids @> jsonb_build_array(mc.id::text)))
+                AND NOT EXISTS (
+                    SELECT 1 FROM forbidden_clauses fc 
+                    WHERE fc.attr_id = ma.attr_id AND fc.cl_name = ma.cl_name AND fc.cat_id = mc.id
+                )
 
                 UNION ALL
                 
                 -- TIER 3: Branded Drift (Brand-only search suggested in related categories)
-                -- ANTI-EXPLOSION: Capped to Top 5 that have CONFIRMED product matches
                 SELECT 
                     c.id, c.name, c.slug, c.image_url,
                     ma.attr_code, ma.attr_label,
@@ -200,7 +222,10 @@ class AutocompleteService {
                 JOIN categories c ON ea.category_id = c.id
                 WHERE c.is_active = true 
                 AND ma.is_explicit_value_match = true
-                AND (ma.cl_excluded_ids IS NULL OR NOT (ma.cl_excluded_ids @> jsonb_build_array(c.id::text)))
+                AND NOT EXISTS (
+                    SELECT 1 FROM forbidden_clauses fc 
+                    WHERE fc.attr_id = ma.attr_id AND fc.cl_name = ma.cl_name AND fc.cat_id = c.id
+                )
                 -- PRODUCT MATCH REQUIRED (using search_indexes):
                 AND EXISTS (
                     SELECT 1 FROM search_indexes si

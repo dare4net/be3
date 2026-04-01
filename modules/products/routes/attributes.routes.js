@@ -8,6 +8,46 @@ const { paginatedTenantQuery, tenantInsert, tenantUpdate, tenantDelete } = requi
 const { authenticate } = require('../../../platform/core/auth/middleware/authenticate');
 const { asyncHandler } = require('../../../middleware/errorHandler');
 
+/**
+ * Helper to keep pivot table (category_attributes.excluded_clauses) in sync 
+ * with the clause configurations natively on the attribute JSON.
+ */
+async function syncCategoryExclusions(tenantId, attributeId, clausesArray) {
+    // 1. Clear existing exclusions for this attribute in the pivot table (reset)
+    await query(
+        `UPDATE category_attributes SET excluded_clauses = '[]'::jsonb WHERE attribute_id = $1 AND tenant_id = $2`,
+        [attributeId, tenantId]
+    );
+
+    if (!clausesArray || !Array.isArray(clausesArray)) return;
+
+    // 2. Map category_id -> array of excluded clause names
+    const catExclusions = {};
+    for (const clause of clausesArray) {
+        if (clause.excluded_category_ids && Array.isArray(clause.excluded_category_ids)) {
+            for (const catId of clause.excluded_category_ids) {
+                if (!catExclusions[catId]) catExclusions[catId] = [];
+                if (clause.name) catExclusions[catId].push(clause.name);
+            }
+        }
+    }
+
+    // 3. Upsert into category_attributes
+    for (const [catId, excludedClauseNames] of Object.entries(catExclusions)) {
+        if (excludedClauseNames.length === 0) continue;
+        
+        const excludedJson = JSON.stringify(excludedClauseNames);
+        
+        await query(
+            `INSERT INTO category_attributes (tenant_id, category_id, attribute_id, excluded_clauses)
+             VALUES ($1, $2, $3, $4::jsonb)
+             ON CONFLICT (category_id, attribute_id) 
+             DO UPDATE SET excluded_clauses = EXCLUDED.excluded_clauses`,
+            [tenantId, catId, attributeId, excludedJson]
+        );
+    }
+}
+
 function registerAttributeRoutes(router) {
     // List Global Attributes (All - for Admin dropdowns)
     // Merges tenant-specific attributes with global system attributes
@@ -66,6 +106,10 @@ function registerAttributeRoutes(router) {
             clauses: clauses || '[]',
             image_url: req.body.image_url
         });
+        
+        // Sync exclusions to pivot table
+        await syncCategoryExclusions(req.tenantId, attribute.id, req.body.clauses);
+        
         res.status(201).json({ success: true, attribute });
     }));
 
@@ -100,6 +144,10 @@ function registerAttributeRoutes(router) {
             clauses: clauses || '[]',
             image_url: req.body.image_url
         });
+        
+        // Sync exclusions to pivot table
+        await syncCategoryExclusions(req.tenantId, attribute.id, req.body.clauses);
+        
         res.json({ success: true, attribute });
     }));
 

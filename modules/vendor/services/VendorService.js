@@ -62,11 +62,8 @@ class VendorService {
             const vendorBackdrop = user.business_backdrop || null;
             const slug = `${vendorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-${userId.split('-')[0]}`;
 
-            // 2. Ensure the global system vendor attribute exists and includes this vendor name
-            const vendorAttribute = await this.ensureVendorAttribute();
-            if (vendorAttribute) {
-                await this.ensureVendorOption(vendorAttribute.id, vendorName);
-            }
+            // 2. Ensure the global system vendor attribute exists
+            await this.ensureVendorAttribute();
 
             // 3. Check if collection already exists for this vendor using created_by
             const existing = await query(
@@ -155,34 +152,7 @@ class VendorService {
         }
     }
 
-    /**
-     * Ensure a vendor name exists as an option in the global system Vendor attribute.
-     * @param {string} attributeId - ID in system_attributes table
-     * @param {string} vendorName 
-     */
-    static async ensureVendorOption(attributeId, vendorName) {
-        const result = await query(
-            `SELECT options FROM system_attributes WHERE id = $1`,
-            [attributeId]
-        );
 
-        if (result.rows.length === 0) return;
-
-        let options = result.rows[0].options;
-        if (typeof options === 'string') {
-            try { options = JSON.parse(options); } catch { options = []; }
-        }
-        options = options || [];
-
-        if (!options.includes(vendorName)) {
-            options.push(vendorName);
-            await query(
-                `UPDATE system_attributes SET options = $1, updated_at = NOW() WHERE id = $2`,
-                [JSON.stringify(options), attributeId]
-            );
-            console.log(`[VendorService] Added "${vendorName}" to global Vendor attribute options`);
-        }
-    }
 
     /**
      * Assign the system vendor attribute to all products for a vendor.

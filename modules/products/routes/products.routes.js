@@ -68,7 +68,7 @@ function registerProductRoutes(router, eventBus) {
 
         const shouldFilterByVendor = isVendor;
 
-        const countRes = await query(countSql, [req.tenantId, allowedCategories, shouldFilterByVendor, vendorName, hasUnrestrictedAccess]);
+        const countRes = await query(countSql, [req.tenantId, allowedCategories, shouldFilterByVendor, vendorName, hasUnrestrictedAccess, req.user.id]);
         const total = countRes.rows[0]?.total || 0;
 
         // Add user.id to params for attribute-based filtering
@@ -212,7 +212,7 @@ function registerProductRoutes(router, eventBus) {
         const PermissionService = require('../../../platform/core/roles/services/PermissionService');
         const { isVendor, vendorName, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
 
-        let sql = `SELECT * FROM products WHERE id = $1 AND tenant_id = $2`;
+        let sql = `SELECT * FROM products p WHERE id = $1 AND tenant_id = $2`;
         let params = [req.params.id, req.tenantId];
 
         if (isVendor && vendorName) {
@@ -345,7 +345,7 @@ function registerProductRoutes(router, eventBus) {
 
         // Security check for vendor ownership
         if (isVendor && vendorName) {
-            const check = await query(`SELECT id FROM products WHERE id = $1 AND tenant_id = $2 AND ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 3, 4)}`, [req.params.id, req.tenantId, vendorName, req.user.id]);
+            const check = await query(`SELECT id FROM products p WHERE id = $1 AND tenant_id = $2 AND ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 3, 4)}`, [req.params.id, req.tenantId, vendorName, req.user.id]);
             if (check.rows.length === 0) {
                 return res.status(403).json({ error: 'Access denied: You do not own this product' });
             }

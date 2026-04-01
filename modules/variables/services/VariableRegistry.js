@@ -80,7 +80,25 @@ class VariableRegistry {
     async resolve(name, context = {}) {
         const key = name.toUpperCase();
         const entry = this.variables.get(key);
+        
         if (!entry) {
+            // Core Fallback for standalone scripts where modules haven't bootstrapped
+            if (key === 'BUSINESS_NAME' || key === 'STORE_NAME') {
+                if (context.tenantId) {
+                    try {
+                        const { query } = require('../../../config/database');
+                        const result = await query('SELECT name FROM tenants WHERE id = $1', [context.tenantId]);
+                        return result.rows[0]?.name || 'Store';
+                    } catch (e) {
+                        return 'Store';
+                    }
+                }
+                return 'Store';
+            }
+            if (key === 'VENDOR_ID') {
+                return context.userId || context.user_id || 'platform';
+            }
+
             console.warn(`[VariableRegistry] Unknown variable: [${key}]`);
             return null;
         }
