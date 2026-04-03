@@ -13,8 +13,8 @@ const SortSQLBuilder = require('../core/builders/SortSQLBuilder');
 const QueryPreprocessor = require('../core/query/QueryPreprocessor');
 const QueryProcessor = require('../core/query/QueryProcessor');
 const FacetedFiltersAggregator = require('../core/filters/FacetedFiltersAggregator');
-const VectorEngine = require('../../vector/services/VectorEngine');
 const ProductService = require('../../products/services/ProductService');
+const VectorEngine = require('../../vector/services/VectorEngine');
 
 class SearchService {
     constructor() {
@@ -43,7 +43,8 @@ class SearchService {
             perPage = 20,
             mode: searchMode = 'keyword', // 'keyword', 'vector', 'similar'
             similar_to: similarTo = null,
-            userId = null
+            userId = null,
+            include_stats = false
         } = params;
 
         // Recursive Category Fetch + Auto Drill-down
@@ -152,15 +153,15 @@ class SearchService {
             const vectorQueryParams = [];
             const vectorFilterStartIndex = (searchMode === 'vector' && originalCategoryId) ? 5 : 4;
             const { sql: vectorFilterSql } = await this.filterSQLBuilder.buildProductFilterSQL(
-                tenantId, 
-                vectorFilters, 
-                vectorQueryParams, 
+                tenantId,
+                vectorFilters,
+                vectorQueryParams,
                 vectorFilterStartIndex
             );
 
             if (searchMode === 'similar' && similarTo) {
                 console.log(`[Search] 🧠 Similarity search for ${similarTo} with ${vectorQueryParams.length} filters (page ${page})`);
-                const simRes = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, { 
+                const simRes = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, {
                     limit: perPage + 1, // Look-ahead: fetch 1 extra to see if next page exists
                     offset: offset,
                     filter: { sql: vectorFilterSql, params: vectorQueryParams }
@@ -168,7 +169,7 @@ class SearchService {
                 vectorResults = simRes;
             } else if (finalQuery) {
                 console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}" with ${vectorQueryParams.length} filters (page ${page})`);
-                const vecRes = await this.vectorEngine.semanticSearch(tenantId, finalQuery, { 
+                const vecRes = await this.vectorEngine.semanticSearch(tenantId, finalQuery, {
                     limit: perPage + 1, // Look-ahead: fetch 1 extra to see if next page exists
                     offset: offset,
                     categoryId: originalCategoryId,
@@ -226,6 +227,11 @@ class SearchService {
 
             // Resolve dynamic tags (publicly)
             await ProductService.resolve(tenantId, null, finalResults);
+
+            // Optional: Enrich with stats
+            if (include_stats) {
+                await ProductService.enrichWithStats(tenantId, finalResults);
+            }
 
             // Get facets (preserved behavior)
             const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, '', ['product'], filters, originalCategoryId);
@@ -406,6 +412,11 @@ class SearchService {
 
         // Resolve dynamic tags (publicly)
         await ProductService.resolve(tenantId, null, results);
+
+        // Optional: Enrich with stats
+        if (include_stats) {
+            await ProductService.enrichWithStats(tenantId, results);
+        }
 
         // Get faceted filter counts (only if we have results or after final attempt)
         const expandedQueryForFacets = finalQuery ? await this.queryProcessor.expandQuery(finalQuery, tenantId, lastAttempt.mode) : '';

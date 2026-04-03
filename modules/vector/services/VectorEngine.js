@@ -17,14 +17,19 @@ const { query, pool } = require('../../../config/database');
 
 const TRANSFORMER_URL = process.env.TRANSFORMER_URL || 'http://localhost:3009';
 
+let isInitialized = false;
+
 class VectorEngine {
     constructor() {
         this.modelKey = (process.env.EMBEDDING_MODEL_KEY || '').toLowerCase().trim();
         this.modelName = process.env.EMBEDDING_MODEL_NAME || 'all-MiniLM-L6-v2';
         this.dimensions = process.env.EMBEDDING_DIMENSIONS ? parseInt(process.env.EMBEDDING_DIMENSIONS) : 384;
         this.isBge = this.modelKey === 'bge-small' || this.modelName.toLowerCase().includes('bge');
-        
-        console.log(`[VectorEngine] Initialized: ${this.modelName} (BGE=${this.isBge}, ${this.dimensions}D)`);
+
+        if (!isInitialized) {
+            console.log(`[VectorEngine] Initialized: ${this.modelName} (BGE=${this.isBge}, ${this.dimensions}D)`);
+            isInitialized = true;
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -45,9 +50,9 @@ class VectorEngine {
             const purpose = options.purpose || (this.isBge ? 'query' : undefined);
             const body = { text: text.trim() };
             if (purpose) body.purpose = purpose;
-            
+
             console.log(`[VectorEngine] POST /embed | Text: "${text.substring(0, 50)}..." | Length: ${text.length} | Purpose: ${purpose}`);
-            
+
             const res = await axios.post(`${TRANSFORMER_URL}/embed`, body);
             const embeddings = res.data?.embeddings;
             if (!embeddings || !Array.isArray(embeddings) || embeddings.length === 0) {
@@ -75,9 +80,9 @@ class VectorEngine {
             const purpose = options.purpose || (this.isBge ? 'passage' : undefined);
             const body = { texts };
             if (purpose) body.purpose = purpose;
-            
+
             console.log(`[VectorEngine] POST /embed (Batch) | Count: ${texts.length} | Purpose: ${purpose}`);
-            
+
             const res = await axios.post(`${TRANSFORMER_URL}/embed`, body);
             const embeddings = res.data?.embeddings;
             if (!embeddings || !Array.isArray(embeddings) || embeddings.length === 0) {
@@ -135,7 +140,7 @@ class VectorEngine {
                 .filter(([_, v]) => v !== null && v !== undefined && v !== '')
                 .map(([k, v]) => {
                     const label = attributeLabels[k] || k;
-                    return `${label} is ${v}`; 
+                    return `${label} is ${v}`;
                 });
             if (attrParts.length > 0) parts.push(attrParts.join(', '));
         }
@@ -290,7 +295,7 @@ class VectorEngine {
                 [tenantId],
                 tenantId
             );
-            
+
             const mapping = {};
             result.rows.forEach(row => {
                 mapping[row.code] = row.label;

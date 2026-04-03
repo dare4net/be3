@@ -11,6 +11,7 @@ const AutocompleteService = require('../services/AutocompleteService');
 const SearchAnalyticsService = require('../services/SearchAnalyticsService');
 const FilterService = require('../services/FilterService');
 const RandomizationService = require('../services/RandomizationService');
+const ProductService = require('../../products/services/ProductService');
 const { generateSearchSEO } = require('../../../lib/searchSEO');
 
 function registerSearchRoutes(router) {
@@ -37,7 +38,8 @@ function registerSearchRoutes(router) {
             tag,
             tags,
             mode,
-            similar_to: similarTo
+            similar_to: similarTo,
+            include_stats
         } = req.query;
 
         // Parse content types
@@ -85,7 +87,8 @@ function registerSearchRoutes(router) {
             perPage: parseInt(per_page),
             mode,
             similar_to: similarTo,
-            userId: req.user?.id || null
+            userId: req.user?.id || null,
+            include_stats: include_stats === 'true'
         });
 
         // Track search analytics
@@ -146,7 +149,8 @@ function registerSearchRoutes(router) {
             tag,
             tags,
             mode,
-            similar_to: similarTo
+            similar_to: similarTo,
+            include_stats
         } = req.query;
 
         const filters = {};
@@ -169,7 +173,8 @@ function registerSearchRoutes(router) {
             perPage: parseInt(per_page),
             mode,
             similar_to: similarTo,
-            userId: req.user?.id || null
+            userId: req.user?.id || null,
+            include_stats: include_stats === 'true'
         });
 
         res.json({
@@ -411,66 +416,20 @@ function registerSearchRoutes(router) {
 
         await Promise.all(searchPromises);
 
-        // --- ENRICHMENT STEP: Fetch Stats ---
+        // 3. Enrich with Stats
         try {
-            // 1. Collect all product IDs across all widgets
-            const allProductIds = new Set();
+            const allProducts = [];
             Object.values(results).forEach(widgetData => {
                 if (widgetData.results && Array.isArray(widgetData.results)) {
-                    widgetData.results.forEach(p => allProductIds.add(p.id));
+                    allProducts.push(...widgetData.results);
                 }
             });
 
-            if (allProductIds.size > 0) {
-                const productIdList = Array.from(allProductIds);
-
-                // 2. Query Analytics (Impressions)
-                // Assuming analytics_events table structure from prior context
-                // Count 'view_item' events for 'product' type
-                const analyticsRes = await query(`
-                    SELECT entity_id, COUNT(*) as count
-                    FROM analytics_events
-                    WHERE tenant_id = $1
-                    AND event_type = 'impression'
-                    AND entity_type = 'product'
-                    AND entity_id = ANY($2)
-                    GROUP BY entity_id
-                `, [req.tenantId, productIdList]);
-
-                // 3. Query Wishlists
-                const wishlistRes = await query(`
-                    SELECT product_id, COUNT(*) as count
-                    FROM wishlists
-                    WHERE tenant_id = $1
-                    AND product_id = ANY($2)
-                    GROUP BY product_id
-                `, [req.tenantId, productIdList]);
-
-                // 4. Map stats
-                const statsMap = {}; // { productId: { impressions, wishlist_count } }
-
-                analyticsRes.rows.forEach(row => {
-                    if (!statsMap[row.entity_id]) statsMap[row.entity_id] = { impressions: 0, wishlist_count: 0 };
-                    statsMap[row.entity_id].impressions = parseInt(row.count);
-                });
-
-                wishlistRes.rows.forEach(row => {
-                    if (!statsMap[row.product_id]) statsMap[row.product_id] = { impressions: 0, wishlist_count: 0 };
-                    statsMap[row.product_id].wishlist_count = parseInt(row.count);
-                });
-
-                // 5. Inject back into results
-                Object.values(results).forEach(widgetData => {
-                    if (widgetData.results && Array.isArray(widgetData.results)) {
-                        widgetData.results.forEach(p => {
-                            p.stats = statsMap[p.id] || { impressions: 0, wishlist_count: 0 };
-                        });
-                    }
-                });
+            if (allProducts.length > 0) {
+                await ProductService.enrichWithStats(req.tenantId, allProducts);
             }
         } catch (err) {
             console.error('[Search] Failed to enrich batch results with stats:', err);
-            // Don't fail the request, just log error. Stats will be missing/undefined.
         }
         // ------------------------------------
 
