@@ -149,7 +149,11 @@ class SearchService {
             const offset = (page - 1) * perPage;
 
             // NEW: Build dynamic filters for vector/similarity search
-            const vectorFilters = { ...filters };
+            const vectorFilters = {
+                ...filters,
+                deleted_at: null,
+                is_variant: false
+            };
             const vectorQueryParams = [];
             const vectorFilterStartIndex = (searchMode === 'vector' && originalCategoryId) ? 5 : 4;
             const { sql: vectorFilterSql } = await this.filterSQLBuilder.buildProductFilterSQL(
@@ -289,10 +293,13 @@ class SearchService {
                     SELECT 
                         si.*,
                         ts_rank(si.search_vector, query) as rank
-                    FROM search_indexes si,
-                    to_tsquery('english', $${paramIndex}) query
+                    FROM search_indexes si
+                    JOIN products p ON si.content_id = p.id AND si.content_type = 'product'
+                    CROSS JOIN to_tsquery('english', $${paramIndex}) query
                     WHERE si.tenant_id = $${paramIndex + 1}
                     AND si.is_active = true
+                    AND p.deleted_at IS NULL
+                    AND p.is_variant = false
                     AND si.search_vector @@ query
                 `;
                 queryParams.push(expandedQuery, tenantId);
@@ -303,8 +310,11 @@ class SearchService {
                         si.*,
                         1 as rank
                     FROM search_indexes si
+                    JOIN products p ON si.content_id = p.id AND si.content_type = 'product'
                     WHERE si.tenant_id = $${paramIndex}
                     AND si.is_active = true
+                    AND p.deleted_at IS NULL
+                    AND p.is_variant = false
                 `;
                 queryParams.push(tenantId);
                 paramIndex = 2;
@@ -340,10 +350,13 @@ class SearchService {
             if (expandedQuery) {
                 countSQL = `
                     SELECT COUNT(*) as total
-                    FROM search_indexes si,
-                    to_tsquery('english', $${countParamIndex}) query
+                    FROM search_indexes si
+                    JOIN products p ON si.content_id = p.id AND si.content_type = 'product'
+                    CROSS JOIN to_tsquery('english', $${countParamIndex}) query
                     WHERE si.tenant_id = $${countParamIndex + 1}
                     AND si.is_active = true
+                    AND p.deleted_at IS NULL
+                    AND p.is_variant = false
                     AND si.search_vector @@ query
                 `;
                 countParams.push(expandedQuery, tenantId);
@@ -352,8 +365,11 @@ class SearchService {
                 countSQL = `
                     SELECT COUNT(*) as total
                     FROM search_indexes si
+                    JOIN products p ON si.content_id = p.id AND si.content_type = 'product'
                     WHERE si.tenant_id = $${countParamIndex}
                     AND si.is_active = true
+                    AND p.deleted_at IS NULL
+                    AND p.is_variant = false
                 `;
                 countParams.push(tenantId);
                 countParamIndex = 2;

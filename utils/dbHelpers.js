@@ -59,18 +59,18 @@ async function tenantInsert(tableName, tenantId, data) {
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(', ');
     const keysList = keys.join(', ');
 
-  const sql = `
+    const sql = `
     INSERT INTO ${tableName} (${keysList})
     VALUES (${placeholders})
     RETURNING *
   `;
 
-  if (tableName === 'products') {
-    // Standard product insertion
-  }
+    if (tableName === 'products') {
+        // Standard product insertion
+    }
 
-  const result = await query(sql, values);
-  return result.rows[0];
+    const result = await query(sql, values);
+    return result.rows[0];
 }
 
 /**
@@ -150,8 +150,9 @@ async function paginatedTenantQuery(tableName, tenantId, options = {}, extraWher
     let params = [];
     const whereConditions = [];
 
-    // 1. Base Tenant Condition
+    // 1. Base Tenant Condition (including soft-delete check)
     whereConditions.push(`tenant_id = $${params.length + 1}`);
+    whereConditions.push(`deleted_at IS NULL`);
     params.push(tenantId);
 
     // 2. Additional Conditions

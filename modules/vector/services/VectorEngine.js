@@ -430,6 +430,7 @@ class VectorEngine {
             FROM products p
             WHERE p.tenant_id = $2
               AND p.status = 'active'
+              AND p.deleted_at IS NULL
               AND p.embedding IS NOT NULL
               AND 1 - (p.embedding <=> $1::vector) >= $3
         `;
@@ -496,6 +497,7 @@ class VectorEngine {
                  (SELECT embedding FROM products WHERE id = $1 AND tenant_id = $2 AND embedding IS NOT NULL) source
             WHERE p.tenant_id = $2
               AND p.status = 'active'
+              AND p.deleted_at IS NULL
               AND p.embedding IS NOT NULL
               AND p.id != $1
               AND 1 - (p.embedding <=> source.embedding) >= $3
@@ -564,6 +566,7 @@ class VectorEngine {
             LEFT JOIN search_indexes si ON si.content_id = p.id AND si.tenant_id = $2 AND si.content_type = 'product'
             WHERE p.tenant_id = $2
               AND p.status = 'active'
+              AND p.deleted_at IS NULL
               AND p.embedding IS NOT NULL
             ORDER BY hybrid_score DESC
             LIMIT $5
@@ -600,6 +603,7 @@ class VectorEngine {
             FROM products p
             WHERE p.tenant_id = $2
               AND p.status = 'active'
+              AND p.deleted_at IS NULL
               AND p.embedding IS NOT NULL
             ORDER BY p.embedding <=> $1::vector ASC
             LIMIT $3

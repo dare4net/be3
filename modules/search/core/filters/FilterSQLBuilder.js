@@ -249,6 +249,19 @@ class FilterSQLBuilder {
             index++;
         }
 
+        // Deleted filter
+        if (filters.deleted_at === null) {
+            // Join products check for si results (already handled in SearchService queries for speed, but good for builder safety if joined)
+            // Note: si doesn't have deleted_at. We assume the caller joins 'products p' if they want this.
+            // Or we check si.is_active.
+            sql += ` AND si.is_active = true`;
+        }
+
+        // Variant filter
+        if (filters.is_variant !== undefined) {
+            // Same as above, assumes join if column based
+        }
+
         // Custom attribute filters (e.g., attribute.color, attribute.size, attribute.price:budget_deal)
         const attributeKeys = Object.keys(filters).filter(k => k.startsWith('attribute.'));
 
@@ -483,6 +496,27 @@ class FilterSQLBuilder {
                 queryParams.push(attrCode, safeVal);
                 index += 2;
             }
+        }
+
+        // Soft-delete filter
+        if (filters.deleted_at === null) {
+            sql += ` AND p.deleted_at IS NULL`;
+        } else if (filters.deleted_at !== undefined) {
+            sql += ` AND p.deleted_at IS NOT NULL`;
+        }
+
+        // Variation filter
+        if (filters.is_variant !== undefined) {
+            sql += ` AND p.is_variant = $${index}`;
+            queryParams.push(filters.is_variant);
+            index++;
+        }
+
+        // Status filter (explicit)
+        if (filters.status) {
+            sql += ` AND p.status = $${index}`;
+            queryParams.push(filters.status);
+            index++;
         }
 
         return { sql, nextIndex: index };

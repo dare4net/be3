@@ -26,17 +26,30 @@ class FacetedFiltersAggregator {
     async getFacetedFilters(tenantId, searchQuery, contentTypes, currentFilters, contextCategoryId = null, userId = null) {
         // Step 1: Execute the result set query to find which IDs exist in the current search scope
         // IMPORTANT: To allow "sideways" navigation, we calculate category counts WITHOUT the category filter
-        const filtersForCategoryFacet = { ...currentFilters };
+        const filtersForCategoryFacet = {
+            ...currentFilters,
+            deleted_at: null,
+            is_variant: false
+        };
         delete filtersForCategoryFacet.category_id;
         delete filtersForCategoryFacet.category_ids;
+
+        const currentFiltersWithExclusions = {
+            ...currentFilters,
+            deleted_at: null,
+            is_variant: false
+        };
 
         const getBaseSQL = (filtersToApply) => {
             let sql = `
                 SELECT 
                     si.metadata
                 FROM search_indexes si
+                JOIN products p ON si.content_id = p.id AND si.content_type = 'product'
                 WHERE si.tenant_id = $1
                 AND si.is_active = true
+                AND p.deleted_at IS NULL
+                AND p.is_variant = false
             `;
             const params = [tenantId];
             let pi = 2;
@@ -57,8 +70,8 @@ class FacetedFiltersAggregator {
         };
 
         // Get results with Category Filter (for attributes, tags, price)
-        const filteredBase = getBaseSQL(currentFilters);
-        const filteredRes = await this.filterSQLBuilder.buildFilterSQL(tenantId, currentFilters, filteredBase.params, filteredBase.nextIndex);
+        const filteredBase = getBaseSQL(currentFiltersWithExclusions);
+        const filteredRes = await this.filterSQLBuilder.buildFilterSQL(tenantId, currentFiltersWithExclusions, filteredBase.params, filteredBase.nextIndex);
         const filteredResults = await query(filteredBase.sql + filteredRes.sql, filteredBase.params);
 
         // Get results WITHOUT Category Filter (for category navigation)
@@ -147,7 +160,7 @@ class FacetedFiltersAggregator {
                     SELECT id, name, slug, parent_id FROM category_path ORDER BY level ASC`,
                     [contextCategoryId, tenantId]
                 );
-                
+
                 ancestryPath = pathRes.rows.map(r => String(r.id));
                 if (pathRes.rows[1]) parentCategory = pathRes.rows[1]; // Level 1 is parent
 
@@ -185,7 +198,7 @@ class FacetedFiltersAggregator {
             enrichedAttributes = await Promise.all(attrMetaRes.rows.map(async attr => {
                 const metaValues = facets.attributes[attr.code] || {};
                 const clauses = (typeof attr.clauses === 'string' ? JSON.parse(attr.clauses) : attr.clauses) || [];
-                
+
                 const activeClausesPromises = clauses.map(async c => {
                     // Check Hierarchical Exclusion (Hide clause entirely if context is forbidden)
                     const excludedIds = Array.isArray(c.excluded_category_ids) ? c.excluded_category_ids.map(String) : [];
@@ -212,11 +225,11 @@ class FacetedFiltersAggregator {
                     // Calculate refined count
                     let count = 0;
                     const valuesToMatch = Array.isArray(c.value) ? c.value.map(v => String(v).toLowerCase()) : [String(c.value).toLowerCase()];
-                    
+
                     filteredResults.rows.forEach(row => {
                         const meta = row.metadata || {};
                         const productCats = Array.isArray(meta.category_ids) ? meta.category_ids.map(String) : [];
-                        
+
                         // EXCLUSION CHECK: If product is in ANY forbidden sub-category, skip it for this clause
                         const isProductForbidden = productCats.some(id => forbiddenPool.has(id));
                         if (isProductForbidden) return;
@@ -230,9 +243,9 @@ class FacetedFiltersAggregator {
                     return count > 0 ? { ...c, count } : null;
                 });
 
-                return { 
-                    ...attr, 
-                    options: Object.entries(metaValues).map(([value, count]) => ({ value, count })), 
+                return {
+                    ...attr,
+                    options: Object.entries(metaValues).map(([value, count]) => ({ value, count })),
                     clauses: (await Promise.all(activeClausesPromises)).filter(Boolean)
                 };
             }));

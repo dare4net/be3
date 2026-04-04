@@ -26,6 +26,12 @@ class ProductService {
         }
 
         for (const product of products) {
+            // 1. Resolve Inheritance (Variant -> Parent merge)
+            if (product.parent_id) {
+                await ProductService.resolveInheritance(tenantId, product);
+            }
+
+            // 2. Resolve Dynamic Variables in Tags
             if (product.tags && product.tags.length > 0) {
                 const resolvedTags = [];
                 for (const tag of product.tags) {
@@ -90,6 +96,76 @@ class ProductService {
         // 2. Dynamic Tag (resolved to name match - handled at DB level by checking nameParamIndex)
         // 3. System Attribute (hard match on Name or UUID)
         return `(p.tags @> ARRAY[$${nameParamIndex}]::text[] OR p.attributes->>'vendor' = $${nameParamIndex} OR p.attributes->>'vendor' = $${idParamIndex})`;
+    }
+
+    /**
+     * Resolve inheritance for variants.
+     * Merges parent data into the variant for fields that are null/empty.
+     * @param {string} tenantId 
+     * @param {object} product 
+     */
+    static async resolveInheritance(tenantId, product) {
+        if (!product || !product.parent_id) return product;
+
+        try {
+            const parentRes = await query(`SELECT * FROM products WHERE id = $1 AND tenant_id = $2`, [product.parent_id, tenantId]);
+            if (!parentRes.rows[0]) return product;
+
+            const parent = parentRes.rows[0];
+
+            // 1. Fallback Fields (if variant has null or empty)
+            const fallbackFields = ['description', 'image_url', 'price', 'category_id'];
+            fallbackFields.forEach(field => {
+                if (product[field] === null || product[field] === undefined || product[field] === '') {
+                    product[field] = parent[field];
+                    product[`is_inherited_${field}`] = true; // Flag for UI
+                }
+            });
+
+            // Fallback Images (Gallery)
+            // If product.images exists and is empty, fetch parent images
+            if (!product.images || product.images.length === 0) {
+                const parentImages = await query(
+                    `SELECT * FROM product_media WHERE product_id = $1 AND media_type = 'image' ORDER BY position ASC`,
+                    [product.parent_id]
+                );
+                if (parentImages.rows.length > 0) {
+                    product.images = parentImages.rows;
+                    product.is_inherited_images = true;
+                }
+            }
+
+            // 2. Attributes Merge
+            // Variant attributes override Parent attributes
+            const parentAttrs = parent.attributes || {};
+            const variantAttrs = product.attributes || {};
+            product.attributes = { ...parentAttrs, ...variantAttrs };
+            product.inherited_attribute_keys = Object.keys(parentAttrs).filter(key => !variantAttrs.hasOwnProperty(key));
+
+            product.parent_name = parent.name; // For breadcrumbs/UI
+            return product;
+        } catch (err) {
+            console.error('[ProductService] Failed to resolve inheritance:', err);
+            return product;
+        }
+    }
+
+    /**
+     * Handle cascading soft-delete for variants
+     * @param {string} tenantId 
+     * @param {string} productId 
+     */
+    static async cascadeSoftDelete(tenantId, productId) {
+        try {
+            await query(`
+                UPDATE products 
+                SET deleted_at = NOW() 
+                WHERE tenant_id = $1 AND parent_id = $2 AND deleted_at IS NULL
+            `, [tenantId, productId]);
+            console.log(`[ProductService] Cascaded soft-delete to variants for parent: ${productId}`);
+        } catch (err) {
+            console.error('[ProductService] Failed to cascade soft-delete:', err);
+        }
     }
 
     /**

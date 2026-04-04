@@ -18,7 +18,16 @@ function registerStorefrontRoutes(router) {
         const offset = (page - 1) * perPage;
 
         let queryParams = [req.tenantId];
-        let whereConditions = [`p.tenant_id = $1`, `p.status = 'active'`];
+        let whereConditions = [
+            `p.tenant_id = $1`,
+            `p.status = 'active'`,
+            `p.deleted_at IS NULL`
+        ];
+
+        // Hide variants by default in generic listings (unless a specific ID/Handle is likely intended)
+        if (req.query.show_variants !== 'true') {
+            whereConditions.push(`p.is_variant = false`);
+        }
 
         if (q) {
             queryParams.push(`%${q}%`);
@@ -154,13 +163,27 @@ function registerStorefrontRoutes(router) {
         });
     }));
 
-    // TEMPORARY DEBUG ENDPOINT
+    // PUBLIC STOREFRONT PRODUCT DETAIL TEMPORARY DEBUG ENDPOINT
     router.get('/storefront/debug', asyncHandler(async (req, res) => {
         res.json({
             success: true,
             tenantId: req.tenantId,
             headers: req.headers
         });
+    }));
+
+    // PUBLIC STOREFRONT PRODUCT DETAIL BY ID (used for parent product lookup on variant pages)
+    router.get('/storefront/products/by-id/:id', subscriptionGuard('products'), asyncHandler(async (req, res) => {
+        const productRes = await query(
+            `SELECT * FROM products WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND deleted_at IS NULL`,
+            [req.tenantId, req.params.id]
+        );
+        if (!productRes.rows[0]) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+        const product = productRes.rows[0];
+        await ProductService.resolve(req.tenantId, null, product);
+        res.json({ success: true, product });
     }));
 
     // PUBLIC STOREFRONT PRODUCT DETAIL
@@ -170,7 +193,7 @@ function registerStorefrontRoutes(router) {
 
         // Get Product
         const productRes = await query(
-            `SELECT * FROM products WHERE tenant_id = $1 AND (handle = $2 OR id::text = $2) AND status = 'active'`,
+            `SELECT * FROM products WHERE tenant_id = $1 AND (handle = $2 OR id::text = $2) AND status = 'active' AND deleted_at IS NULL`,
             [req.tenantId, handle]
         );
         console.log(`[Products API] Found: ${productRes.rows.length} rows`);

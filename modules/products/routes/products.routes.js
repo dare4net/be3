@@ -22,9 +22,15 @@ function registerProductRoutes(router, eventBus) {
         // If unrestricted, we use the standard helper
 
         if (hasUnrestrictedAccess && !isVendor) {
+            const conditions = { deleted_at: null };
+            if (req.query.show_variants !== 'true') {
+                conditions.is_variant = false;
+            }
+
             const result = await paginatedTenantQuery('products', req.tenantId, {
                 page: parseInt(req.query.page) || 1,
                 perPage: parseInt(req.query.per_page) || 20,
+                conditions
             });
             // Fetch categories for each product (simple N+1 solution for now, optimized in prod)
             for (let product of result.data) {
@@ -43,6 +49,7 @@ function registerProductRoutes(router, eventBus) {
         const page = parseInt(req.query.page) || 1;
         const perPage = parseInt(req.query.per_page) || 20;
         const offset = (page - 1) * perPage;
+        const showVariants = req.query.show_variants === 'true';
 
         // Build query for restricted products
         // Products that belong to ANY of the allowed categories
@@ -51,6 +58,8 @@ function registerProductRoutes(router, eventBus) {
             FROM products p
             LEFT JOIN product_categories pc ON p.id = pc.product_id
             WHERE p.tenant_id = $1 
+            AND p.deleted_at IS NULL
+            AND ($9::boolean OR p.is_variant = false)
             AND (NOT $5::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 6, 8)})
             AND ($7::boolean OR pc.category_id = ANY($2))
             ORDER BY p.created_at DESC
@@ -62,17 +71,19 @@ function registerProductRoutes(router, eventBus) {
             FROM products p
             LEFT JOIN product_categories pc ON p.id = pc.product_id
             WHERE p.tenant_id = $1 
+            AND p.deleted_at IS NULL
+            AND ($7::boolean OR p.is_variant = false)
             AND (NOT $3::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 4, 6)})
             AND ($5::boolean OR pc.category_id = ANY($2))
         `;
 
         const shouldFilterByVendor = isVendor;
 
-        const countRes = await query(countSql, [req.tenantId, allowedCategories, shouldFilterByVendor, vendorName, hasUnrestrictedAccess, req.user.id]);
+        const countRes = await query(countSql, [req.tenantId, allowedCategories, shouldFilterByVendor, vendorName, hasUnrestrictedAccess, req.user.id, showVariants]);
         const total = countRes.rows[0]?.total || 0;
 
         // Add user.id to params for attribute-based filtering
-        const productRes = await query(productsSql, [req.tenantId, allowedCategories, perPage, offset, shouldFilterByVendor, vendorName, hasUnrestrictedAccess, req.user.id]);
+        const productRes = await query(productsSql, [req.tenantId, allowedCategories, perPage, offset, shouldFilterByVendor, vendorName, hasUnrestrictedAccess, req.user.id, showVariants]);
         const products = productRes.rows;
 
         // Resolve dynamic tags (e.g., [BUSINESS_NAME])
@@ -207,6 +218,21 @@ function registerProductRoutes(router, eventBus) {
         res.json({ success: true, message: 'Collection deleted' });
     }));
 
+    // Get variants of a product (by parent ID)
+    router.get('/:id/variants', asyncHandler(async (req, res) => {
+        // Fetch all active variants where parent_id = the given product ID
+        const result = await query(
+            `SELECT id, name, handle, price, compare_at_price, sku, status, image_url, variant_label, is_variant, parent_id
+             FROM products
+             WHERE tenant_id = $1
+               AND parent_id = $2
+               AND deleted_at IS NULL
+             ORDER BY price ASC`,
+            [req.tenantId, req.params.id]
+        );
+        res.json({ success: true, variants: result.rows });
+    }));
+
     // Get product by ID
     router.get('/:id', authenticate, authorize('products.view'), asyncHandler(async (req, res) => {
         const PermissionService = require('../../../platform/core/roles/services/PermissionService');
@@ -227,6 +253,9 @@ function registerProductRoutes(router, eventBus) {
 
         const product = result.rows[0];
 
+        // Resolve inheritance if this is a variant
+        await ProductService.resolveInheritance(req.tenantId, product);
+
         // Resolve dynamic tags if they exist
         await ProductService.resolve(req.tenantId, req.user.id, product);
         const cats = await query(
@@ -245,9 +274,18 @@ function registerProductRoutes(router, eventBus) {
         const PermissionService = require('../../../platform/core/roles/services/PermissionService');
         const { isVendor, vendorName, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
 
+        // Construct name if it's a variant
+        let productName = req.body.name || '';
+        if (req.body.parent_id && req.body.variant_label) {
+            const parentRes = await query(`SELECT name FROM products WHERE id = $1 AND tenant_id = $2`, [req.body.parent_id, req.tenantId]);
+            if (parentRes.rows[0]) {
+                productName = `${parentRes.rows[0].name} (${req.body.variant_label})`;
+            }
+        }
+
         // Generate base handle
-        let handle = req.body.handle || req.body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-        if (!handle) handle = 'product-' + Date.now(); // Fallback for empty names
+        let handle = req.body.handle || (productName || 'product').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+        if (!handle || handle === 'product') handle = 'product-' + Date.now(); // Fallback for empty names
 
         // Ensure uniqueness
         const existing = await query(`SELECT id FROM products WHERE tenant_id = $1 AND handle = $2`, [req.tenantId, handle]);
@@ -283,8 +321,8 @@ function registerProductRoutes(router, eventBus) {
             console.warn('[Products] Could not auto-apply system attributes:', e.message);
         }
 
-        const product = await tenantInsert('products', req.tenantId, {
-            name: req.body.name,
+        const productData = {
+            name: productName,
             description: req.body.description,
             sku: req.body.sku,
             price: req.body.price,
@@ -300,7 +338,11 @@ function registerProductRoutes(router, eventBus) {
             seo_description: req.body.seo_description,
             handle: handle,
             image_url: req.body.image_url,
-            category_id: req.body.category_id, // Link to primary category
+            category_id: req.body.category_id,
+            // Variant Fields
+            parent_id: req.body.parent_id || null,
+            is_variant: !!req.body.parent_id,
+            variant_label: req.body.variant_label || null,
             // SEO Fields
             meta_description: req.body.meta_description,
             og_title: req.body.og_title,
@@ -314,11 +356,26 @@ function registerProductRoutes(router, eventBus) {
             canonical_url: req.body.canonical_url,
             robots: req.body.robots,
             structured_data: req.body.structured_data
-        });
+        };
+
+        const product = await tenantInsert('products', req.tenantId, productData);
 
         // Handle categories
-        if (req.body.category_ids && Array.isArray(req.body.category_ids)) {
-            for (const catId of req.body.category_ids) {
+        let finalCategoryIds = req.body.category_ids || [];
+
+        // Safeguard: Inherit from parent if this is a variant and no categories provided
+        if (finalCategoryIds.length === 0 && productData.parent_id) {
+            const parentCats = await query(`SELECT category_id FROM product_categories WHERE product_id = $1 AND tenant_id = $2`, [productData.parent_id, req.tenantId]);
+            finalCategoryIds = parentCats.rows.map(r => r.category_id);
+
+            // Also ensure the primary category_id on the product row is updated if it was null
+            if (finalCategoryIds.length > 0 && !productData.category_id) {
+                await query(`UPDATE products SET category_id = $1 WHERE id = $2 AND tenant_id = $3`, [finalCategoryIds[0], product.id, req.tenantId]);
+            }
+        }
+
+        if (finalCategoryIds && Array.isArray(finalCategoryIds)) {
+            for (const catId of finalCategoryIds) {
                 await query(
                     `INSERT INTO product_categories (tenant_id, product_id, category_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
                     [req.tenantId, product.id, catId]
@@ -354,12 +411,33 @@ function registerProductRoutes(router, eventBus) {
             updateData.tags = ProductService.sanitizeTags(updateData.tags || [], isVendor, vendorName);
         }
 
-        // Stringify attributes if provided
-        if (updateData.attributes && typeof updateData.attributes === 'object') {
-            updateData.attributes = JSON.stringify(updateData.attributes);
+        // If variant_label is updated, automatically synchronize the full product name
+        if (updateData.variant_label) {
+            const currentRes = await query(`SELECT parent_id FROM products WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+            const current = currentRes.rows[0];
+            if (current && current.parent_id) {
+                const parentRes = await query(`SELECT name FROM products WHERE id = $1 AND tenant_id = $2`, [current.parent_id, req.tenantId]);
+                if (parentRes.rows[0]) {
+                    updateData.name = `${parentRes.rows[0].name} (${updateData.variant_label})`;
+                }
+            }
         }
 
         const product = await tenantUpdate('products', req.tenantId, req.params.id, updateData);
+
+        // If parent name was updated, propagate to all variants
+        if (updateData.name) {
+            const variants = await query(
+                `SELECT id, variant_label FROM products WHERE parent_id = $1 AND tenant_id = $2`,
+                [product.id, req.tenantId]
+            );
+            for (const v of variants.rows) {
+                if (v.variant_label) {
+                    const newName = `${product.name} (${v.variant_label})`;
+                    await query(`UPDATE products SET name = $1 WHERE id = $2`, [newName, v.id]);
+                }
+            }
+        }
 
         // Update categories if provided
         if (category_ids && Array.isArray(category_ids)) {
@@ -381,6 +459,42 @@ function registerProductRoutes(router, eventBus) {
         });
 
         res.json({ success: true, product });
+    }));
+
+    // Delete product (Soft delete)
+    router.delete('/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { isVendor, vendorName } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+
+        // Security check for vendor ownership
+        if (isVendor && vendorName) {
+            const check = await query(`SELECT id FROM products p WHERE id = $1 AND tenant_id = $2 AND ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 3, 4)}`, [req.params.id, req.tenantId, vendorName, req.user.id]);
+            if (check.rows.length === 0) {
+                return res.status(403).json({ error: 'Access denied: You do not own this product' });
+            }
+        }
+
+        // Soft delete the product
+        await query(`UPDATE products SET deleted_at = NOW() WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+
+        // Cascade soft delete to variants
+        await ProductService.cascadeSoftDelete(req.tenantId, req.params.id);
+
+        eventBus.emitEvent('product.deleted', {
+            tenant_id: req.tenantId,
+            product_id: req.params.id,
+        });
+
+        res.json({ success: true, message: 'Product deleted' });
+    }));
+
+    // List variants for a parent
+    router.get('/:id/variants', authenticate, authorize('products.view'), asyncHandler(async (req, res) => {
+        const result = await query(
+            `SELECT * FROM products WHERE parent_id = $1 AND tenant_id = $2 AND deleted_at IS NULL ORDER BY created_at ASC`,
+            [req.params.id, req.tenantId]
+        );
+        res.json({ success: true, variants: result.rows });
     }));
 }
 
