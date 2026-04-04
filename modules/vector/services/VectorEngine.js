@@ -25,9 +25,10 @@ class VectorEngine {
         this.modelName = process.env.EMBEDDING_MODEL_NAME || 'all-MiniLM-L6-v2';
         this.dimensions = process.env.EMBEDDING_DIMENSIONS ? parseInt(process.env.EMBEDDING_DIMENSIONS) : 384;
         this.isBge = this.modelKey === 'bge-small' || this.modelName.toLowerCase().includes('bge');
+        this.isClip = this.modelKey === 'clip-vit-base-patch32' || this.modelName.toLowerCase().includes('clip');
 
         if (!isInitialized) {
-            console.log(`[VectorEngine] Initialized: ${this.modelName} (BGE=${this.isBge}, ${this.dimensions}D)`);
+            console.log(`[VectorEngine] Initialized: ${this.modelName} (BGE=${this.isBge}, CLIP=${this.isClip}, ${this.dimensions}D)`);
             isInitialized = true;
         }
     }
@@ -65,6 +66,31 @@ class VectorEngine {
                 throw new Error(`Transformer service is not running at ${TRANSFORMER_URL}. Start it with: cd be3-ai-transformer && npm start`);
             }
             throw new Error(`Embedding generation failed: ${err.message}`);
+        }
+    }
+
+    /**
+     * Get an image embedding vector from the transformer service.
+     * @param {string} imageSource - URL or base64
+     * @returns {Promise<number[]>}
+     */
+    async getImageEmbedding(imageSource) {
+        if (!imageSource) throw new Error('Cannot embed empty image');
+
+        try {
+            console.log(`[VectorEngine] POST /embed-image | Source: ${typeof imageSource === 'string' ? imageSource.substring(0, 50) : 'Buffer'}...`);
+
+            const res = await axios.post(`${TRANSFORMER_URL}/embed-image`, { image: imageSource });
+            const embeddings = res.data?.embeddings;
+            if (!embeddings || !Array.isArray(embeddings) || embeddings.length === 0) {
+                throw new Error('Transformer returned empty embeddings for image');
+            }
+            return embeddings[0];
+        } catch (err) {
+            if (err.code === 'ECONNREFUSED') {
+                throw new Error(`Transformer service is not running at ${TRANSFORMER_URL}.`);
+            }
+            throw new Error(`Image embedding generation failed: ${err.message}`);
         }
     }
 
@@ -169,9 +195,11 @@ class VectorEngine {
      * @param {string} productId
      * @returns {Promise<{productId, embedded, text}>}
      */
-    async embedProduct(tenantId, productId) {
+    async embedProduct(tenantId, productId, options = {}) {
+        const type = options.type || 'text'; // 'text' or 'image'
+
         const result = await query(
-            `SELECT p.id, p.name, p.description, p.tags, p.attributes, 
+            `SELECT p.id, p.name, p.description, p.tags, p.attributes, p.image_url,
                     (SELECT STRING_AGG(c.name, ', ') 
                      FROM categories c 
                      JOIN product_categories pc ON c.id = pc.category_id 
@@ -187,6 +215,16 @@ class VectorEngine {
         }
 
         const product = result.rows[0];
+
+        if (type === 'image') {
+            if (!product.image_url) {
+                return { productId, embedded: false, reason: 'No image URL' };
+            }
+            const embedding = await this.getImageEmbedding(product.image_url);
+            await this.upsertImageEmbedding(tenantId, productId, embedding);
+            return { productId, embedded: true, type: 'image' };
+        }
+
         const labels = await this.getAttributeLabels(tenantId);
         const text = this.buildProductText(product, labels);
         const embedding = await this.getEmbedding(text, { purpose: this.isBge ? 'passage' : undefined });
@@ -207,11 +245,11 @@ class VectorEngine {
      * @returns {Promise<{total, embedded, skipped, failed, duration}>}
      */
     async embedAllProducts(tenantId, options = {}) {
-        const { force = false, batchSize = 50 } = options;
+        const { force = false, batchSize = 50, type = 'text' } = options;
         const startTime = Date.now();
 
         let sql = `
-            SELECT p.id, p.name, p.description, p.tags, p.attributes, 
+            SELECT p.id, p.name, p.description, p.tags, p.attributes, p.image_url,
                    (SELECT STRING_AGG(c.name, ', ') 
                     FROM categories c 
                     JOIN product_categories pc ON c.id = pc.category_id 
@@ -220,7 +258,11 @@ class VectorEngine {
             WHERE p.tenant_id = $1 AND p.status = 'active'
         `;
         if (!force) {
-            sql += ` AND (p.embedding IS NULL OR p.embedding_updated_at IS NULL)`;
+            if (type === 'image') {
+                sql += ` AND (p.image_embedding IS NULL OR p.image_embedding_updated_at IS NULL)`;
+            } else {
+                sql += ` AND (p.embedding IS NULL OR p.embedding_updated_at IS NULL)`;
+            }
         }
         sql += ` ORDER BY p.created_at DESC`;
 
@@ -241,32 +283,53 @@ class VectorEngine {
         // Process in batches
         for (let i = 0; i < products.length; i += batchSize) {
             const batch = products.slice(i, i + batchSize);
-            const batchTexts = [];
+            const batchInputs = [];
             const validBatch = [];
 
-            // 1. Prepare texts for the batch
+            // 1. Prepare inputs for the batch
+
             for (const product of batch) {
-                const text = this.buildProductText(product, labels);
-                if (!text || text.trim().length < 3) {
-                    skipped++;
-                    continue;
+                if (type === 'image') {
+                    if (!product.image_url) {
+                        skipped++;
+                        continue;
+                    }
+                    batchInputs.push(product.image_url);
+                } else {
+                    const text = this.buildProductText(product, labels);
+                    if (!text || text.trim().length < 3) {
+                        skipped++;
+                        continue;
+                    }
+                    batchInputs.push(text);
                 }
-                batchTexts.push(text);
                 validBatch.push(product);
             }
 
-            if (batchTexts.length === 0) continue;
+            if (batchInputs.length === 0) continue;
 
             try {
                 // 2. Get embeddings in one call
-                const embeddings = await this.getEmbeddings(batchTexts, { purpose: this.isBge ? 'passage' : undefined });
+                let embeddings;
+                if (type === 'image') {
+                    const res = await axios.post(`${TRANSFORMER_URL}/embed-image`, { images: batchInputs });
+                    embeddings = res.data?.embeddings;
+                } else {
+                    embeddings = await this.getEmbeddings(batchInputs, { purpose: this.isBge ? 'passage' : undefined });
+                }
+
+                if (!embeddings) throw new Error('Transformer returned no embeddings');
 
                 // 3. Persist batch results
                 // We use Promise.all for database updates within the batch for speed
                 await Promise.all(validBatch.map((product, idx) => {
                     if (embeddings[idx]) {
                         embedded++;
-                        return this.upsertEmbedding(tenantId, product.id, embeddings[idx]);
+                        if (type === 'image') {
+                            return this.upsertImageEmbedding(tenantId, product.id, embeddings[idx]);
+                        } else {
+                            return this.upsertEmbedding(tenantId, product.id, embeddings[idx]);
+                        }
                     } else {
                         failed++;
                         return Promise.resolve();
@@ -324,6 +387,21 @@ class VectorEngine {
         const vectorStr = `[${embedding.join(',')}]`;
         await query(
             `UPDATE products SET embedding = $1::vector, embedding_updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+            [vectorStr, productId, tenantId],
+            tenantId
+        );
+    }
+
+    /**
+     * Insert or update an image embedding for a product.
+     * @param {string} tenantId
+     * @param {string} productId
+     * @param {number[]} embedding - The vector (512 floats)
+     */
+    async upsertImageEmbedding(tenantId, productId, embedding) {
+        const vectorStr = `[${embedding.join(',')}]`;
+        await query(
+            `UPDATE products SET image_embedding = $1::vector, image_embedding_updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
             [vectorStr, productId, tenantId],
             tenantId
         );
@@ -408,8 +486,10 @@ class VectorEngine {
     async semanticSearch(tenantId, searchQuery, options = {}) {
         const { limit = 20, offset = 0, threshold = 0.3, categoryId = null } = options;
 
-        // 1. Get the query embedding from the transformer
-        const queryEmbedding = await this.getEmbedding(searchQuery);
+        // 1. Get the query embedding (if not already a vector)
+        const queryEmbedding = Array.isArray(searchQuery)
+            ? searchQuery
+            : await this.getEmbedding(searchQuery);
         const vectorStr = `[${queryEmbedding.join(',')}]`;
 
         // 2. Build the SQL query using cosine distance (<=>)
@@ -472,6 +552,84 @@ class VectorEngine {
         }));
     }
 
+    /**
+     * Perform a visual similarity search (Image-to-Image or Image-to-Product).
+     * Uses the image_embedding column (512D).
+     * 
+     * @param {string} tenantId
+     * @param {string|number[]} imageSource - URL/base64 OR pre-computed 512D vector
+     * @param {Object} options
+     * @returns {Promise<Array>}
+     */
+    async visualSearch(tenantId, imageSource, options = {}) {
+        const { limit = 20, offset = 0, threshold = 0.7 } = options;
+
+        // 1. Get the query embedding (if not already a vector)
+        const queryEmbedding = Array.isArray(imageSource)
+            ? imageSource
+            : await this.getImageEmbedding(imageSource);
+
+        const vectorStr = `[${queryEmbedding.join(',')}]`;
+
+        // 2. Search against image_embedding column
+        let sql = `
+            SELECT 
+                p.id, p.name, p.description, p.price, p.tags, p.status, p.image_url, p.handle,
+                1 - (p.image_embedding <=> $1::vector) AS similarity
+            FROM products p
+            WHERE p.tenant_id = $2
+              AND p.status = 'active'
+              AND p.deleted_at IS NULL
+              AND p.image_embedding IS NOT NULL
+              AND 1 - (p.image_embedding <=> $1::vector) >= $3
+        `;
+
+        const params = [vectorStr, tenantId, threshold];
+        let paramIndex = 4;
+
+        if (options.categoryId) {
+            sql += ` AND p.category_id = $${paramIndex}`;
+            params.push(options.categoryId);
+            paramIndex++;
+        }
+
+        // Apply external filters (from FilterSQLBuilder)
+        if (options.filter && options.filter.sql) {
+            sql += options.filter.sql;
+            if (options.filter.params && options.filter.params.length > 0) {
+                params.push(...options.filter.params);
+                paramIndex += options.filter.params.length;
+            }
+        }
+
+        sql += ` ORDER BY p.image_embedding <=> $1::vector ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+        params.push(limit, offset);
+
+        const result = await query(sql, params, tenantId);
+
+        const mapped = result.rows.map(row => ({
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            price: row.price,
+            tags: row.tags,
+            status: row.status,
+            image_url: row.image_url,
+            handle: row.handle,
+            similarity: parseFloat((row.similarity * 100).toFixed(2)),
+            similarity_raw: parseFloat(parseFloat(row.similarity).toFixed(6))
+        }));
+
+        // Temporary diagnostic logging
+        console.log(`\n📷 [Visual Search] Found ${mapped.length} matches:`);
+        console.table(mapped.map(m => ({
+            name: m.name,
+            match: `${m.similarity}%`,
+            handle: m.handle
+        })));
+
+        return mapped;
+    }
     /**
      * Find products semantically similar to a given product.
      * Uses the product's own embedding as the query vector.
@@ -547,7 +705,10 @@ class VectorEngine {
     async hybridSearch(tenantId, searchQuery, options = {}) {
         const { limit = 20, alpha = 0.6 } = options;
 
-        const queryEmbedding = await this.getEmbedding(searchQuery);
+        // 1. Get the query embedding (if not already a vector)
+        const queryEmbedding = Array.isArray(searchQuery)
+            ? searchQuery
+            : await this.getEmbedding(searchQuery);
         const vectorStr = `[${queryEmbedding.join(',')}]`;
 
         const sql = `

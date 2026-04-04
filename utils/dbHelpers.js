@@ -152,7 +152,9 @@ async function paginatedTenantQuery(tableName, tenantId, options = {}, extraWher
 
     // 1. Base Tenant Condition (including soft-delete check)
     whereConditions.push(`tenant_id = $${params.length + 1}`);
-    whereConditions.push(`deleted_at IS NULL`);
+    if (['products', 'users', 'tenants'].includes(tableName)) {
+        whereConditions.push(`deleted_at IS NULL`);
+    }
     params.push(tenantId);
 
     // 2. Additional Conditions

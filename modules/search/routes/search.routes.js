@@ -15,11 +15,12 @@ const ProductService = require('../../products/services/ProductService');
 const { generateSearchSEO } = require('../../../lib/searchSEO');
 
 function registerSearchRoutes(router) {
-    // Main search endpoint
-    router.get('/', optionalAuth, asyncHandler(async (req, res) => {
+    // Main search endpoint (GET for text search, POST for image search with JSON body)
+    const mainSearchHandler = asyncHandler(async (req, res) => {
         const searchService = new SearchService();
         const analyticsService = new SearchAnalyticsService();
 
+        const combined = { ...req.query, ...req.body, ...(req.body.filters || {}) };
         const {
             q: searchQuery = '',
             type: contentTypes,
@@ -39,8 +40,10 @@ function registerSearchRoutes(router) {
             tags,
             mode,
             similar_to: similarTo,
-            include_stats
-        } = req.query;
+            image,
+            include_stats,
+            threshold
+        } = combined;
 
         // Parse content types
         let contentTypeArray = null;
@@ -70,10 +73,13 @@ function registerSearchRoutes(router) {
             filters.tags = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim());
         }
 
-        // Parse attribute filters (e.g., attribute.color=red)
-        Object.keys(req.query).forEach(key => {
+        // Parse attribute filters (e.g., attribute.color=red) from query and body
+        const allKeys = new Set([...Object.keys(req.query), ...Object.keys(req.body)]);
+        if (req.body.filters) Object.keys(req.body.filters).forEach(k => allKeys.add(k));
+
+        allKeys.forEach(key => {
             if (key.startsWith('attribute.')) {
-                filters[key] = req.query[key];
+                filters[key] = req.query[key] || req.body[key] || (req.body.filters ? req.body.filters[key] : undefined);
             }
         });
 
@@ -87,8 +93,10 @@ function registerSearchRoutes(router) {
             perPage: parseInt(per_page),
             mode,
             similar_to: similarTo,
+            image,
             userId: req.user?.id || null,
-            include_stats: include_stats === 'true'
+            include_stats: include_stats === 'true',
+            threshold: threshold ? parseFloat(threshold) : undefined
         });
 
         // Track search analytics
@@ -129,7 +137,10 @@ function registerSearchRoutes(router) {
             is_relaxed: searchResults.is_relaxed,
             seo
         });
-    }));
+    });
+
+    router.get('/', optionalAuth, mainSearchHandler);
+    router.post('/', optionalAuth, mainSearchHandler);
 
     /**
      * Specialized Product Search
@@ -150,8 +161,9 @@ function registerSearchRoutes(router) {
             tags,
             mode,
             similar_to: similarTo,
+            image,
             include_stats
-        } = req.query;
+        } = { ...req.query, ...req.body };
 
         const filters = {};
         if (price_min) filters.price_min = price_min;
@@ -173,6 +185,7 @@ function registerSearchRoutes(router) {
             perPage: parseInt(per_page),
             mode,
             similar_to: similarTo,
+            image,
             userId: req.user?.id || null,
             include_stats: include_stats === 'true'
         });

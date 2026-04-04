@@ -41,10 +41,12 @@ class SearchService {
             sort = 'relevance',
             page = 1,
             perPage = 20,
-            mode: searchMode = 'keyword', // 'keyword', 'vector', 'similar'
+            mode: searchMode = 'keyword', // 'keyword', 'vector', 'similar', 'image'
             similar_to: similarTo = null,
+            image: searchImage = null,
             userId = null,
-            include_stats = false
+            include_stats = false,
+            threshold = null
         } = params;
 
         // Recursive Category Fetch + Auto Drill-down
@@ -64,7 +66,7 @@ class SearchService {
         // In vector/similar mode, do NOT perform query preprocessing or inference.
         // Use only the query + filters the caller supplied.
         let finalQuery = (searchQuery || '').trim();
-        if (searchMode !== 'vector' && searchMode !== 'similar') {
+        if (searchMode !== 'vector' && searchMode !== 'similar' && searchMode !== 'image') {
             const { processedQuery, additionalFilters } = await this.queryPreprocessor.preprocessQuery(
                 tenantId,
                 searchQuery || '',
@@ -142,20 +144,25 @@ class SearchService {
             }
         }
 
-        // --- NEW: Vector Search Branch ---
-        if (searchMode === 'vector' || searchMode === 'similar') {
+        // --- NEW: Vector/Visual Search Branch ---
+        if (searchMode === 'vector' || searchMode === 'similar' || searchMode === 'image' || searchImage) {
             let vectorResults = [];
             let total = 0;
+            let queryVector = null;
+            let vectorColumn = 'embedding';
             const offset = (page - 1) * perPage;
 
-            // NEW: Build dynamic filters for vector/similarity search
+            // Determine effective search mode
+            const effectiveMode = searchImage ? 'image' : searchMode;
+
+            // Build dynamic filters
             const vectorFilters = {
                 ...filters,
                 deleted_at: null,
                 is_variant: false
             };
             const vectorQueryParams = [];
-            const vectorFilterStartIndex = (searchMode === 'vector' && originalCategoryId) ? 5 : 4;
+            const vectorFilterStartIndex = 4;
             const { sql: vectorFilterSql } = await this.filterSQLBuilder.buildProductFilterSQL(
                 tenantId,
                 vectorFilters,
@@ -163,23 +170,42 @@ class SearchService {
                 vectorFilterStartIndex
             );
 
-            if (searchMode === 'similar' && similarTo) {
-                console.log(`[Search] 🧠 Similarity search for ${similarTo} with ${vectorQueryParams.length} filters (page ${page})`);
-                const simRes = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, {
-                    limit: perPage + 1, // Look-ahead: fetch 1 extra to see if next page exists
+            if (effectiveMode === 'similar' && similarTo) {
+                console.log(`[Search] 🧠 Similarity search for ${similarTo}`);
+                // For similarity, we don't easily have the vector here without fetching, 
+                // but we can let VectorEngine handle it. Facets might still be broad for 'similar'
+                // unless we specifically fetch the source product vector.
+                vectorResults = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, {
+                    limit: perPage + 1,
                     offset: offset,
                     filter: { sql: vectorFilterSql, params: vectorQueryParams }
                 });
-                vectorResults = simRes;
+            } else if (effectiveMode === 'image' || searchImage) {
+                const source = searchImage || searchQuery;
+                console.log(`[Search] 👁️ Visual search for: "${typeof source === 'string' ? source.substring(0, 50) : 'Buffer'}..."`);
+
+                // GET THE VECTOR EXPLICITLY FOR FACETS
+                queryVector = await this.vectorEngine.getImageEmbedding(source);
+                vectorColumn = 'image_embedding';
+
+                vectorResults = await this.vectorEngine.visualSearch(tenantId, queryVector, {
+                    limit: perPage + 1,
+                    offset: offset,
+                    threshold: threshold || 0.7,
+                    filter: { sql: vectorFilterSql, params: vectorQueryParams }
+                });
             } else if (finalQuery) {
-                console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}" with ${vectorQueryParams.length} filters (page ${page})`);
-                const vecRes = await this.vectorEngine.semanticSearch(tenantId, finalQuery, {
-                    limit: perPage + 1, // Look-ahead: fetch 1 extra to see if next page exists
+                console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}"`);
+
+                // GET THE VECTOR EXPLICITLY FOR FACETS
+                queryVector = await this.vectorEngine.getEmbedding(finalQuery);
+                vectorColumn = 'embedding';
+
+                vectorResults = await this.vectorEngine.semanticSearch(tenantId, queryVector, {
+                    limit: perPage + 1,
                     offset: offset,
-                    categoryId: originalCategoryId,
                     filter: { sql: vectorFilterSql, params: vectorQueryParams }
                 });
-                vectorResults = vecRes;
             }
 
             // --- LOOK-AHEAD PAGINATION LOGIC ---
@@ -198,7 +224,7 @@ class SearchService {
                 content_type: 'product',
                 title: p.name,
                 content: p.description,
-                rank: p.similarity / 100,
+                rank: (p.similarity || 0) / 100,
                 metadata: {
                     name: p.name,
                     price: p.price,
@@ -237,8 +263,16 @@ class SearchService {
                 await ProductService.enrichWithStats(tenantId, finalResults);
             }
 
-            // Get facets (preserved behavior)
-            const facets = await this.facetedFiltersAggregator.getFacetedFilters(tenantId, '', ['product'], filters, originalCategoryId);
+            // Get facets (constrained by vector context if available)
+            const facets = await this.facetedFiltersAggregator.getFacetedFilters(
+                tenantId,
+                '',
+                ['product'],
+                filters,
+                originalCategoryId,
+                null,
+                queryVector ? { column: vectorColumn, vector: queryVector, threshold: threshold || 0.7 } : null
+            );
 
             // Fetch SEO context (preserved behavior)
             let category = null;
@@ -259,6 +293,8 @@ class SearchService {
                 attribute,
                 clause,
                 mode: searchMode,
+                query_vector: queryVector, // Return the vector for optimization
+                vector_column: vectorColumn,
                 is_relaxed: false,
                 pagination: {
                     page,

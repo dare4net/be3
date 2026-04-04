@@ -68,7 +68,8 @@ async function initializeApp() {
     app.use(cors()); // CORS
     app.use(compression()); // Response compression
     app.use(morgan('combined')); // Logging
-    app.use(express.json()); // JSON body parser
+    app.use(express.json({ limit: '50mb' })); // JSON body parser
+    app.use(express.urlencoded({ limit: '50mb', extended: true }));
     app.use(express.urlencoded({ extended: true })); // URL-encoded body parser
 
     // DEBUG: Request Logger

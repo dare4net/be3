@@ -23,7 +23,7 @@ class FacetedFiltersAggregator {
      * @param {string} userId - Current user context (optional)
      * @returns {Object}
      */
-    async getFacetedFilters(tenantId, searchQuery, contentTypes, currentFilters, contextCategoryId = null, userId = null) {
+    async getFacetedFilters(tenantId, searchQuery, contentTypes, currentFilters, contextCategoryId = null, userId = null, vectorContext = null) {
         // Step 1: Execute the result set query to find which IDs exist in the current search scope
         // IMPORTANT: To allow "sideways" navigation, we calculate category counts WITHOUT the category filter
         const filtersForCategoryFacet = {
@@ -64,6 +64,13 @@ class FacetedFiltersAggregator {
                 sql += ` AND si.search_vector @@ to_tsquery('english', $${pi})`;
                 params.push(searchQuery);
                 pi++;
+            }
+
+            if (vectorContext && vectorContext.vector) {
+                const vectorStr = `[${vectorContext.vector.join(',')}]`;
+                sql += ` AND p.${vectorContext.column} <=> $${pi}::vector <= $${pi + 1}`;
+                params.push(vectorStr, 1 - (vectorContext.threshold || 0.7));
+                pi += 2;
             }
 
             return { sql, params, nextIndex: pi };

@@ -20,6 +20,9 @@ const TENANT_ID = process.env.TENANT_ID;
 async function main() {
     const engine = new VectorEngine();
     const args = process.argv.slice(2);
+    const type = args.find(a => a.startsWith('--type='))?.split('=')[1] || 'text';
+    const force = args.includes('--force');
+    const statsOnly = args.includes('--stats');
 
     if (!TENANT_ID) {
         console.error('❌ TENANT_ID not set in .env');
@@ -28,7 +31,8 @@ async function main() {
 
     console.log(`\n🧠 Vector Embedding Generator`);
     console.log(`   Tenant: ${TENANT_ID}`);
-    console.log(`   Model:  ${engine.modelName} (${engine.dimensions}D)`);
+    console.log(`   Type:   ${type.toUpperCase()}`);
+    console.log(`   Model:  ${type === 'image' ? 'CLIP (512D)' : `${engine.modelName} (${engine.dimensions}D)`}`);
     console.log(`   Transformer: ${process.env.TRANSFORMER_URL || 'http://localhost:3009'}\n`);
 
     // Stats-only mode
@@ -52,13 +56,12 @@ async function main() {
     }
 
     // Embedding mode
-    const force = args.includes('--force');
     if (force) {
         console.log('⚠ Force mode: all products will be re-embedded.\n');
     }
 
     try {
-        const result = await engine.embedAllProducts(TENANT_ID, { force });
+        const result = await engine.embedAllProducts(TENANT_ID, { force, type });
 
         console.log(`\n✅ Embedding complete:`);
         console.log(`   Total:    ${result.total}`);
