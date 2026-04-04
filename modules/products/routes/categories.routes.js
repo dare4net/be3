@@ -255,7 +255,7 @@ function registerCategoryRoutes(router, eventBus) {
                         WHERE c.tenant_id = $2 AND ct.depth < 10
                     )
                     SELECT DISTINCT ON (a.id)
-                        a.id, a.code, a.label, a.type, a.image_url, a.clauses, a.options,
+                        a.id, a.code, a.label, a.type, a.image_url, a.clauses, a.options, a.allow_custom,
                         ca.is_required, ca.is_ignored,
                         ct.name as source_category_name,
                         (ct.depth > 0) as is_inherited
@@ -298,7 +298,7 @@ function registerCategoryRoutes(router, eventBus) {
 
                 // Resolve dynamic tags for recent products
                 await ProductService.resolve(req.tenantId, req.user.id, recentProducts);
-                
+
                 category.recent_products = recentProducts;
             } catch (prodError) {
                 console.error('Error fetching products:', prodError);
@@ -376,7 +376,7 @@ function registerCategoryRoutes(router, eventBus) {
                         WHERE c.tenant_id = $2 AND ct.depth < 10
                     )
                     SELECT DISTINCT ON (a.id)
-                        a.id, a.code, a.label, a.type, a.image_url, a.clauses, a.options,
+                        a.id, a.code, a.label, a.type, a.image_url, a.clauses, a.options, a.allow_custom,
                         ca.is_required, ca.is_ignored,
                         ct.name as source_category_name,
                         (ct.depth > 0) as is_inherited

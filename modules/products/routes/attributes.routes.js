@@ -35,9 +35,9 @@ async function syncCategoryExclusions(tenantId, attributeId, clausesArray) {
     // 3. Upsert into category_attributes
     for (const [catId, excludedClauseNames] of Object.entries(catExclusions)) {
         if (excludedClauseNames.length === 0) continue;
-        
+
         const excludedJson = JSON.stringify(excludedClauseNames);
-        
+
         await query(
             `INSERT INTO category_attributes (tenant_id, category_id, attribute_id, excluded_clauses)
              VALUES ($1, $2, $3, $4::jsonb)
@@ -104,12 +104,13 @@ function registerAttributeRoutes(router) {
             type: req.body.type,
             options: options || null,
             clauses: clauses || '[]',
-            image_url: req.body.image_url
+            image_url: req.body.image_url,
+            allow_custom: req.body.allow_custom || false
         });
-        
+
         // Sync exclusions to pivot table
         await syncCategoryExclusions(req.tenantId, attribute.id, req.body.clauses);
-        
+
         res.status(201).json({ success: true, attribute });
     }));
 
@@ -142,12 +143,13 @@ function registerAttributeRoutes(router) {
             type: req.body.type,
             options: options || null,
             clauses: clauses || '[]',
-            image_url: req.body.image_url
+            image_url: req.body.image_url,
+            allow_custom: req.body.allow_custom
         });
-        
+
         // Sync exclusions to pivot table
         await syncCategoryExclusions(req.tenantId, attribute.id, req.body.clauses);
-        
+
         res.json({ success: true, attribute });
     }));
 

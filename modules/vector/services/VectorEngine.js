@@ -140,6 +140,9 @@ class VectorEngine {
                 .filter(([_, v]) => v !== null && v !== undefined && v !== '')
                 .map(([k, v]) => {
                     const label = attributeLabels[k] || k;
+                    if (typeof v === 'object' && v !== null && (v.min !== undefined || v.max !== undefined)) {
+                        return `${label} is ${v.min || 'minimum'} to ${v.max || 'maximum'}`;
+                    }
                     return `${label} is ${v}`;
                 });
             if (attrParts.length > 0) parts.push(attrParts.join(', '));

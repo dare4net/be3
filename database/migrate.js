@@ -22,7 +22,8 @@ async function runMigrations() {
         'migrations/029_user_category_permissions.sql',
         'migrations/051_enable_pgvector.js',
         'migrations/052_register_missing_modules.js',
-        'migrations/053_add_session_id_to_orders.js'
+        'migrations/053_add_session_id_to_orders.js',
+        'migrations/060_add_range_and_custom_attributes.sql'
     ];
 
     for (const schemaPath of schemas) {

@@ -120,10 +120,10 @@ class FilterSQLBuilder {
                                         }
 
                                         // Apply LOWER() to column for case-insensitive matching if op is '=' or '= ANY'
-                                        const columnExpr = (op === '=' || op === '= ANY') 
+                                        const columnExpr = (op === '=' || op === '= ANY')
                                             ? `LOWER(si.metadata->'attributes'->>$${index})`
                                             : `si.metadata->'attributes'->>$${index}`;
-                                        
+
                                         let finalVal = ruleVal;
                                         if (op === '=' || op === '= ANY') {
                                             finalVal = Array.isArray(ruleVal) ? ruleVal.map(v => String(v).toLowerCase()) : String(ruleVal).toLowerCase();
@@ -134,6 +134,22 @@ class FilterSQLBuilder {
                                             const safeAttr = `(CASE WHEN ${attrVal} ~ '^-?[0-9.]+$' THEN (${attrVal})::numeric ELSE NULL END)`;
                                             const rightSide = isArray ? `($${index + 1}::numeric[])` : `($${index + 1}::numeric)`;
                                             ruleConditions.push(`${safeAttr} ${op} ${rightSide}`);
+                                        } else if (type === 'range') {
+                                            const attrRef = `si.metadata->'attributes'->$${index}`;
+                                            const pMin = `(CASE WHEN ${attrRef}->>'min' ~ '^-?[0-9.]+$' THEN (${attrRef}->>'min')::numeric ELSE NULL END)`;
+                                            const pMax = `(CASE WHEN ${attrRef}->>'max' ~ '^-?[0-9.]+$' THEN (${attrRef}->>'max')::numeric ELSE NULL END)`;
+
+                                            const isRangeFilter = typeof ruleVal === 'object' && ruleVal !== null && (ruleVal.min !== undefined || ruleVal.max !== undefined);
+                                            if (isRangeFilter) {
+                                                const fMin = ruleVal.min !== undefined ? `$${index + 1}` : '-999999999';
+                                                const fMax = ruleVal.max !== undefined ? `$${index + 2}` : '999999999';
+                                                ruleConditions.push(`NOT (${pMax} < ${fMin} OR ${pMin} > ${fMax})`);
+                                                queryParams.push(acattrCode, ruleVal.min || -999999999, ruleVal.max || 999999999);
+                                                index += 3;
+                                                continue; // Skip the default push at end of block
+                                            } else {
+                                                ruleConditions.push(`${pMin} <= $${index + 1} AND ${pMax} >= $${index + 1}`);
+                                            }
                                         } else {
                                             ruleConditions.push(`${columnExpr} ${op} ($${index + 1})`);
                                         }
@@ -291,7 +307,7 @@ class FilterSQLBuilder {
                                 const safeAttr = `(CASE WHEN ${attrVal} ~ '^-?[0-9.]+$' THEN (${attrVal})::numeric ELSE NULL END)`;
 
                                 if (isArray) {
-                                    const finalOp = !op.includes(' ANY') && !op.includes(' ALL') 
+                                    const finalOp = !op.includes(' ANY') && !op.includes(' ALL')
                                         ? (op === '!=' || op === '<>' ? '!= ALL' : `${op} ANY`)
                                         : op;
                                     sql += ` AND ${safeAttr} ${finalOp}($${index + 1}::numeric[])`;
@@ -301,12 +317,36 @@ class FilterSQLBuilder {
 
                                 queryParams.push(attrCode, val);
                                 index += 2;
+                            } else if (type === 'range') {
+                                // Range overlap/inclusion logic
+                                // Product stores { min: 10, max: 20 }
+                                // Filter can be a single number or a range { min: fmin, max: fmax }
+                                const attrRef = `si.metadata->'attributes'->$${index}`;
+                                const pMin = `(CASE WHEN ${attrRef}->>'min' ~ '^-?[0-9.]+$' THEN (${attrRef}->>'min')::numeric ELSE NULL END)`;
+                                const pMax = `(CASE WHEN ${attrRef}->>'max' ~ '^-?[0-9.]+$' THEN (${attrRef}->>'max')::numeric ELSE NULL END)`;
+
+                                // Is the filter a range or a point?
+                                const isRangeFilter = typeof val === 'object' && val !== null && (val.min !== undefined || val.max !== undefined);
+
+                                if (isRangeFilter) {
+                                    // Range overlap: NOT (p.max < f.min OR p.min > f.max)
+                                    const fMin = val.min !== undefined ? `$${index + 1}` : '-999999999';
+                                    const fMax = val.max !== undefined ? `$${index + 2}` : '999999999';
+                                    sql += ` AND NOT (${pMax} < ${fMin} OR ${pMin} > ${fMax})`;
+                                    queryParams.push(attrCode, val.min || -999999999, val.max || 999999999);
+                                    index += 3;
+                                } else {
+                                    // Point inclusion: p.min <= v AND p.max >= v
+                                    sql += ` AND ${pMin} <= $${index + 1} AND ${pMax} >= $${index + 1}`;
+                                    queryParams.push(attrCode, val);
+                                    index += 2;
+                                }
                             } else {
                                 // Default text comparison: use LOWER() for case-insensitive exact match if operator is '='
                                 const effectiveOp = op === '=' ? op : op;
                                 const colRef = (op === '=') ? `LOWER(si.metadata->'attributes'->>$${index})` : `si.metadata->'attributes'->>$${index}`;
                                 const safeVal = (op === '=') ? String(val).toLowerCase() : val;
-                                
+
                                 sql += ` AND ${colRef} ${effectiveOp} $${index + 1}`;
                                 queryParams.push(attrCode, safeVal);
                                 index += 2;
@@ -423,13 +463,26 @@ class FilterSQLBuilder {
             if (isArray) {
                 // Case-insensitive array overlap for vector search filter
                 sql += ` AND LOWER(p.attributes->>$${index}) = ANY($${index + 1})`;
+                const safeVal = Array.isArray(val) ? val.map(v => String(v).toLowerCase()) : String(val).toLowerCase();
+                queryParams.push(attrCode, safeVal);
+                index += 2;
+            } else if (typeof val === 'object' && val !== null && (val.min !== undefined || val.max !== undefined)) {
+                // Range overlap for vector search
+                const attrRef = `p.attributes->$${index}`;
+                const pMin = `(CASE WHEN ${attrRef}->>'min' ~ '^-?[0-9.]+$' THEN (${attrRef}->>'min')::numeric ELSE NULL END)`;
+                const pMax = `(CASE WHEN ${attrRef}->>'max' ~ '^-?[0-9.]+$' THEN (${attrRef}->>'max')::numeric ELSE NULL END)`;
+                const fMin = val.min !== undefined ? `$${index + 1}` : '-999999999';
+                const fMax = val.max !== undefined ? `$${index + 2}` : '999999999';
+                sql += ` AND NOT (${pMax} < ${fMin} OR ${pMin} > ${fMax})`;
+                queryParams.push(attrCode, val.min || -999999999, val.max || 999999999);
+                index += 3;
             } else {
                 // Case-insensitive exact match for vector search filter
                 sql += ` AND LOWER(p.attributes->>$${index}) = $${index + 1}`;
+                const safeVal = String(val).toLowerCase();
+                queryParams.push(attrCode, safeVal);
+                index += 2;
             }
-            const safeVal = Array.isArray(val) ? val.map(v => String(v).toLowerCase()) : String(val).toLowerCase();
-            queryParams.push(attrCode, safeVal);
-            index += 2;
         }
 
         return { sql, nextIndex: index };
