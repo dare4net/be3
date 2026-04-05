@@ -47,24 +47,36 @@ class IndexService {
             });
         }
 
-        let VariableRegistry;
-        try { VariableRegistry = require('../../variables/services/VariableRegistry'); } catch { }
+        // Build a lookup map for user business names needed in this product
+        let ownerBusinessName = null;
+        if (product.created_by && product.tags && product.tags.some(t => t && t.includes('[BUSINESS_NAME]'))) {
+            const ownerRes = await query(
+                `SELECT business_name, first_name, last_name FROM users WHERE id = $1`,
+                [product.created_by]
+            );
+            const owner = ownerRes.rows[0];
+            if (owner) {
+                ownerBusinessName = owner.business_name
+                    || `${owner.first_name || ''} ${owner.last_name || ''}`.trim()
+                    || null;
+            }
+        }
 
-        // Resolve dynamic tags (e.g., [BUSINESS_NAME])
+        // Resolve dynamic tags (e.g., [BUSINESS_NAME]) — direct DB, no VariableRegistry dependency
         const resolvedTags = [];
         if (product.tags && product.tags.length > 0) {
             for (const tag of product.tags) {
-                if (VariableRegistry && tag && tag.includes('[') && tag.includes(']')) {
-                    const resolved = await VariableRegistry.resolveText(tag, {
-                        tenantId: tenantId,
-                        userId: product.created_by
-                    });
-                    resolvedTags.push(resolved);
-                } else {
+                if (tag && tag.includes('[BUSINESS_NAME]')) {
+                    if (ownerBusinessName) {
+                        resolvedTags.push(tag.replace(/\[BUSINESS_NAME\]/g, ownerBusinessName));
+                    }
+                    // Skip storing the unresolved placeholder or "Be3" fallback
+                } else if (tag) {
                     resolvedTags.push(tag);
                 }
             }
         }
+
 
         const keywords = [
             product.name,
@@ -85,7 +97,8 @@ class IndexService {
             sku: product.sku || null,
             handle: product.handle || null,
             image_url: product.image_url || null,
-            tags: resolvedTags
+            tags: resolvedTags,
+            created_by: product.created_by || null
         };
 
         // Add product attributes if they exist

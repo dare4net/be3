@@ -89,6 +89,19 @@ async function bootstrap(context) {
         }
     });
 
+    // Listen for Vendor role removal
+    eventBus.on('role.removed', async (event) => {
+        const data = event.data;
+        if (data.roleName === 'Vendor') {
+            try {
+                console.log(`[Vendor] Vendor role removed from user ${data.userId}, deactivating collection...`);
+                await VendorService.deactivateVendor(data.tenantId, data.userId);
+            } catch (error) {
+                console.error(`[Vendor] Failed to deactivate vendor on role removal:`, error);
+            }
+        }
+    });
+
     // Listen for profile updates (business_name changes)
     eventBus.on('user.profile_updated', async (event) => {
         const data = event.data;

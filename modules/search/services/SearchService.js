@@ -251,7 +251,8 @@ class SearchService {
                     sku: row.metadata.sku,
                     description: row.metadata.description || row.content,
                     attributes: row.metadata.attributes || {},
-                    tags: row.metadata.tags || []
+                    tags: row.metadata.tags || [],
+                    created_by: row.metadata.created_by || null
                 };
             });
 
@@ -456,7 +457,8 @@ class SearchService {
                     sku: row.metadata.sku,
                     description: row.metadata.description || row.content,
                     attributes: row.metadata.attributes || {},
-                    tags: row.metadata.tags || []
+                    tags: row.metadata.tags || [],
+                    created_by: row.metadata.created_by || null
                 };
             }
             return row;

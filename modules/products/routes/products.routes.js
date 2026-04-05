@@ -174,7 +174,8 @@ function registerProductRoutes(router, eventBus) {
             manual_product_ids: req.body.manual_product_ids || [],
             excluded_product_ids: req.body.excluded_product_ids || [],
             is_active: req.body.is_active !== undefined ? req.body.is_active : true,
-            created_by: req.user.id
+            created_by: req.user.id,
+            collection_type: req.body.collection_type || 'manual'
         });
 
         eventBus.emitEvent('collection.created', {
@@ -187,15 +188,37 @@ function registerProductRoutes(router, eventBus) {
 
     // Update collection
     router.put('/collections/:id', authenticate, asyncHandler(async (req, res) => {
-        const collection = await tenantUpdate('collections', req.tenantId, req.params.id, {
-            name: req.body.name,
-            slug: req.body.slug,
-            description: req.body.description,
-            image_url: req.body.image_url,
-            rules: req.body.rules ? JSON.stringify(req.body.rules) : undefined,
-            manual_product_ids: req.body.manual_product_ids,
-            excluded_product_ids: req.body.excluded_product_ids,
-            is_active: req.body.is_active
+        const { tenantId } = req;
+        const collectionId = req.params.id;
+
+        // 1. Fetch current collection to check type
+        const currentRes = await query(`SELECT id, collection_type FROM collections WHERE id = $1 AND tenant_id = $2`, [collectionId, tenantId]);
+        if (!currentRes.rows[0]) {
+            return res.status(404).json({ error: 'Collection not found' });
+        }
+
+        const current = currentRes.rows[0];
+        const updates = { ...req.body };
+
+        // 2. Protection Logic: If it's a vendor-managed collection, don't allow manual rule changes
+        if (current.collection_type === 'vendor' && updates.rules) {
+            console.log(`[Products] Blocking manual rule update for vendor collection ${collectionId}`);
+            delete updates.rules;
+            // Also protect slug and name if they are strictly managed by Business Name
+            delete updates.slug;
+            delete updates.name;
+        }
+
+        const collection = await tenantUpdate('collections', tenantId, collectionId, {
+            name: updates.name,
+            slug: updates.slug,
+            description: updates.description,
+            image_url: updates.image_url,
+            rules: updates.rules ? JSON.stringify(updates.rules) : undefined,
+            manual_product_ids: updates.manual_product_ids,
+            excluded_product_ids: updates.excluded_product_ids,
+            is_active: updates.is_active,
+            collection_type: updates.collection_type
         });
 
         eventBus.emitEvent('collection.updated', {

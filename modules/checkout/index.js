@@ -44,7 +44,12 @@ async function bootstrap(context) {
                 return res.status(404).json({ error: 'Cart not found' });
             }
 
-            const itemsSql = `SELECT * FROM cart_items WHERE cart_id = $1`;
+            const itemsSql = `
+                SELECT ci.*, p.name as product_name, p.created_by as vendor_id, p.image_url 
+                FROM cart_items ci
+                LEFT JOIN products p ON ci.product_id = p.id
+                WHERE ci.cart_id = $1
+            `;
             const itemsResult = await query(itemsSql, [cartId]);
             const items = itemsResult.rows;
 
@@ -84,7 +89,10 @@ async function bootstrap(context) {
                     productId: item.product_id,
                     variantId: item.variant_id,
                     quantity: item.quantity,
-                    price: item.price
+                    price: item.price,
+                    product_name: item.product_name,
+                    vendorId: item.vendor_id,
+                    image_url: item.image_url
                 }))
             };
 

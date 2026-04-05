@@ -84,7 +84,7 @@ class VendorService {
                 const thumbnailChanged = existing.rows[0].thumbnail_url !== vendorThumbnail;
                 const backdropChanged = existing.rows[0].image_url !== vendorBackdrop;
 
-                if (nameChanged || thumbnailChanged || backdropChanged) {
+                if (nameChanged || thumbnailChanged || backdropChanged || !existing.rows[0].is_active) {
                     const rules = [
                         {
                             field: 'attribute',
@@ -98,8 +98,8 @@ class VendorService {
                     const updatedSlug = `${vendorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-${userId.split('-')[0]}-collection`;
 
                     await query(
-                        `UPDATE collections SET name = $1, slug = $2, rules = $3, thumbnail_url = $4, image_url = $5 WHERE id = $6`,
-                        [vendorName, updatedSlug, JSON.stringify(rules), vendorThumbnail, vendorBackdrop, collectionId]
+                        `UPDATE collections SET name = $1, slug = $2, rules = $3, thumbnail_url = $4, image_url = $5, is_active = $6, collection_type = $7 WHERE id = $8`,
+                        [vendorName, updatedSlug, JSON.stringify(rules), vendorThumbnail, vendorBackdrop, true, 'vendor', collectionId]
                     );
 
                     // Emit collection.updated so Search Module indexes it
@@ -128,7 +128,8 @@ class VendorService {
                     created_by: userId,
                     thumbnail_url: vendorThumbnail,
                     image_url: vendorBackdrop,
-                    is_active: true
+                    is_active: true,
+                    collection_type: 'vendor'
                 });
                 collectionId = collection.id;
 
@@ -153,6 +154,41 @@ class VendorService {
     }
 
 
+
+    /**
+     * Deactivate a vendor's collection
+     * @param {string} tenantId 
+     * @param {string} userId 
+     */
+    static async deactivateVendor(tenantId, userId) {
+        console.log(`[VendorService] Deactivating vendor collection for user ${userId} in tenant ${tenantId}`);
+
+        try {
+            const existing = await query(
+                `SELECT id FROM collections WHERE tenant_id = $1 AND created_by = $2 AND collection_type = 'vendor'`,
+                [tenantId, userId]
+            );
+
+            if (existing.rows.length > 0) {
+                const collectionId = existing.rows[0].id;
+                await query(
+                    `UPDATE collections SET is_active = false WHERE id = $1`,
+                    [collectionId]
+                );
+
+                console.log(`[VendorService] Deactivated vendor collection ${collectionId}`);
+
+                // Emit collection.updated so Search Module indexes it correctly
+                const eventBus = require('../../../platform/events/EventBus');
+                eventBus.emitEvent('collection.updated', {
+                    tenantId,
+                    collectionId
+                });
+            }
+        } catch (error) {
+            console.error(`[VendorService] Error deactivating vendor collection for ${userId}:`, error);
+        }
+    }
 
     /**
      * Assign the system vendor attribute to all products for a vendor.

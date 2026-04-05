@@ -48,6 +48,57 @@ class ProductService {
                 }
                 product.tags = resolvedTags;
             }
+
+            // 3. Resolve Vendor Data (Store Collection and Stats)
+            if (product.created_by) {
+                try {
+                    const collectionRes = await query(
+                        `SELECT name, slug, image_url FROM collections WHERE tenant_id = $1 AND created_by = $2 AND is_active = true ORDER BY created_at ASC LIMIT 1`,
+                        [tenantId, product.created_by]
+                    );
+
+                    const vendorRes = await query(
+                        `SELECT created_at, business_name, first_name, last_name FROM users WHERE tenant_id = $1 AND id = $2`,
+                        [tenantId, product.created_by]
+                    );
+
+                    let itemsSold = 0;
+                    try {
+                        const salesRes = await query(
+                            `SELECT COALESCE(SUM(oi.quantity), 0) as items_sold 
+                             FROM order_items oi 
+                             JOIN products p ON oi.product_id = p.id 
+                             WHERE p.tenant_id = $1 AND p.created_by = $2`,
+                            [tenantId, product.created_by]
+                        );
+                        itemsSold = parseInt(salesRes.rows[0]?.items_sold || 0);
+                    } catch (e) {
+                        // Ignored if order_items table doesn't exist yet
+                    }
+
+                    const vendorUser = vendorRes.rows[0];
+                    let yearsOnPlatform = 0;
+                    if (vendorUser && vendorUser.created_at) {
+                        const years = (new Date() - new Date(vendorUser.created_at)) / (1000 * 60 * 60 * 24 * 365.25);
+                        yearsOnPlatform = Math.max(0, parseFloat(years.toFixed(1)));
+                    }
+
+                    const storeCollection = collectionRes.rows[0] || null;
+                    const fallbackName = vendorUser ? (vendorUser.business_name || `${vendorUser.first_name || ''} ${vendorUser.last_name || ''}`.trim()) : null;
+                    
+                    product.store_collection = storeCollection;
+                    product.vendor = storeCollection?.name || fallbackName || 'Official Store';
+                    product.vendor_stats = {
+                        items_sold: itemsSold,
+                        years_on_platform: yearsOnPlatform,
+                        positive_ratings: 98, // Placeholder until reviews table exists
+                        rating_score: 4.8,    // Placeholder
+                        total_ratings: 124    // Placeholder generic
+                    };
+                } catch (e) {
+                    console.error('[ProductService] Error fetching vendor stats:', e.message);
+                }
+            }
         }
 
         return Array.isArray(input) ? products : products[0];

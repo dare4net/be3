@@ -219,6 +219,43 @@ class RoleService {
             roleId: role.id
         });
     }
+    /**
+     * Remove a role from a user by name
+     * @param {string} tenantId 
+     * @param {string} userId 
+     * @param {string} roleName 
+     */
+    static async removeRoleFromUser(tenantId, userId, roleName) {
+        const role = await Role.findByName(tenantId, roleName);
+        if (!role) {
+            throw new Error(`Role '${roleName}' not found`);
+        }
+        return this.removeRoleIdFromUser(tenantId, userId, role.id);
+    }
+
+    /**
+     * Remove a role by ID from a user
+     * @param {string} tenantId 
+     * @param {string} userId 
+     * @param {string} roleId 
+     */
+    static async removeRoleIdFromUser(tenantId, userId, roleId) {
+        const role = await Role.findById(tenantId, roleId);
+        if (!role) {
+            throw new Error(`Role with ID '${roleId}' not found`);
+        }
+        await Role.removeFromUser(tenantId, userId, role.id);
+        console.log(`[RoleService] Removed role ID '${roleId}' (${role.name}) from user ${userId}`);
+
+        // PRINCIPLE: Use events for inter-module communication
+        const eventBus = require('../../../events/EventBus');
+        eventBus.emitEvent('role.removed', {
+            tenantId,
+            userId,
+            roleName: role.name,
+            roleId: role.id
+        });
+    }
 }
 
 module.exports = RoleService;

@@ -316,30 +316,62 @@ async function bootstrap(context) {
             const { tenantId, cartId, paymentData } = event.data;
 
             try {
-                // Generate order number
-                const orderNumber = `ORD-${Date.now()}`;
+                // We should group items by vendorId
+                const itemsByVendor = {};
+                for (const item of paymentData.items || []) {
+                    const vId = item.vendorId || 'platform';
+                    if (!itemsByVendor[vId]) itemsByVendor[vId] = [];
+                    itemsByVendor[vId].push(item);
+                }
 
-                console.log('[Orders] Creating order with userId:', paymentData.userId);
+                // Create an order for each vendor
+                for (const [vId, vendorItems] of Object.entries(itemsByVendor)) {
+                    const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+                    const dbVendorId = vId === 'platform' ? null : vId;
 
-                // Create order (would fetch cart data via event query pattern in production)
-                const order = await tenantInsert('orders', tenantId, {
-                    order_number: orderNumber,
-                    user_id: paymentData.userId || null,
-                    status: 'paid',
-                    payment_status: 'paid',
-                    subtotal: paymentData.subtotal,
-                    total: paymentData.total,
-                    customer_email: paymentData.email,
-                    paid_at: new Date(),
-                });
+                    let vendorSubtotal = 0;
+                    for (const item of vendorItems) {
+                        vendorSubtotal += parseFloat(item.price) * item.quantity;
+                    }
+                    const vendorTax = vendorSubtotal * 0.1; // Simple mock fraction
+                    const vendorShipping = vendorItems.length > 0 ? 15.0 : 0; // Simple mock
 
-                console.log('[Orders] Created order with user_id:', order.user_id);
+                    console.log(`[Orders] Creating order for vendor: ${dbVendorId || 'platform'}, userId: ${paymentData.userId || 'guest'}`);
 
-                eventBus.emitEvent('order.created', {
-                    tenantId,
-                    orderId: order.id,
-                    orderNumber: order.order_number,
-                });
+                    const order = await tenantInsert('orders', tenantId, {
+                        order_number: orderNumber,
+                        user_id: paymentData.userId || null,
+                        vendor_id: dbVendorId,
+                        status: 'paid',
+                        payment_status: 'paid',
+                        subtotal: vendorSubtotal,
+                        total: vendorSubtotal + vendorTax + vendorShipping,
+                        customer_email: paymentData.email,
+                        paid_at: new Date(),
+                    });
+
+                    // NOW INSERT ORDER ITEMS
+                    for (const item of vendorItems) {
+                        await tenantInsert('order_items', tenantId, {
+                            order_id: order.id,
+                            product_id: item.productId,
+                            variant_id: item.variantId,
+                            product_name: item.product_name,
+                            quantity: item.quantity,
+                            price: item.price,
+                            total: parseFloat(item.price) * item.quantity,
+                            image_url: item.image_url
+                        });
+                    }
+
+                    console.log('[Orders] Created order with ID:', order.id);
+
+                    eventBus.emitEvent('order.created', {
+                        tenantId,
+                        orderId: order.id,
+                        orderNumber: order.order_number,
+                    });
+                }
             } catch (error) {
                 console.error('[Orders] Failed to create order from payment:', error);
             }
