@@ -87,11 +87,7 @@ async function initializeApp() {
 
     // Health check endpoint (no tenant required)
     app.get('/health', (req, res) => {
-        res.json({
-            status: 'healthy',
-            timestamp: new Date().toISOString(),
-            loadedModules: moduleBootstrapper.getLoadedModules(),
-        });
+      res.status(200).send('OK');
     });
 
     // Root endpoint
