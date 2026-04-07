@@ -65,7 +65,8 @@ async function bootstrap(context) {
         if (randomizedWidgets.length > 0) {
             try {
                 const RandomizationService = require('../search/services/RandomizationService');
-                const results = await RandomizationService.getSnapshotPlan(req.tenantId, page, randomizedWidgets);
+                const data = await RandomizationService.getSnapshotPlan(req.tenantId, page, randomizedWidgets);
+                const results = data?.results || (Array.isArray(data) ? data : []);
 
                 // Convert to map for easy frontend consumption
                 randomizationPlan = {};

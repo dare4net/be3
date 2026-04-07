@@ -30,7 +30,11 @@ class RandomizationService {
             const redisPlan = await getRandomizationSnapshot(tenantId, pageHandle, bucketKey);
             if (redisPlan) {
                 console.log(`[RandomizationService] Redis HIT for ${tenantId}/${pageHandle}`);
-                return redisPlan;
+                return { 
+                    results: redisPlan, 
+                    cacheId: bucketKey, 
+                    expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
+                };
             }
 
             // 2. Current Bucket (SQL)
@@ -43,7 +47,11 @@ class RandomizationService {
                 console.log(`[RandomizationService] SQL HIT for ${tenantId}/${pageHandle}. Warm-loading Redis...`);
                 const planData = this.parsePlanData(existing.rows[0].plan_data);
                 setRandomizationSnapshot(tenantId, pageHandle, bucketKey, planData);
-                return planData;
+                return { 
+                    results: planData, 
+                    cacheId: bucketKey,
+                    expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
+                };
             }
 
             // 3. Stale-While-Revalidate
@@ -68,19 +76,40 @@ class RandomizationService {
                 this.revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets).catch(e => {
                     console.error('[RandomizationService] Background revalidation fail', e);
                 });
-                return stalePlan;
+                return { 
+                    results: stalePlan, 
+                    cacheId: prevBucketKey, // Inform frontend it's stale
+                    expiresIn: 0 
+                };
             }
 
             // 4. Fresh Resolution
             console.log(`[RandomizationService] Absolute MISS for ${tenantId}/${pageHandle}. Resolving fresh...`);
             const plan = await this.resolveMasterPlan(tenantId, widgets);
             await this.persistSnapshot(tenantId, pageHandle, bucketKey, plan);
-            return plan;
+            return { 
+                results: plan, 
+                cacheId: bucketKey,
+                expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
+            };
 
         } catch (error) {
             console.error('[RandomizationService] Snapshot management failed', error);
-            return this.resolveMasterPlan(tenantId, widgets);
+            const plan = await this.resolveMasterPlan(tenantId, widgets);
+            return { results: plan, cacheId: 'emergency_fallback', expiresIn: 300 };
         }
+    }
+
+    /**
+     * Check if a snapshot bucket is still valid
+     */
+    async isSnapshotValid(tenantId, pageHandle, cacheId) {
+        const minuteWindow = 15;
+        const bucketTimestamp = Math.floor(Date.now() / (minuteWindow * 60 * 1000));
+        const currentBucketKey = `15m_${bucketTimestamp}`;
+
+        // If the ID matches current or is the immediate next stale... (Stale window tolerance)
+        return cacheId === currentBucketKey;
     }
 
     parsePlanData(data) {

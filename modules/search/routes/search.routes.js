@@ -371,11 +371,27 @@ function registerSearchRoutes(router) {
             });
         }
 
-        const results = await RandomizationService.getSnapshotPlan(req.tenantId, pageHandle, widgets);
+        const data = await RandomizationService.getSnapshotPlan(req.tenantId, pageHandle, widgets);
 
         res.json({
             success: true,
-            results
+            ...data
+        });
+    }));
+
+    // Randomization Cache Validation
+    router.post('/randomization/validate', optionalAuth, asyncHandler(async (req, res) => {
+        const { cacheId, pageHandle = 'home' } = req.body;
+
+        if (!cacheId) {
+            return res.status(400).json({ success: false, error: 'cacheId is required' });
+        }
+
+        const isValid = await RandomizationService.isSnapshotValid(req.tenantId, pageHandle, cacheId);
+
+        res.json({
+            success: true,
+            valid: isValid
         });
     }));
 
