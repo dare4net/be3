@@ -31,6 +31,7 @@ class Page {
             show_header: pageData.show_header !== undefined ? pageData.show_header : true,
             show_footer: pageData.show_footer !== undefined ? pageData.show_footer : true,
             is_system: pageData.is_system || false,
+            theme_overrides: pageData.theme_overrides ? JSON.stringify(pageData.theme_overrides) : '{}',
         });
     }
 
@@ -80,6 +81,9 @@ class Page {
         if (updates.show_in_nav !== undefined) allowedUpdates.show_in_nav = updates.show_in_nav;
         if (updates.show_header !== undefined) allowedUpdates.show_header = updates.show_header;
         if (updates.show_footer !== undefined) allowedUpdates.show_footer = updates.show_footer;
+        if (updates.theme_overrides !== undefined) {
+            allowedUpdates.theme_overrides = updates.theme_overrides ? JSON.stringify(updates.theme_overrides) : '{}';
+        }
 
         return await tenantUpdate('pages', tenantId, pageId, allowedUpdates);
     }

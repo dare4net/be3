@@ -25,7 +25,9 @@ async function runMigrations() {
         'migrations/053_add_session_id_to_orders.js',
         'migrations/060_add_range_and_custom_attributes.sql',
         'migrations/061_add_product_variants_support.sql',
-        'migrations/062_add_image_embedding_column.js'
+        'migrations/062_add_image_embedding_column.js',
+        'migrations/063_add_theme_overrides_to_pages.sql',
+        'migrations/064_normalize_theme_variables.js'
     ];
 
     for (const schemaPath of schemas) {
