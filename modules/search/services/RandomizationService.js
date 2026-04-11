@@ -266,11 +266,23 @@ class RandomizationService {
 
             if (viableTypes.length === 0) break;
 
-            // Pick a type (Weighted: clause > category > collection)
-            const weights = { 'clause': 5, 'category': 2, 'collection': 1 };
-            const sortedTypes = viableTypes.sort((a, b) => (weights[b] || 0) - (weights[a] || 0));
+            // Pick a type (Weighted Random / Raffle logic)
+            // This prevents higher weights (like clauses) from completely dominating the page
+            const weights = { 'clause': 2, 'category': 1.5, 'collection': 1 };
+            
+            // Calculate total weight for viable types
+            const totalViableWeight = viableTypes.reduce((sum, type) => sum + (weights[type] || 0), 0);
+            let random = Math.random() * totalViableWeight;
+            let selectedType = 'category';
 
-            let selectedType = sortedTypes[0] || 'category';
+            for (const type of viableTypes) {
+                const weight = weights[type] || 0;
+                if (random < weight) {
+                    selectedType = type;
+                    break;
+                }
+                random -= weight;
+            }
 
             // Handle explicit sourceType if set in config and still viable
             if (config.sourceType && viableTypes.includes(config.sourceType)) {
