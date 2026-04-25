@@ -413,6 +413,20 @@ function registerProductRoutes(router, eventBus) {
             name: product.name,
         });
 
+        // Update vendor category ledger (vendorName already available from PermissionService context)
+        if (vendorName && finalCategoryIds.length > 0) {
+            for (const catId of finalCategoryIds) {
+                await query(
+                    `INSERT INTO vendor_category_ledger (tenant_id, vendor_name, category_id, product_count)
+                     VALUES ($1, $2, $3, 1)
+                     ON CONFLICT (tenant_id, vendor_name, category_id)
+                     DO UPDATE SET product_count = vendor_category_ledger.product_count + 1,
+                                   last_updated_at = NOW()`,
+                    [req.tenantId, vendorName, catId]
+                );
+            }
+        }
+
         res.status(201).json({ success: true, product });
     }));
 
@@ -464,6 +478,13 @@ function registerProductRoutes(router, eventBus) {
 
         // Update categories if provided
         if (category_ids && Array.isArray(category_ids)) {
+            // Capture old categories BEFORE clearing for ledger diff
+            const oldCatRes = await query(
+                `SELECT category_id FROM product_categories WHERE product_id = $1`,
+                [product.id]
+            );
+            const oldCatIds = oldCatRes.rows.map(r => r.category_id);
+
             // Clear existing
             await query(`DELETE FROM product_categories WHERE product_id = $1`, [product.id]);
 
@@ -473,6 +494,32 @@ function registerProductRoutes(router, eventBus) {
                     `INSERT INTO product_categories (tenant_id, product_id, category_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
                     [req.tenantId, product.id, catId]
                 );
+            }
+
+            // Update vendor category ledger for added/removed categories
+            // Use the product's own vendor attribute — handles admin edits on vendor products too
+            const productVendorName = product.attributes?.vendor;
+            if (productVendorName) {
+                const addedCats = category_ids.filter(c => !oldCatIds.includes(c));
+                const removedCats = oldCatIds.filter(c => !category_ids.includes(c));
+                for (const catId of addedCats) {
+                    await query(
+                        `INSERT INTO vendor_category_ledger (tenant_id, vendor_name, category_id, product_count)
+                         VALUES ($1, $2, $3, 1)
+                         ON CONFLICT (tenant_id, vendor_name, category_id)
+                         DO UPDATE SET product_count = vendor_category_ledger.product_count + 1,
+                                       last_updated_at = NOW()`,
+                        [req.tenantId, productVendorName, catId]
+                    );
+                }
+                for (const catId of removedCats) {
+                    await query(
+                        `UPDATE vendor_category_ledger
+                         SET product_count = GREATEST(0, product_count - 1), last_updated_at = NOW()
+                         WHERE tenant_id = $1 AND vendor_name = $2 AND category_id = $3`,
+                        [req.tenantId, productVendorName, catId]
+                    );
+                }
             }
         }
 
@@ -495,6 +542,27 @@ function registerProductRoutes(router, eventBus) {
             if (check.rows.length === 0) {
                 return res.status(403).json({ error: 'Access denied: You do not own this product' });
             }
+        }
+
+        // Decrement vendor category ledger before soft-deleting
+        try {
+            const [prodRes, catRes] = await Promise.all([
+                query(`SELECT attributes FROM products WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]),
+                query(`SELECT category_id FROM product_categories WHERE product_id = $1`, [req.params.id])
+            ]);
+            const vendorName = prodRes.rows[0]?.attributes?.vendor;
+            if (vendorName && catRes.rows.length > 0) {
+                for (const row of catRes.rows) {
+                    await query(
+                        `UPDATE vendor_category_ledger
+                         SET product_count = GREATEST(0, product_count - 1), last_updated_at = NOW()
+                         WHERE tenant_id = $1 AND vendor_name = $2 AND category_id = $3`,
+                        [req.tenantId, vendorName, row.category_id]
+                    );
+                }
+            }
+        } catch (ledgerErr) {
+            console.warn('[Products] Ledger decrement failed (non-fatal):', ledgerErr.message);
         }
 
         // Soft delete the product

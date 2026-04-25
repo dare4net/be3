@@ -17,7 +17,7 @@ class RandomizationService {
     /**
      * Get or create a snapshot plan for a specific tenant and page
      */
-    async getSnapshotPlan(tenantId, pageHandle, widgets) {
+    async getSnapshotPlan(tenantId, pageHandle, widgets, context) {
         const minuteWindow = 15;
         const bucketTimestamp = Math.floor(Date.now() / (minuteWindow * 60 * 1000));
         const bucketKey = `15m_${bucketTimestamp}`;
@@ -26,67 +26,75 @@ class RandomizationService {
         console.log(`[RandomizationService] Checking snapshot for ${tenantId}/${pageHandle} bucket ${bucketKey}`);
 
         try {
-            // 1. Current Bucket (Redis)
-            const redisPlan = await getRandomizationSnapshot(tenantId, pageHandle, bucketKey);
-            if (redisPlan) {
-                console.log(`[RandomizationService] Redis HIT for ${tenantId}/${pageHandle}`);
-                return { 
-                    results: redisPlan, 
-                    cacheId: bucketKey, 
-                    expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
-                };
-            }
+            // With vendor context, skip cache — vendor pages are unique slugs already
+            // but their pools change with the ledger. Always resolve fresh if context provided.
+            if (!context) {
+                // 1. Current Bucket (Redis)
+                const redisPlan = await getRandomizationSnapshot(tenantId, pageHandle, bucketKey);
+                if (redisPlan) {
+                    console.log(`[RandomizationService] Redis HIT for ${tenantId}/${pageHandle}`);
+                    return { 
+                        results: redisPlan, 
+                        cacheId: bucketKey, 
+                        expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
+                    };
+                }
 
-            // 2. Current Bucket (SQL)
-            const existing = await query(
-                'SELECT plan_data FROM randomization_snapshots WHERE tenant_id = $1 AND page_handle = $2 AND bucket_key = $3',
-                [tenantId, pageHandle, bucketKey]
-            );
-
-            if (existing.rows.length > 0) {
-                console.log(`[RandomizationService] SQL HIT for ${tenantId}/${pageHandle}. Warm-loading Redis...`);
-                const planData = this.parsePlanData(existing.rows[0].plan_data);
-                setRandomizationSnapshot(tenantId, pageHandle, bucketKey, planData);
-                return { 
-                    results: planData, 
-                    cacheId: bucketKey,
-                    expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
-                };
-            }
-
-            // 3. Stale-While-Revalidate
-            console.log(`[RandomizationService] Current snapshot MISS. Searching for stale snapshot (${prevBucketKey})...`);
-
-            const staleRedisPlan = await getRandomizationSnapshot(tenantId, pageHandle, prevBucketKey);
-            let stalePlan = staleRedisPlan;
-
-            if (!stalePlan) {
-                const prevExisting = await query(
+                // 2. Current Bucket (SQL)
+                const existing = await query(
                     'SELECT plan_data FROM randomization_snapshots WHERE tenant_id = $1 AND page_handle = $2 AND bucket_key = $3',
-                    [tenantId, pageHandle, prevBucketKey]
+                    [tenantId, pageHandle, bucketKey]
                 );
-                if (prevExisting.rows.length > 0) {
-                    stalePlan = this.parsePlanData(prevExisting.rows[0].plan_data);
+
+                if (existing.rows.length > 0) {
+                    console.log(`[RandomizationService] SQL HIT for ${tenantId}/${pageHandle}. Warm-loading Redis...`);
+                    const planData = this.parsePlanData(existing.rows[0].plan_data);
+                    setRandomizationSnapshot(tenantId, pageHandle, bucketKey, planData);
+                    return { 
+                        results: planData, 
+                        cacheId: bucketKey,
+                        expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
+                    };
+                }
+
+                // 3. Stale-While-Revalidate
+                console.log(`[RandomizationService] Current snapshot MISS. Searching for stale snapshot (${prevBucketKey})...`);
+
+                const staleRedisPlan = await getRandomizationSnapshot(tenantId, pageHandle, prevBucketKey);
+                let stalePlan = staleRedisPlan;
+
+                if (!stalePlan) {
+                    const prevExisting = await query(
+                        'SELECT plan_data FROM randomization_snapshots WHERE tenant_id = $1 AND page_handle = $2 AND bucket_key = $3',
+                        [tenantId, pageHandle, prevBucketKey]
+                    );
+                    if (prevExisting.rows.length > 0) {
+                        stalePlan = this.parsePlanData(prevExisting.rows[0].plan_data);
+                    }
+                }
+
+                if (stalePlan) {
+                    console.log(`[RandomizationService] SWR TRIGGERED: Serving stale snapshot for ${tenantId}/${pageHandle}`);
+                    this.revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets).catch(e => {
+                        console.error('[RandomizationService] Background revalidation fail', e);
+                    });
+                    return { 
+                        results: stalePlan, 
+                        cacheId: prevBucketKey,
+                        expiresIn: 0 
+                    };
                 }
             }
 
-            if (stalePlan) {
-                console.log(`[RandomizationService] SWR TRIGGERED: Serving stale snapshot for ${tenantId}/${pageHandle}`);
-                // Fire-and-forget
-                this.revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets).catch(e => {
-                    console.error('[RandomizationService] Background revalidation fail', e);
-                });
-                return { 
-                    results: stalePlan, 
-                    cacheId: prevBucketKey, // Inform frontend it's stale
-                    expiresIn: 0 
-                };
+            // 4. Fresh Resolution (always for context pages, cache-miss for others)
+            console.log(`[RandomizationService] Resolving fresh for ${tenantId}/${pageHandle} — context: ${JSON.stringify(context) || 'none'}`);
+            const plan = await this.resolveMasterPlan(tenantId, widgets, context);
+
+            // Only persist to cache if no context (context-aware plans use live ledger)
+            if (!context) {
+                await this.persistSnapshot(tenantId, pageHandle, bucketKey, plan);
             }
 
-            // 4. Fresh Resolution
-            console.log(`[RandomizationService] Absolute MISS for ${tenantId}/${pageHandle}. Resolving fresh...`);
-            const plan = await this.resolveMasterPlan(tenantId, widgets);
-            await this.persistSnapshot(tenantId, pageHandle, bucketKey, plan);
             return { 
                 results: plan, 
                 cacheId: bucketKey,
@@ -95,7 +103,7 @@ class RandomizationService {
 
         } catch (error) {
             console.error('[RandomizationService] Snapshot management failed', error);
-            const plan = await this.resolveMasterPlan(tenantId, widgets);
+            const plan = await this.resolveMasterPlan(tenantId, widgets, context);
             return { results: plan, cacheId: 'emergency_fallback', expiresIn: 300 };
         }
     }
@@ -160,11 +168,11 @@ class RandomizationService {
      * @param {string} tenantId 
      * @param {Array} widgets - Array of { id, intent, config }
      */
-    async resolveMasterPlan(tenantId, widgets) {
-        console.log(`[RandomizationService] Resolving fresh plan for ${widgets.length} widgets`);
+    async resolveMasterPlan(tenantId, widgets, context) {
+        console.log(`[RandomizationService] Resolving fresh plan for ${widgets.length} widgets (context: ${context ? JSON.stringify({ contextType: context.contextType, contextValue: context.contextValue }) : 'none'})`);
 
-        // 1. Gather all pools with product counts
-        const pools = await this.getFreshPools(tenantId);
+        // 1. Gather pools — vendor context uses ledger-filtered pools
+        const pools = await this.getFreshPools(tenantId, context);
 
         const used = {
             categories: new Set(),
@@ -176,7 +184,7 @@ class RandomizationService {
 
         // 2. Resolve each widget
         for (const widget of widgets) {
-            const resolved = await this.resolveWidget(tenantId, widget, pools, used);
+            const resolved = await this.resolveWidget(tenantId, widget, pools, used, context);
             results.push({
                 widgetId: widget.id,
                 ...resolved
@@ -187,10 +195,163 @@ class RandomizationService {
     }
 
     /**
-     * Get fresh pools of valid (populated) entities
+     * Build clause list from attribute rows (shared helper)
      */
-    async getFreshPools(tenantId) {
-        // Categories with products (including descendants)
+    buildClauses(rows) {
+        const clauses = [];
+        rows.forEach(attr => {
+            const attrClauses = (typeof attr.clauses === 'string' ? JSON.parse(attr.clauses) : (attr.clauses || [])) || [];
+            attrClauses.forEach(clause => {
+                if (clause && clause.name) {
+                    clauses.push({
+                        attribute: { id: attr.id, code: attr.code, label: attr.label },
+                        clause: clause
+                    });
+                }
+            });
+        });
+        return clauses;
+    }
+
+    /**
+     * Get fresh pools — vendor context uses ledger; default uses full search index
+     */
+    async getFreshPools(tenantId, context) {
+        // ── VENDOR CONTEXT: use vendor_category_ledger for fast, accurate pools ──
+        if (context?.contextType === 'vendor') {
+            const vendorName = context.contextValue;
+            console.log(`[RandomizationService] Using vendor-filtered pools for: ${vendorName}`);
+
+            // Step 1: get vendor's ledger categories (product-verified by ledger).
+            // No c.is_active filter — matches /storefront/vendor-categories endpoint behaviour.
+            // The ledger's product_count >= 1 is the only required validity check.
+            const catRes = await query(
+                `SELECT c.id, c.name, c.slug, c.image_url, c.parent_id
+                 FROM vendor_category_ledger vcl
+                 JOIN categories c ON c.id = vcl.category_id AND c.tenant_id = vcl.tenant_id
+                 WHERE vcl.tenant_id = $1 AND vcl.vendor_name = $2
+                   AND vcl.product_count >= 1`,
+                [tenantId, vendorName]
+            );
+
+            const ledgerCatIds = catRes.rows.map(c => c.id.toString());
+
+            // Step 2: parallel — vendor's own collection + attributes scoped to ledger categories
+            const [collRes, attrRes] = await Promise.all([
+                query(
+                    `SELECT id, name, slug FROM collections
+                     WHERE tenant_id = $1 AND name = $2 AND is_active = true`,
+                    [tenantId, vendorName]
+                ),
+                ledgerCatIds.length > 0
+                    ? query(
+                        `SELECT DISTINCT a.id, a.code, a.label, a.clauses
+                         FROM attributes a
+                         WHERE a.tenant_id = $1
+                           AND EXISTS (
+                               SELECT 1 FROM search_indexes si
+                               WHERE si.tenant_id = $1
+                                 AND si.content_type = 'product'
+                                 AND si.is_active = true
+                                 AND si.metadata->'category_ids' ?| $2::text[]
+                                 AND si.metadata->'attributes' ? a.code
+                           )`,
+                        [tenantId, ledgerCatIds]
+                    )
+                    : query(`SELECT id, code, label, clauses FROM attributes WHERE tenant_id = $1`, [tenantId])
+            ]);
+
+            console.log(`[RandomizationService] Vendor pool built — categories: ${catRes.rows.length}, attributes: ${attrRes.rows.length}, collections: ${collRes.rows.length}`);
+
+            return {
+                categories: catRes.rows,
+                collections: collRes.rows,
+                clauses: this.buildClauses(attrRes.rows)
+            };
+        }
+
+
+        // ── CATEGORY CONTEXT: scope pools to context category + its descendants ──
+        if (context?.contextType === 'category') {
+            const categoryId = context.contextValue;
+            console.log(`[RandomizationService] Using category-scoped pools for: ${categoryId}`);
+
+            // Step 1: context category + all recursive children, filtered to only those with products
+            const catTreeRes = await query(
+                `WITH RECURSIVE cat_tree AS (
+                    SELECT id, name, slug, image_url, parent_id
+                    FROM categories
+                    WHERE tenant_id = $1 AND id = $2::uuid AND is_active = true
+                    UNION ALL
+                    SELECT c.id, c.name, c.slug, c.image_url, c.parent_id
+                    FROM categories c
+                    INNER JOIN cat_tree ct ON c.parent_id = ct.id
+                    WHERE c.tenant_id = $1 AND c.is_active = true
+                )
+                SELECT * FROM cat_tree ct
+                WHERE EXISTS (
+                    SELECT 1 FROM search_indexes si
+                    WHERE si.tenant_id = $1
+                      AND si.is_active = true
+                      AND si.content_type = 'product'
+                      AND si.metadata->'category_ids' ? ct.id::text
+                )`,
+                [tenantId, categoryId]
+            );
+
+            const catIds = catTreeRes.rows.map(c => c.id.toString());
+
+            // Step 2: parallel — attributes with products in those categories + non-vendor collections
+            const [attrRes, collRes] = await Promise.all([
+                catIds.length > 0
+                    ? query(
+                        // Only attributes that have at least one indexed product in the category tree
+                        // AND that product actually has this attribute set (not just exists in category)
+                        `SELECT DISTINCT a.id, a.code, a.label, a.clauses
+                         FROM attributes a
+                         WHERE a.tenant_id = $1
+                           AND EXISTS (
+                               SELECT 1 FROM search_indexes si
+                               WHERE si.tenant_id = $1
+                                 AND si.content_type = 'product'
+                                 AND si.is_active = true
+                                 AND si.metadata->'category_ids' ?| $2::text[]
+                                 AND si.metadata->'attributes' ? a.code
+                           )`,
+                        [tenantId, catIds]
+                    )
+                    : query(
+                        `SELECT id, code, label, clauses FROM attributes WHERE tenant_id = $1`,
+                        [tenantId]
+                    ),
+                // Non-vendor collections only
+                query(
+                    `SELECT id, name, slug FROM collections
+                     WHERE tenant_id = $1 AND is_active = true
+                       AND (collection_type IS NULL OR collection_type != 'vendor')`,
+                    [tenantId]
+                )
+            ]);
+
+            console.log(`[RandomizationService] Category pool built — categories: ${catTreeRes.rows.length}, attributes: ${attrRes.rows.length}, collections: ${collRes.rows.length}`);
+            console.log(`[RandomizationService] Category IDs in pool:`, catIds);
+
+            return {
+                categories: catTreeRes.rows,
+                collections: collRes.rows,
+                clauses: this.buildClauses(attrRes.rows)
+            };
+        }
+
+        // ── DEFAULT: full tenant pools from search index ──
+        return this.getDefaultFreshPools(tenantId);
+
+    }
+
+    /**
+     * Default full-tenant pool (original logic)
+     */
+    async getDefaultFreshPools(tenantId) {
         const categoriesRes = await query(
             `SELECT c.id, c.name, c.slug, c.image_url, c.parent_id
              FROM categories c
@@ -204,46 +365,32 @@ class RandomizationService {
             [tenantId]
         );
 
-        // Collections (basic fetch, verification happens during resolution if needed, 
-        // but for speed we'll assume active collections are intended to be shown)
         const collectionsRes = await query(
             `SELECT id, name, slug FROM collections WHERE tenant_id = $1`,
             [tenantId]
         );
 
-        // Attributes with clauses
         const attributesRes = await query(
             `SELECT id, code, label, clauses FROM attributes WHERE tenant_id = $1`,
             [tenantId]
         );
 
-        const clauses = [];
-        attributesRes.rows.forEach(attr => {
-            const attrClauses = (typeof attr.clauses === 'string' ? JSON.parse(attr.clauses) : (attr.clauses || [])) || [];
-            attrClauses.forEach(clause => {
-                if (clause && clause.name) {
-                    clauses.push({
-                        attribute: { id: attr.id, code: attr.code, label: attr.label },
-                        clause: clause
-                    });
-                }
-            });
-        });
-
         return {
             categories: categoriesRes.rows,
             collections: collectionsRes.rows,
-            clauses: clauses
+            clauses: this.buildClauses(attributesRes.rows)
         };
     }
 
     /**
      * Resolve a single widget intent
      */
-    async resolveWidget(tenantId, widget, pools, used) {
+    async resolveWidget(tenantId, widget, pools, used, context = null) {
         const { intent, config } = widget;
         const allowedTypes = intent.allowedTypes || ['category', 'collection', 'clause'];
         const count = intent.count || intent.randomCount || 1;
+        const isContextScoped = !!context; // pool is already scoped — skip intent filters
+        console.log(`[RandomizationService] resolveWidget ${widget.id} — allowedTypes: ${JSON.stringify(allowedTypes)}, contextScoped: ${isContextScoped}, pool: { categories: ${pools.categories.length}, collections: ${pools.collections.length}, clauses: ${pools.clauses.length} }`);
 
         const selections = [];
 
@@ -252,11 +399,14 @@ class RandomizationService {
             const viableTypes = allowedTypes.filter(type => {
                 if (type === 'category') {
                     let cats = pools.categories;
-                    if (intent.sourceType === 'top-level') cats = cats.filter(c => !c.parent_id);
-                    else if (intent.sourceType === 'subcategories' && intent.parentCategoryId) cats = cats.filter(c => c.parent_id == intent.parentCategoryId);
-                    else if (intent.sourceType === 'all-subcategories') cats = cats.filter(c => c.parent_id);
-                    else if (intent.sourceType === 'manual' && intent.manualCategoryIds?.length > 0) cats = cats.filter(c => intent.manualCategoryIds.map(String).includes(String(c.id)));
-
+                    // Only apply intent sourceType filter when NOT context-scoped.
+                    // When context-scoped, the pool is already restricted to the correct tree.
+                    if (!isContextScoped) {
+                        if (intent.sourceType === 'top-level') cats = cats.filter(c => !c.parent_id);
+                        else if (intent.sourceType === 'subcategories' && intent.parentCategoryId) cats = cats.filter(c => c.parent_id == intent.parentCategoryId);
+                        else if (intent.sourceType === 'all-subcategories') cats = cats.filter(c => c.parent_id);
+                        else if (intent.sourceType === 'manual' && intent.manualCategoryIds?.length > 0) cats = cats.filter(c => intent.manualCategoryIds.map(String).includes(String(c.id)));
+                    }
                     return cats.some(c => !used.categories.has(c.id));
                 }
                 if (type === 'collection') return pools.collections.some(c => !used.collections.has(c.id));
@@ -296,16 +446,17 @@ class RandomizationService {
             if (selectedType === 'category') {
                 let available = pools.categories;
 
-                // Rule: allowedCategories (if any)
-                if (config.randomize?.allowedCategories?.length > 0) {
-                    const allowedIds = config.randomize.allowedCategories.map(String);
-                    available = available.filter(c => allowedIds.includes(String(c.id)));
+                // Only apply intent sourceType filter when NOT context-scoped
+                if (!isContextScoped) {
+                    if (config.randomize?.allowedCategories?.length > 0) {
+                        const allowedIds = config.randomize.allowedCategories.map(String);
+                        available = available.filter(c => allowedIds.includes(String(c.id)));
+                    }
+                    if (intent.sourceType === 'top-level') available = available.filter(c => !c.parent_id);
+                    else if (intent.sourceType === 'subcategories' && intent.parentCategoryId) available = available.filter(c => c.parent_id == intent.parentCategoryId);
+                    else if (intent.sourceType === 'all-subcategories') available = available.filter(c => c.parent_id);
+                    else if (intent.sourceType === 'manual' && intent.manualCategoryIds?.length > 0) available = available.filter(c => intent.manualCategoryIds.map(String).includes(String(c.id)));
                 }
-
-                if (intent.sourceType === 'top-level') available = available.filter(c => !c.parent_id);
-                else if (intent.sourceType === 'subcategories' && intent.parentCategoryId) available = available.filter(c => c.parent_id == intent.parentCategoryId);
-                else if (intent.sourceType === 'all-subcategories') available = available.filter(c => c.parent_id);
-                else if (intent.sourceType === 'manual' && intent.manualCategoryIds?.length > 0) available = available.filter(c => intent.manualCategoryIds.map(String).includes(String(c.id)));
 
                 available = available.filter(c => !used.categories.has(c.id));
                 selection = available[Math.floor(Math.random() * available.length)];
@@ -323,6 +474,33 @@ class RandomizationService {
                 selection = available[Math.floor(Math.random() * available.length)];
                 if (selection) used.collections.add(selection.id);
             } else if (selectedType === 'clause') {
+                if (isContextScoped) {
+                    // Context-aware clause: pick category first, then find real clauses in it.
+                    // This guarantees no misfires — clause value is verified to exist in products.
+                    const contextualResult = await this.resolveContextualClause(
+                        tenantId, pools, used
+                    );
+                    if (contextualResult) {
+                        const resolvedSort = config.randomize?.randomizeSort && config.randomize?.allowedSorts?.length > 0
+                            ? config.randomize.allowedSorts.filter(s => s !== 'random')[Math.floor(Math.random() * config.randomize.allowedSorts.filter(s => s !== 'random').length)] || config.sort || 'relevance'
+                            : config.sort || 'relevance';
+                        const resolvedLimit = config.randomize?.randomizeLimit && config.randomize?.limitRange
+                            ? Math.floor(Math.random() * ((config.randomize.limitRange.max || 12) - (config.randomize.limitRange.min || 4) + 1)) + (config.randomize.limitRange.min || 4)
+                            : config.limit || 8;
+                        const resolvedFeatured = config.randomize?.randomizeFeatured ? Math.random() > 0.5 : config.showFeaturedOnly ?? false;
+                        selections.push({
+                            resolvedType: 'clause',
+                            selection: contextualResult.selection,
+                            meta: contextualResult.meta,
+                            resolvedSort,
+                            resolvedLimit,
+                            resolvedFeatured
+                        });
+                    }
+                    continue; // Skip normal selection/hydration flow
+                }
+
+                // Legacy: pick clause first from pool
                 let available = pools.clauses;
 
                 // Rule: allowedAttributes (if any)
@@ -337,7 +515,7 @@ class RandomizationService {
             }
 
             if (selection) {
-                const meta = await this.hydrateSelectionMeta(tenantId, selectedType, selection, intent);
+                const meta = await this.hydrateSelectionMeta(tenantId, selectedType, selection, intent, pools);
 
                 // Randomize Sort Order if enabled
                 let resolvedSort = config.sort || 'relevance';
@@ -392,9 +570,125 @@ class RandomizationService {
     }
 
     /**
+     * Context-aware clause resolution: pick category first, then find real clauses in it.
+     * Guarantees the clause value exists in actual products — no misfires.
+     */
+    async resolveContextualClause(tenantId, pools, used) {
+        // 1. Pick an unused category from pool
+        const availableCats = pools.categories.filter(c => !used.categories.has(c.id));
+        if (availableCats.length === 0) {
+            console.log(`[RandomizationService] resolveContextualClause: no unused categories left`);
+            return null;
+        }
+
+        // Build a lookup map for ancestor traversal (id → category) from the pool
+        const catMap = new Map(pools.categories.map(c => [String(c.id), c]));
+
+        // Helper: walk up the ancestor chain to check if pickedCategory (or any ancestor)
+        // is in the clause's excluded_category_ids. Mirrors the legacy forbidden_tree CTE.
+        const isCategoryExcluded = (catId, excludedIds) => {
+            if (!excludedIds?.length) return false;
+            const forbidden = new Set(excludedIds.map(String));
+            let current = catMap.get(String(catId));
+            while (current) {
+                if (forbidden.has(String(current.id))) return true;
+                current = current.parent_id ? catMap.get(String(current.parent_id)) : null;
+            }
+            return false;
+        };
+
+        // Shuffle and try categories until we find one with valid clauses
+        const shuffled = availableCats.slice().sort(() => Math.random() - 0.5);
+
+        for (const pickedCategory of shuffled) {
+            // 2. Query all (attribute_code, attribute_value) pairs that actually exist
+            //    in products belonging to this specific category
+            const res = await query(
+                `SELECT DISTINCT
+                    a.id, a.code, a.label, a.clauses,
+                    kv.key   AS attr_key,
+                    kv.value AS attr_val
+                 FROM search_indexes si
+                 JOIN LATERAL jsonb_each_text(si.metadata->'attributes') AS kv ON true
+                 JOIN attributes a
+                   ON a.code = kv.key AND a.tenant_id = si.tenant_id
+                 WHERE si.tenant_id = $1
+                   AND si.is_active = true
+                   AND si.content_type = 'product'
+                   AND si.metadata->'category_ids' ? $2`,
+                [tenantId, pickedCategory.id.toString()]
+            );
+
+            if (res.rows.length === 0) continue;
+
+            // 3. Intersect with configured clauses (admin-defined clause entries)
+            const eligibleClauses = [];
+            for (const row of res.rows) {
+                const attrClauses = typeof row.clauses === 'string'
+                    ? JSON.parse(row.clauses)
+                    : (row.clauses || []);
+
+                for (const clause of attrClauses) {
+                    if (!clause?.name) continue;
+                    const configuredVals = Array.isArray(clause.value)
+                        ? clause.value.map(v => String(v).toLowerCase())
+                        : [String(clause.value || '').toLowerCase()];
+
+                    if (configuredVals.includes(String(row.attr_val || '').toLowerCase())) {
+                        const key = `${row.code}:${clause.name}`;
+                        if (!used.clauses.has(key)) {
+                            // Respect the clause's excluded_category_ids —
+                            // skip if pickedCategory or any ancestor is forbidden
+                            if (isCategoryExcluded(pickedCategory.id, clause.excluded_category_ids)) continue;
+
+                            eligibleClauses.push({
+                                attribute: { id: row.id, code: row.code, label: row.label },
+                                clause,
+                                clauseKey: key
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (eligibleClauses.length === 0) continue;
+
+            // 4. Pick a random (attribute, clause) combo
+            const picked = eligibleClauses[Math.floor(Math.random() * eligibleClauses.length)];
+            used.clauses.add(picked.clauseKey);
+
+            // 5. Build meta directly — we already have both the category and the clause
+            const prefix = (picked.clause.prefix || '').trim();
+            const suffix = (picked.clause.suffix || '').trim();
+            const title = (prefix || suffix)
+                ? `${prefix ? `${prefix} ` : ''}${pickedCategory.name}${suffix ? ` ${suffix}` : ''}`.trim()
+                : (picked.clause.label || picked.clause.name);
+
+            const slugify = t => (t || '').toLowerCase().trim().replace(/\s+/g, '-').replace(/[^\w-]+/g, '');
+            const meta = {
+                title,
+                filter: `category_id=${pickedCategory.id}&attribute.${picked.attribute.code}:${picked.clause.name}=${Array.isArray(picked.clause.value) ? picked.clause.value[0] : (picked.clause.value || 1)}`,
+                pretty_url: `/${slugify(`${prefix}${pickedCategory.slug || ''}${suffix}`)}`,
+                pickedCategory
+            };
+
+            console.log(`[RandomizationService] resolveContextualClause: picked ${picked.attribute.code}=${picked.clause.name} in ${pickedCategory.name}`);
+            console.log(`[RandomizationService] Generated meta for clause:`, meta);
+
+            return {
+                selection: { attribute: picked.attribute, clause: picked.clause },
+                meta
+            };
+        }
+
+        console.log(`[RandomizationService] resolveContextualClause: no valid clause found in any pool category`);
+        return null;
+    }
+
+    /**
      * Build title, filters, and pretty URLs for the selection
      */
-    async hydrateSelectionMeta(tenantId, type, item, intent = {}) {
+    async hydrateSelectionMeta(tenantId, type, item, intent = {}, pools = null) {
         console.log(`[RandomizationService] Hydrating meta for type: ${type}`);
 
         if (type === 'category') {
@@ -417,8 +711,12 @@ class RandomizationService {
             const { attribute, clause } = item;
             console.log(`[RandomizationService] Clause hydration - attribute: ${attribute.code}, clause: ${clause.name}`);
 
+            // Restrict category pairing to only categories in the scoped pool.
+            // Without this, getEligibleCategoriesForClause picks from ALL tenant categories.
+            const allowedCategoryIds = pools?.categories?.map(c => c.id.toString()) || null;
+
             // Resolve random eligible category for the clause
-            const eligibleCats = await this.getEligibleCategoriesForClause(tenantId, attribute.code, clause, intent);
+            const eligibleCats = await this.getEligibleCategoriesForClause(tenantId, attribute.code, clause, intent, allowedCategoryIds);
             console.log(`[RandomizationService] Found ${eligibleCats.length} eligible categories for clause`);
 
             const pickedCat = eligibleCats[Math.floor(Math.random() * eligibleCats.length)];
@@ -453,7 +751,7 @@ class RandomizationService {
         return null;
     }
 
-    async getEligibleCategoriesForClause(tenantId, attributeCode, clause, intent = {}) {
+    async getEligibleCategoriesForClause(tenantId, attributeCode, clause, intent = {}, allowedCategoryIds = null) {
         console.log(`[RandomizationService] getEligibleCategoriesForClause called with:`, {
             tenantId,
             attributeCode,
@@ -505,33 +803,50 @@ class RandomizationService {
         console.log(`[RandomizationService] SQL returned ${res.rows.length} categories before exclusion filter`);
 
         const excluded = Array.isArray(clause.excluded_category_ids) ? clause.excluded_category_ids.map(String) : [];
-        if (excluded.length === 0) return res.rows;
+        // NOTE: Do NOT early-return here even when excluded is empty.
+        // Pool restriction (allowedCategoryIds) must always run.
+        let filtered = res.rows;
 
         // Hierarchical Exclusion: Find all forbidden categories (excluded + descendants)
-        const forbiddenRes = await query(
-            `WITH RECURSIVE forbidden_tree AS (
-                SELECT id FROM categories WHERE id = ANY($1::uuid[]) AND tenant_id = $2
-                UNION ALL
-                SELECT c.id FROM categories c 
-                INNER JOIN forbidden_tree ft ON c.parent_id = ft.id
-                WHERE c.tenant_id = $2
-            )
-            SELECT id FROM forbidden_tree`,
-            [excluded, tenantId]
-        );
-        const forbiddenIds = new Set(forbiddenRes.rows.map(r => String(r.id)));
-        const filtered = res.rows.filter(c => !forbiddenIds.has(String(c.id)));
-        
+        if (excluded.length > 0) {
+            const forbiddenRes = await query(
+                `WITH RECURSIVE forbidden_tree AS (
+                    SELECT id FROM categories WHERE id = ANY($1::uuid[]) AND tenant_id = $2
+                    UNION ALL
+                    SELECT c.id FROM categories c 
+                    INNER JOIN forbidden_tree ft ON c.parent_id = ft.id
+                    WHERE c.tenant_id = $2
+                )
+                SELECT id FROM forbidden_tree`,
+                [excluded, tenantId]
+            );
+            const forbiddenIds = new Set(forbiddenRes.rows.map(r => String(r.id)));
+            filtered = filtered.filter(c => !forbiddenIds.has(String(c.id)));
+        }
+
         console.log(`[RandomizationService] After hierarchical exclusion filter: ${filtered.length} categories`);
 
-        // Apply intent constraints
+        // Apply intent constraints ONLY when no pool restriction is active.
+        // When allowedCategoryIds is set, the pool is already correctly scoped to the context
+        // category tree — applying the widget's static intent filter on top would wrongly
+        // drop all categories (widget's parentCategoryId != context category).
         let final = filtered;
-        if (intent.sourceType === 'top-level') final = final.filter(c => !c.parent_id);
-        else if (intent.sourceType === 'subcategories' && intent.parentCategoryId) final = final.filter(c => c.parent_id == intent.parentCategoryId);
-        else if (intent.sourceType === 'all-subcategories') final = final.filter(c => c.parent_id);
-        else if (intent.sourceType === 'manual' && intent.manualCategoryIds?.length > 0) final = final.filter(c => intent.manualCategoryIds.map(String).includes(String(c.id)));
+        if (!allowedCategoryIds?.length) {
+            if (intent.sourceType === 'top-level') final = final.filter(c => !c.parent_id);
+            else if (intent.sourceType === 'subcategories' && intent.parentCategoryId) final = final.filter(c => c.parent_id == intent.parentCategoryId);
+            else if (intent.sourceType === 'all-subcategories') final = final.filter(c => c.parent_id);
+            else if (intent.sourceType === 'manual' && intent.manualCategoryIds?.length > 0) final = final.filter(c => intent.manualCategoryIds.map(String).includes(String(c.id)));
+        }
 
         console.log(`[RandomizationService] After intent filter: ${final.length} categories`);
+
+        // Restrict to pool categories if a scoped pool was provided
+        if (allowedCategoryIds?.length > 0) {
+            const allowedSet = new Set(allowedCategoryIds.map(String));
+            final = final.filter(c => allowedSet.has(String(c.id)));
+            console.log(`[RandomizationService] After pool restriction: ${final.length} categories`);
+        }
+
         return final;
     }
 }

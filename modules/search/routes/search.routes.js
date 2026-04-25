@@ -362,7 +362,7 @@ function registerSearchRoutes(router) {
 
     // Master Plan Randomization Resolver
     router.post('/randomization/resolve', optionalAuth, asyncHandler(async (req, res) => {
-        const { widgets, pageHandle = 'home' } = req.body;
+        const { widgets, pageHandle = 'home', context } = req.body;
 
         if (!widgets || !Array.isArray(widgets)) {
             return res.status(400).json({
@@ -371,7 +371,7 @@ function registerSearchRoutes(router) {
             });
         }
 
-        const data = await RandomizationService.getSnapshotPlan(req.tenantId, pageHandle, widgets);
+        const data = await RandomizationService.getSnapshotPlan(req.tenantId, pageHandle, widgets, context);
 
         res.json({
             success: true,

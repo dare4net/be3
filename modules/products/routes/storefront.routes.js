@@ -12,7 +12,7 @@ const ProductService = require('../services/ProductService');
 function registerStorefrontRoutes(router) {
     // PUBLIC STOREFRONT ENDPOINT (No Auth, but requires Subscription/Module Access)
     router.get('/storefront', subscriptionGuard('products'), asyncHandler(async (req, res) => {
-        const { featured, category, category_id, limit, exclude, sort, q, price_min, price_max } = req.query;
+        const { featured, category, category_id, limit, exclude, sort, q, price_min, price_max, vendor_name } = req.query;
         const page = parseInt(req.query.page) || 1;
         const perPage = parseInt(limit || req.query.per_page) || 20;
         const offset = (page - 1) * perPage;
@@ -52,6 +52,12 @@ function registerStorefrontRoutes(router) {
         if (exclude) {
             queryParams.push(exclude);
             whereConditions.push(`p.id != $${queryParams.length}`);
+        }
+
+        // Filter by vendor (stored in product attributes JSON)
+        if (vendor_name) {
+            queryParams.push(vendor_name);
+            whereConditions.push(`p.attributes->>'vendor' = $${queryParams.length}`);
         }
 
         if (category_id || category) {
@@ -359,6 +365,34 @@ function registerStorefrontRoutes(router) {
         if (!collection.seo.title) collection.seo.title = collection.name;
 
         res.json({ success: true, collection });
+    }));
+
+    // Vendor category ledger — returns categories a vendor has active products in
+    // Query params: vendor (required, vendor name string)
+    router.get('/storefront/vendor-categories', asyncHandler(async (req, res) => {
+        const { vendor } = req.query;
+        if (!vendor) {
+            return res.status(400).json({ error: 'vendor query param is required' });
+        }
+
+        const result = await query(
+            `SELECT
+                vcl.vendor_name,
+                vcl.category_id,
+                c.name    AS category_name,
+                c.slug    AS category_slug,
+                c.image_url AS category_image,
+                vcl.product_count
+             FROM vendor_category_ledger vcl
+             JOIN categories c ON c.id = vcl.category_id AND c.tenant_id = vcl.tenant_id
+             WHERE vcl.tenant_id = $1
+               AND vcl.vendor_name = $2
+               AND vcl.product_count >= 1
+             ORDER BY vcl.product_count DESC`,
+            [req.tenantId, vendor]
+        );
+
+        res.json({ success: true, categories: result.rows });
     }));
 }
 

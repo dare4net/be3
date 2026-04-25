@@ -9,12 +9,25 @@ const Page = require('./models/Page');
 const Theme = require('./models/Theme');
 const Layout = require('./models/Layout');
 const Tenant = require('../../platform/core/tenants/models/Tenant');
+const eventBus = require('../../platform/events/EventBus');
+const ProvisioningService = require('./services/ProvisioningService');
 const { authenticate } = require('../../platform/core/auth/middleware/authenticate');
 const authorize = require('../../platform/core/roles/middleware/authorize');
 const { asyncHandler } = require('../../middleware/errorHandler');
 
 async function bootstrap(context) {
     const { app } = context;
+
+    // Register listener for new tenant creation
+    eventBus.on('tenant.created', async (data) => {
+        try {
+            console.log(`[PageBuilder] Received tenant.created event for: ${data.tenantId}`);
+            await ProvisioningService.provisionDefaults(data.tenantId);
+        } catch (err) {
+            console.error(`[PageBuilder] Automatic provisioning failed for tenant ${data.tenantId}:`, err);
+        }
+    });
+
     const router = express.Router();
 
     // Get all widgets for a specific page (PUBLIC - for storefront display)
