@@ -51,53 +51,84 @@ class ProvisioningService {
     }
 
     /**
-     * Injects default "Legacy" widgets for storefront templates if they don't have widgets yet.
+     * Injects default widgets for storefront templates if they don't have widgets yet.
+     * Legacy widgets (hero, subnav, suggestions) remain as unknown_widget + legacy_type.
+     * Search widgets are registered as first-class search_page_layout widgets.
      */
     static async provisionWidgets(tenantId) {
-        // We need an active layout to attach widgets to
         let layout = await Layout.findActive(tenantId);
-        if (!layout) {
-            layout = await Layout.findDefault(tenantId);
-        }
+        if (!layout) layout = await Layout.findDefault(tenantId);
 
-        // If still no layout, we can't provision widgets (unlikely in a healthy tenant)
         if (!layout) {
             console.warn(`[PageBuilder] No active/default layout found for tenant ${tenantId}. Skipping widget provisioning.`);
             return;
         }
 
+        // Base config shared by all search_page_layout instances
+        const searchBase = {
+            columns: { desktop: 5, tablet: 3, mobile: 2 },
+            sidebarEnabled: true,
+            showFilters: true,
+            showActiveFiltersBar: true,
+            showPrice: true,
+            showAddToCart: true,
+            showFeaturedBadge: true,
+            showViewDetails: true,
+            showTags: false,
+            showDescription: true,
+            showAttributes: false,
+            showSocialProof: true,
+            showRating: false,
+            cardScale: 0.9,
+        };
+
         const defaultWidgets = [
-            // Collection Details
-            { page_type: 'collection_detail', widget_type: 'unknown_widget', config: { legacy_type: 'collection_hero' }, sort_order: 0 },
-            { page_type: 'collection_detail', widget_type: 'unknown_widget', config: { legacy_type: 'collection_search' }, sort_order: 10 },
+            // ── Collection Details ──────────────────────────────────────────
+            // Hero stays as legacy bridge
+            { page_type: 'collection_detail', widget_type: 'unknown_widget',      config: { legacy_type: 'collection_hero' },   sort_order: 0,  dedupeBy: 'legacy_type' },
+            // Search results — properly registered, search bar hidden (collection header provides context)
+            { page_type: 'collection_detail', widget_type: 'search_page_layout',  config: { ...searchBase, showSearchBar: false, showImageSearchBar: true }, sort_order: 10, dedupeBy: 'widget_type' },
 
-            // Category Details
-            { page_type: 'category_detail', widget_type: 'unknown_widget', config: { legacy_type: 'category_hero' }, sort_order: 0 },
-            { page_type: 'category_detail', widget_type: 'unknown_widget', config: { legacy_type: 'category_subnav' }, sort_order: 10 },
-            { page_type: 'category_detail', widget_type: 'unknown_widget', config: { legacy_type: 'category_search' }, sort_order: 20 },
-            { page_type: 'category_detail', widget_type: 'unknown_widget', config: { legacy_type: 'category_suggestions' }, sort_order: 30 },
+            // ── Category Details ────────────────────────────────────────────
+            { page_type: 'category_detail',  widget_type: 'unknown_widget',       config: { legacy_type: 'category_hero' },     sort_order: 0,  dedupeBy: 'legacy_type' },
+            { page_type: 'category_detail',  widget_type: 'unknown_widget',       config: { legacy_type: 'category_subnav' },   sort_order: 10, dedupeBy: 'legacy_type' },
+            // Search results — properly registered, full UI
+            { page_type: 'category_detail',  widget_type: 'search_page_layout',   config: { ...searchBase, showSearchBar: true,  showImageSearchBar: true }, sort_order: 20, dedupeBy: 'widget_type' },
+            { page_type: 'category_detail',  widget_type: 'unknown_widget',       config: { legacy_type: 'category_suggestions' }, sort_order: 30, dedupeBy: 'legacy_type' },
 
-            // Branded Search
-            { page_type: 'branded_search', widget_type: 'unknown_widget', config: { legacy_type: 'search_layout' }, sort_order: 0 }
+            // ── Branded Search ──────────────────────────────────────────────
+            { page_type: 'branded_search',   widget_type: 'search_page_layout',   config: { ...searchBase, showSearchBar: true,  showImageSearchBar: true }, sort_order: 0,  dedupeBy: 'widget_type' },
         ];
 
         for (const w of defaultWidgets) {
-            // Only insert if this page_type for this layout has NO widgets of this legacy_type
-            // This prevents duplicating the "Search Layout" every time the migration or event runs
-            const exists = await query(`
-                SELECT id FROM page_widgets 
-                WHERE tenant_id = $1 AND layout_id = $2 AND page_type = $3 
-                AND config->>'legacy_type' = $4
-            `, [tenantId, layout.id, w.page_type, w.config.legacy_type]);
+            let exists;
+
+            if (w.dedupeBy === 'legacy_type') {
+                // Legacy widgets — check by legacy_type in config
+                exists = await query(`
+                    SELECT id FROM page_widgets
+                    WHERE tenant_id = $1 AND layout_id = $2 AND page_type = $3
+                      AND config->>'legacy_type' = $4
+                `, [tenantId, layout.id, w.page_type, w.config.legacy_type]);
+            } else {
+                // Proper widgets — check by widget_type for this page_type
+                exists = await query(`
+                    SELECT id FROM page_widgets
+                    WHERE tenant_id = $1 AND layout_id = $2 AND page_type = $3
+                      AND widget_type = $4
+                `, [tenantId, layout.id, w.page_type, w.widget_type]);
+            }
 
             if (exists.rows.length === 0) {
+                const { dedupeBy, ...widgetData } = w;
                 await query(`
                     INSERT INTO page_widgets (tenant_id, layout_id, page_type, widget_type, config, sort_order, is_active)
                     VALUES ($1, $2, $3, $4, $5, $6, true)
-                `, [tenantId, layout.id, w.page_type, w.widget_type, JSON.stringify(w.config), w.sort_order]);
+                `, [tenantId, layout.id, widgetData.page_type, widgetData.widget_type, JSON.stringify(widgetData.config), widgetData.sort_order]);
             }
         }
     }
+
 }
 
 module.exports = ProvisioningService;

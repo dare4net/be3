@@ -28,9 +28,26 @@ async function registerStorefrontPages() {
         );
 
         // 3. Register Widgets for Collection Detail
+        const searchBase = {
+            columns: { desktop: 5, tablet: 3, mobile: 2 },
+            sidebarEnabled: true,
+            showFilters: true,
+            showActiveFiltersBar: true,
+            showPrice: true,
+            showAddToCart: true,
+            showFeaturedBadge: true,
+            showViewDetails: true,
+            showTags: false,
+            showDescription: true,
+            showAttributes: false,
+            showSocialProof: true,
+            showRating: false,
+            cardScale: 0.9,
+        };
+
         const collectionWidgets = [
-            { type: 'unknown_widget', name: 'Collection Hero', config: { legacy_type: 'collection_hero' }, order: 0 },
-            { type: 'unknown_widget', name: 'Collection Search Results', config: { legacy_type: 'collection_search' }, order: 1 }
+            { type: 'unknown_widget',     config: { legacy_type: 'collection_hero' }, order: 0 },
+            { type: 'search_page_layout', config: { ...searchBase, showSearchBar: false, showImageSearchBar: true }, order: 1 }
         ];
 
         for (const w of collectionWidgets) {
@@ -44,10 +61,10 @@ async function registerStorefrontPages() {
 
         // 4. Register Widgets for Category Detail
         const categoryWidgets = [
-            { type: 'unknown_widget', name: 'Category Hero', config: { legacy_type: 'category_hero' }, order: 0 },
-            { type: 'unknown_widget', name: 'Category Sub-navigation', config: { legacy_type: 'category_subnav' }, order: 1 },
-            { type: 'unknown_widget', name: 'Category Search Results', config: { legacy_type: 'category_search' }, order: 2 },
-            { type: 'unknown_widget', name: 'Category Suggestions', config: { legacy_type: 'category_suggestions' }, order: 3 }
+            { type: 'unknown_widget',     config: { legacy_type: 'category_hero' },        order: 0 },
+            { type: 'unknown_widget',     config: { legacy_type: 'category_subnav' },      order: 1 },
+            { type: 'search_page_layout', config: { ...searchBase, showSearchBar: true, showImageSearchBar: true }, order: 2 },
+            { type: 'unknown_widget',     config: { legacy_type: 'category_suggestions' }, order: 3 }
         ];
 
         for (const w of categoryWidgets) {
@@ -61,7 +78,7 @@ async function registerStorefrontPages() {
 
         // 5. Register Widgets for Standard Search Page
         const searchWidgets = [
-            { type: 'unknown_widget', name: 'Search Results UI', config: { legacy_type: 'search_layout' }, order: 0 }
+            { type: 'search_page_layout', config: { ...searchBase, showSearchBar: true, showImageSearchBar: true }, order: 0 }
         ];
 
         for (const w of searchWidgets) {
@@ -95,7 +112,7 @@ async function registerStorefrontPages() {
         await query(
             `INSERT INTO page_widgets (tenant_id, layout_id, page_type, widget_type, config, sort_order, is_active)
              VALUES ($1, $2, $3, $4, $5, $6, true)`,
-            [tenantId, layoutId, brandedSlug, 'unknown_widget', JSON.stringify({ legacy_type: 'search_layout' }), 0]
+            [tenantId, layoutId, brandedSlug, 'search_page_layout', JSON.stringify({ ...searchBase, showSearchBar: true, showImageSearchBar: true }), 0]
         );
         console.log(`✓ Registered widgets for branded page: /${brandedSlug}`);
 
