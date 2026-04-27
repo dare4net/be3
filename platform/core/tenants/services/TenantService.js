@@ -8,6 +8,7 @@
 const Tenant = require('../models/Tenant');
 const eventBus = require('../../../events/EventBus');
 const { clearTenantCache } = require('../../../../config/redis');
+const MediaInterceptor = require('../../../../modules/media/services/MediaInterceptor');
 
 class TenantService {
     /**
@@ -30,6 +31,14 @@ class TenantService {
         const isAvailable = await Tenant.isSubdomainAvailable(tenantData.subdomain);
         if (!isAvailable) {
             throw new Error('Subdomain is already taken');
+        }
+
+        // Mirror logo if provided
+        if (tenantData.logo_url) {
+            await MediaInterceptor.intercept(tenantData, 'branding', 'logo_url');
+        }
+        if (tenantData.settings) {
+            await MediaInterceptor.interceptSettings(tenantData.settings);
         }
 
         // Create tenant
@@ -80,7 +89,15 @@ class TenantService {
      */
     static async updateTenant(tenantId, updates) {
         // Validate tenant exists
-        await this.getTenant(tenantId);
+        const oldTenant = await this.getTenant(tenantId);
+
+        // Mirror assets
+        if (updates.logo_url) {
+            await MediaInterceptor.intercept(updates, 'branding', 'logo_url', oldTenant.logo_url);
+        }
+        if (updates.settings) {
+            await MediaInterceptor.interceptSettings(updates.settings);
+        }
 
         // Update tenant
         const updatedTenant = await Tenant.update(tenantId, updates);
@@ -102,6 +119,9 @@ class TenantService {
      */
     static async updateSettings(tenantId, settings) {
         await this.getTenant(tenantId);
+
+        // Mirror images within settings
+        await MediaInterceptor.interceptSettings(settings);
 
         const updatedTenant = await Tenant.updateSettings(tenantId, settings);
 

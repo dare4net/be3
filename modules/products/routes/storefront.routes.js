@@ -375,6 +375,13 @@ function registerStorefrontRoutes(router) {
             return res.status(400).json({ error: 'vendor query param is required' });
         }
 
+        // Resolve vendor ID from name for the ledger lookup
+        const vendorRes = await query(
+            'SELECT id FROM users WHERE tenant_id = $1 AND (LOWER(business_name) = LOWER($2)) LIMIT 1',
+            [req.tenantId, vendor]
+        );
+        const vendorId = vendorRes.rows[0]?.id;
+
         const result = await query(
             `SELECT
                 vcl.vendor_name,
@@ -386,10 +393,10 @@ function registerStorefrontRoutes(router) {
              FROM vendor_category_ledger vcl
              JOIN categories c ON c.id = vcl.category_id AND c.tenant_id = vcl.tenant_id
              WHERE vcl.tenant_id = $1
-               AND vcl.vendor_name = $2
+               AND (vcl.vendor_id = $2 OR vcl.vendor_name = $3)
                AND vcl.product_count >= 1
              ORDER BY vcl.product_count DESC`,
-            [req.tenantId, vendor]
+            [req.tenantId, vendorId, vendor]
         );
 
         res.json({ success: true, categories: result.rows });

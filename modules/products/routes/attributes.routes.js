@@ -7,6 +7,7 @@ const { query } = require('../../../config/database');
 const { paginatedTenantQuery, tenantInsert, tenantUpdate, tenantDelete } = require('../../../utils/dbHelpers');
 const { authenticate } = require('../../../platform/core/auth/middleware/authenticate');
 const { asyncHandler } = require('../../../middleware/errorHandler');
+const MediaInterceptor = require('../../media/services/MediaInterceptor');
 
 /**
  * Helper to keep pivot table (category_attributes.excluded_clauses) in sync 
@@ -86,6 +87,9 @@ function registerAttributeRoutes(router) {
 
     // Create Global Attribute
     router.post('/attributes', authenticate, asyncHandler(async (req, res) => {
+        // Intercept and mirror images (including nested options/swatches)
+        await MediaInterceptor.interceptAttribute(req.body);
+
         let options = req.body.options;
         // Ensure options is a JSON string for DB
         if (options && typeof options === 'object') {
@@ -116,6 +120,9 @@ function registerAttributeRoutes(router) {
 
     // Update Global Attribute (blocks system attributes from admin edits)
     router.put('/attributes/:id', authenticate, asyncHandler(async (req, res) => {
+        // Intercept and mirror images (including nested options/swatches)
+        await MediaInterceptor.interceptAttribute(req.body);
+
         // Check if this is a system attribute
         const existing = await query(
             `SELECT is_system FROM attributes WHERE id = $1 AND tenant_id = $2`,

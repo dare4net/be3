@@ -230,16 +230,23 @@ class RandomizationService {
             const vendorName = context.contextValue;
             console.log(`[RandomizationService] Using vendor-filtered pools for: ${vendorName}`);
 
-            // Step 1: get vendor's ledger categories (product-verified by ledger).
-            // No c.is_active filter — matches /storefront/vendor-categories endpoint behaviour.
-            // The ledger's product_count >= 1 is the only required validity check.
+            // Step 1: Resolve vendor ID from name for the ledger lookup
+            const vendorRes = await query(
+                'SELECT id FROM users WHERE tenant_id = $1 AND (LOWER(business_name) = LOWER($2)) LIMIT 1',
+                [tenantId, vendorName]
+            );
+            const vendorId = vendorRes.rows[0]?.id;
+
+            // Step 2: get vendor's ledger categories (product-verified by ledger).
+            // Uses vendor_id as primary link, falling back to vendor_name for legacy records.
             const catRes = await query(
                 `SELECT c.id, c.name, c.slug, c.image_url, c.parent_id
                  FROM vendor_category_ledger vcl
                  JOIN categories c ON c.id = vcl.category_id AND c.tenant_id = vcl.tenant_id
-                 WHERE vcl.tenant_id = $1 AND vcl.vendor_name = $2
+                 WHERE vcl.tenant_id = $1 
+                   AND (vcl.vendor_id = $2 OR vcl.vendor_name = $3)
                    AND vcl.product_count >= 1`,
-                [tenantId, vendorName]
+                [tenantId, vendorId, vendorName]
             );
 
             const ledgerCatIds = catRes.rows.map(c => c.id.toString());

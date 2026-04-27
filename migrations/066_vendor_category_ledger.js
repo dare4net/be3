@@ -1,6 +1,6 @@
 const { query } = require('../config/database');
 
-async function run() {
+async function up() {
     console.log('Creating vendor_category_ledger table...');
 
     try {
@@ -49,12 +49,12 @@ async function run() {
         `);
         console.log(`  ✓ Backfilled ${backfillRes.rowCount} vendor-category entries`);
 
-        console.log('\nMigration complete.');
-        process.exit(0);
+        console.log('\nMigration 066 complete.');
     } catch (e) {
-        console.error('✗ Migration failed:', e);
-        process.exit(1);
+        console.error('✗ Migration 066 failed:', e);
+        throw e;
     }
 }
 
-run();
+module.exports = { up };
+

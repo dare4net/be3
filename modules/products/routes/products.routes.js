@@ -9,6 +9,7 @@ const { authenticate } = require('../../../platform/core/auth/middleware/authent
 const authorize = require('../../../platform/core/roles/middleware/authorize');
 const { asyncHandler } = require('../../../middleware/errorHandler');
 const ProductService = require('../services/ProductService');
+const MediaInterceptor = require('../../media/services/MediaInterceptor');
 
 function registerProductRoutes(router, eventBus) {
     // List products (Admin)
@@ -165,6 +166,9 @@ function registerProductRoutes(router, eventBus) {
 
     // Create collection
     router.post('/collections', authenticate, asyncHandler(async (req, res) => {
+        // Intercept and mirror image_url
+        await MediaInterceptor.intercept(req.body, 'collections');
+
         const collection = await tenantInsert('collections', req.tenantId, {
             name: req.body.name,
             slug: req.body.slug,
@@ -199,6 +203,9 @@ function registerProductRoutes(router, eventBus) {
 
         const current = currentRes.rows[0];
         const updates = { ...req.body };
+
+        // Intercept and mirror image_url
+        await MediaInterceptor.intercept(updates, 'collections', 'image_url', current.image_url);
 
         // 2. Protection Logic: If it's a vendor-managed collection, don't allow manual rule changes
         if (current.collection_type === 'vendor' && updates.rules) {
@@ -344,6 +351,10 @@ function registerProductRoutes(router, eventBus) {
             console.warn('[Products] Could not auto-apply system attributes:', e.message);
         }
 
+        // Intercept and mirror image_url
+        await MediaInterceptor.intercept(req.body, 'products');
+        await MediaInterceptor.interceptSeo(req.body, 'products/seo');
+
         const productData = {
             name: productName,
             description: req.body.description,
@@ -413,16 +424,18 @@ function registerProductRoutes(router, eventBus) {
             name: product.name,
         });
 
-        // Update vendor category ledger (vendorName already available from PermissionService context)
+        // Update vendor category ledger (vendor_id and vendorName available from context)
         if (vendorName && finalCategoryIds.length > 0) {
+            const vendorId = req.user.id;
             for (const catId of finalCategoryIds) {
                 await query(
-                    `INSERT INTO vendor_category_ledger (tenant_id, vendor_name, category_id, product_count)
-                     VALUES ($1, $2, $3, 1)
-                     ON CONFLICT (tenant_id, vendor_name, category_id)
+                    `INSERT INTO vendor_category_ledger (tenant_id, vendor_id, vendor_name, category_id, product_count)
+                     VALUES ($1, $2, $3, $4, 1)
+                     ON CONFLICT (tenant_id, vendor_id, category_id)
                      DO UPDATE SET product_count = vendor_category_ledger.product_count + 1,
+                                   vendor_name = EXCLUDED.vendor_name,
                                    last_updated_at = NOW()`,
-                    [req.tenantId, vendorName, catId]
+                    [req.tenantId, vendorId, vendorName, catId]
                 );
             }
         }
@@ -433,6 +446,14 @@ function registerProductRoutes(router, eventBus) {
     router.patch('/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
         // Extract category_ids from body to avoid DB error in tenantUpdate
         const { category_ids, ...updateData } = req.body;
+
+        // Get old product to check for oldUrl cleanup
+        const oldProductRes = await query(`SELECT image_url FROM products WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
+        const oldUrl = oldProductRes.rows[0]?.image_url;
+
+        // Intercept and mirror image_url
+        await MediaInterceptor.intercept(updateData, 'products', 'image_url', oldUrl);
+        await MediaInterceptor.interceptSeo(updateData, 'products/seo');
 
         const PermissionService = require('../../../platform/core/roles/services/PermissionService');
         const { isVendor, vendorName, categoryAccess: { hasUnrestrictedAccess } } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
@@ -497,27 +518,32 @@ function registerProductRoutes(router, eventBus) {
             }
 
             // Update vendor category ledger for added/removed categories
-            // Use the product's own vendor attribute — handles admin edits on vendor products too
+            // Use the product's own vendor attribute and owner ID — handles admin edits on vendor products too
             const productVendorName = product.attributes?.vendor;
-            if (productVendorName) {
+            const productVendorId = product.created_by;
+
+            if (productVendorName && productVendorId) {
                 const addedCats = category_ids.filter(c => !oldCatIds.includes(c));
                 const removedCats = oldCatIds.filter(c => !category_ids.includes(c));
                 for (const catId of addedCats) {
                     await query(
-                        `INSERT INTO vendor_category_ledger (tenant_id, vendor_name, category_id, product_count)
-                         VALUES ($1, $2, $3, 1)
-                         ON CONFLICT (tenant_id, vendor_name, category_id)
+                        `INSERT INTO vendor_category_ledger (tenant_id, vendor_id, vendor_name, category_id, product_count)
+                         VALUES ($1, $2, $3, $4, 1)
+                         ON CONFLICT (tenant_id, vendor_id, category_id)
                          DO UPDATE SET product_count = vendor_category_ledger.product_count + 1,
+                                       vendor_name = EXCLUDED.vendor_name,
                                        last_updated_at = NOW()`,
-                        [req.tenantId, productVendorName, catId]
+                        [req.tenantId, productVendorId, productVendorName, catId]
                     );
                 }
                 for (const catId of removedCats) {
                     await query(
                         `UPDATE vendor_category_ledger
-                         SET product_count = GREATEST(0, product_count - 1), last_updated_at = NOW()
-                         WHERE tenant_id = $1 AND vendor_name = $2 AND category_id = $3`,
-                        [req.tenantId, productVendorName, catId]
+                         SET product_count = GREATEST(0, product_count - 1), 
+                             vendor_name = $4,
+                             last_updated_at = NOW()
+                         WHERE tenant_id = $1 AND vendor_id = $2 AND category_id = $3`,
+                        [req.tenantId, productVendorId, catId, productVendorName]
                     );
                 }
             }
@@ -547,17 +573,21 @@ function registerProductRoutes(router, eventBus) {
         // Decrement vendor category ledger before soft-deleting
         try {
             const [prodRes, catRes] = await Promise.all([
-                query(`SELECT attributes FROM products WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]),
+                query(`SELECT created_by, attributes FROM products WHERE id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]),
                 query(`SELECT category_id FROM product_categories WHERE product_id = $1`, [req.params.id])
             ]);
-            const vendorName = prodRes.rows[0]?.attributes?.vendor;
-            if (vendorName && catRes.rows.length > 0) {
+            const productVendorName = prodRes.rows[0]?.attributes?.vendor;
+            const productVendorId = prodRes.rows[0]?.created_by;
+
+            if (productVendorId && catRes.rows.length > 0) {
                 for (const row of catRes.rows) {
                     await query(
                         `UPDATE vendor_category_ledger
-                         SET product_count = GREATEST(0, product_count - 1), last_updated_at = NOW()
-                         WHERE tenant_id = $1 AND vendor_name = $2 AND category_id = $3`,
-                        [req.tenantId, vendorName, row.category_id]
+                         SET product_count = GREATEST(0, product_count - 1), 
+                             vendor_name = $4,
+                             last_updated_at = NOW()
+                         WHERE tenant_id = $1 AND vendor_id = $2 AND category_id = $3`,
+                        [req.tenantId, productVendorId, row.category_id, productVendorName]
                     );
                 }
             }

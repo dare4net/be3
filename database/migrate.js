@@ -27,7 +27,10 @@ async function runMigrations() {
         'migrations/061_add_product_variants_support.sql',
         'migrations/062_add_image_embedding_column.js',
         'migrations/063_add_theme_overrides_to_pages.sql',
-        'migrations/064_normalize_theme_variables.js'
+        'migrations/064_normalize_theme_variables.js',
+        'migrations/065_register_storefront_templates.js',
+        'migrations/066_vendor_category_ledger.js',
+        'migrations/067_enhance_vendor_category_ledger_with_id.js'
     ];
 
     for (const schemaPath of schemas) {

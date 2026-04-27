@@ -9,6 +9,7 @@ const { authenticate } = require('../../../platform/core/auth/middleware/authent
 const authorize = require('../../../platform/core/roles/middleware/authorize');
 const { asyncHandler } = require('../../../middleware/errorHandler');
 const ProductService = require('../services/ProductService');
+const MediaInterceptor = require('../../media/services/MediaInterceptor');
 
 function registerCategoryRoutes(router, eventBus) {
     // Get all categories (PUBLIC - for storefront and widget editors)
@@ -529,6 +530,10 @@ function registerCategoryRoutes(router, eventBus) {
 
     // Create category (ADMIN)
     router.post('/categories', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+        // Intercept and mirror image_url
+        await MediaInterceptor.intercept(req.body, 'categories');
+        await MediaInterceptor.interceptSeo(req.body, 'categories/seo');
+
         const category = await tenantInsert('categories', req.tenantId, {
             name: req.body.name,
             slug: req.body.slug || req.body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -562,8 +567,19 @@ function registerCategoryRoutes(router, eventBus) {
 
     // Update category (ADMIN)
     router.put('/categories/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+        const { id } = req.params;
+        const { tenantId } = req;
+
+        // Get old category for cleanup
+        const oldCatRes = await query(`SELECT image_url FROM categories WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+        const oldUrl = oldCatRes.rows[0]?.image_url;
+
+        // Intercept and mirror image_url
+        await MediaInterceptor.intercept(req.body, 'categories', 'image_url', oldUrl);
+        await MediaInterceptor.interceptSeo(req.body, 'categories/seo');
+
         // Note: Router is mounted at /products, so this becomes /products/categories/:id
-        const category = await tenantUpdate('categories', req.tenantId, req.params.id, req.body);
+        const category = await tenantUpdate('categories', tenantId, id, req.body);
 
         eventBus.emitEvent('category.updated', {
             tenantId: req.tenantId,
