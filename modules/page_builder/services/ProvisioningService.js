@@ -60,8 +60,7 @@ class ProvisioningService {
         if (!layout) layout = await Layout.findDefault(tenantId);
 
         if (!layout) {
-            console.warn(`[PageBuilder] No active/default layout found for tenant ${tenantId}. Skipping widget provisioning.`);
-            return;
+            throw new Error(`No active or default layout found for tenant ${tenantId}. Widgets cannot be provisioned.`);
         }
 
         // Base config shared by all search_page_layout instances

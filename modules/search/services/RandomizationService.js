@@ -180,6 +180,14 @@ class RandomizationService {
             clauses: new Set()
         };
 
+        // NEW: Fetch a full ancestor map for hierarchical exclusion checks
+        // This ensures the hierarchy is intact even if parents don't have products directly
+        const fullCatRes = await query(
+            'SELECT id, parent_id FROM categories WHERE tenant_id = $1',
+            [tenantId]
+        );
+        pools.fullHierarchyKeys = new Map(fullCatRes.rows.map(c => [String(c.id), c.parent_id ? String(c.parent_id) : null]));
+
         const results = [];
 
         // 2. Resolve each widget
@@ -585,14 +593,15 @@ class RandomizationService {
         const catMap = new Map(pools.categories.map(c => [String(c.id), c]));
 
         // Helper: walk up the ancestor chain to check if pickedCategory (or any ancestor)
-        // is in the clause's excluded_category_ids. Mirrors the legacy forbidden_tree CTE.
+        // is in the clause's excluded_category_ids. Uses the full hierarchy manifest.
         const isCategoryExcluded = (catId, excludedIds) => {
             if (!excludedIds?.length) return false;
             const forbidden = new Set(excludedIds.map(String));
-            let current = catMap.get(String(catId));
-            while (current) {
-                if (forbidden.has(String(current.id))) return true;
-                current = current.parent_id ? catMap.get(String(current.parent_id)) : null;
+            
+            let currentId = String(catId);
+            while (currentId) {
+                if (forbidden.has(currentId)) return true;
+                currentId = pools.fullHierarchyKeys.get(currentId) || null;
             }
             return false;
         };
