@@ -207,13 +207,13 @@ function registerProductRoutes(router, eventBus) {
         // Intercept and mirror image_url
         await MediaInterceptor.intercept(updates, 'collections', 'image_url', current.image_url);
 
-        // 2. Protection Logic: If it's a vendor-managed collection, don't allow manual rule changes
-        if (current.collection_type === 'vendor' && updates.rules) {
-            console.log(`[Products] Blocking manual rule update for vendor collection ${collectionId}`);
-            delete updates.rules;
-            // Also protect slug and name if they are strictly managed by Business Name
-            delete updates.slug;
-            delete updates.name;
+        // 2. Protection Logic: If it's a vendor-managed collection, reject manual rule/identity changes
+        if (current.collection_type === 'vendor' && (updates.rules || updates.slug || updates.name)) {
+            console.warn(`[Products] REJECTED: Manual tampering attempted on vendor collection ${collectionId}`);
+            return res.status(403).json({ 
+                error: 'Manual update denied', 
+                message: 'This is an automatic vendor collection. Rules, names, and slugs are managed by the business profile and cannot be edited manually.' 
+            });
         }
 
         const collection = await tenantUpdate('collections', tenantId, collectionId, {

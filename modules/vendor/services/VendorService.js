@@ -60,6 +60,7 @@ class VendorService {
             const vendorName = user.business_name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Vendor';
             const vendorThumbnail = user.business_thumbnail || null;
             const vendorBackdrop = user.business_backdrop || null;
+            const vendorDescription = user.business_description || null;
             const slug = `${vendorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-${userId.split('-')[0]}`;
 
             // 2. Ensure the global system vendor attribute exists
@@ -83,8 +84,9 @@ class VendorService {
                 const nameChanged = oldVendorName !== vendorName;
                 const thumbnailChanged = existing.rows[0].thumbnail_url !== vendorThumbnail;
                 const backdropChanged = existing.rows[0].image_url !== vendorBackdrop;
+                const descriptionChanged = existing.rows[0].description !== vendorDescription;
 
-                if (nameChanged || thumbnailChanged || backdropChanged || !existing.rows[0].is_active) {
+                if (nameChanged || thumbnailChanged || backdropChanged || descriptionChanged || !existing.rows[0].is_active) {
                     const rules = [
                         {
                             field: 'attribute',
@@ -98,8 +100,8 @@ class VendorService {
                     const updatedSlug = `${vendorName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}-${userId.split('-')[0]}-collection`;
 
                     await query(
-                        `UPDATE collections SET name = $1, slug = $2, rules = $3, thumbnail_url = $4, image_url = $5, is_active = $6, collection_type = $7 WHERE id = $8`,
-                        [vendorName, updatedSlug, JSON.stringify(rules), vendorThumbnail, vendorBackdrop, true, 'vendor', collectionId]
+                        `UPDATE collections SET name = $1, slug = $2, rules = $3, thumbnail_url = $4, image_url = $5, is_active = $6, collection_type = $7, description = $8 WHERE id = $9`,
+                        [vendorName, updatedSlug, JSON.stringify(rules), vendorThumbnail, vendorBackdrop, true, 'vendor', vendorDescription, collectionId]
                     );
 
                     // Emit collection.updated so Search Module indexes it
@@ -123,7 +125,7 @@ class VendorService {
                 const collection = await tenantInsert('collections', tenantId, {
                     name: vendorName,
                     slug: `${slug}-collection`,
-                    description: `Automatically created collection for vendor ${vendorName}`,
+                    description: vendorDescription || `Automatically created collection for vendor ${vendorName}`,
                     rules: JSON.stringify(rules),
                     created_by: userId,
                     thumbnail_url: vendorThumbnail,

@@ -77,8 +77,20 @@ async function tenantInsert(tableName, tenantId, data) {
  * Execute tenant-scoped UPDATE
  */
 async function tenantUpdate(tableName, tenantId, id, data) {
-    const keys = Object.keys(data);
-    const values = Object.values(data);
+    // Filter out undefined values to prevent accidental NULL updates for omitted fields
+    const filteredData = Object.keys(data).reduce((acc, key) => {
+        if (data[key] !== undefined) acc[key] = data[key];
+        return acc;
+    }, {});
+
+    const keys = Object.keys(filteredData);
+    const values = Object.values(filteredData);
+
+    if (keys.length === 0) {
+        // If nothing to update, just return the existing record
+        const res = await query(`SELECT * FROM ${tableName} WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+        return res.rows[0];
+    }
 
     const setClause = keys.map((key, i) => `${key} = $${i + 1}`).join(', ');
 
@@ -88,7 +100,7 @@ async function tenantUpdate(tableName, tenantId, id, data) {
     WHERE id = $${keys.length + 1} 
     AND tenant_id = $${keys.length + 2}
     RETURNING *
-  `;
+    `;
 
     const result = await query(sql, [...values, id, tenantId]);
     return result.rows[0];

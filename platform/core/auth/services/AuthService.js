@@ -292,6 +292,7 @@ class AuthService {
         if (updates.business_name !== undefined) allowedUpdates.business_name = updates.business_name;
         if (updates.business_thumbnail !== undefined) allowedUpdates.business_thumbnail = updates.business_thumbnail;
         if (updates.business_backdrop !== undefined) allowedUpdates.business_backdrop = updates.business_backdrop;
+        if (updates.business_description !== undefined) allowedUpdates.business_description = updates.business_description;
         if (updates.checkout_style !== undefined) allowedUpdates.checkout_style = updates.checkout_style;
         if (updates.whatsapp_phone !== undefined) allowedUpdates.whatsapp_phone = updates.whatsapp_phone;
 
@@ -306,13 +307,14 @@ class AuthService {
         // Use User.update
         const updatedUser = await User.update(tenantId, userId, allowedUpdates);
 
-        // Hook: Update vendor context if business_name, business_thumbnail or business_backdrop changed
-        if (updates.business_name !== undefined || updates.business_thumbnail !== undefined || updates.business_backdrop !== undefined) {
+        // Hook: Update vendor context if business_name, description, thumbnail or business_backdrop changed
+        if (updates.business_name !== undefined || updates.business_description !== undefined || updates.business_thumbnail !== undefined || updates.business_backdrop !== undefined) {
             const eventBus = require('../../../events/EventBus');
             eventBus.emitEvent('user.profile_updated', {
                 tenantId,
                 userId,
                 businessName: updates.business_name,
+                businessDescription: updates.business_description,
                 businessThumbnail: updates.business_thumbnail,
                 businessBackdrop: updates.business_backdrop
             });

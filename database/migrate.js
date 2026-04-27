@@ -30,7 +30,8 @@ async function runMigrations() {
         'migrations/064_normalize_theme_variables.js',
         'migrations/065_register_storefront_templates.js',
         'migrations/066_vendor_category_ledger.js',
-        'migrations/067_enhance_vendor_category_ledger_with_id.js'
+        'migrations/067_enhance_vendor_category_ledger_with_id.js',
+        'migrations/068_add_business_description_to_users.js'
     ];
 
     for (const schemaPath of schemas) {

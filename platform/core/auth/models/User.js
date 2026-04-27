@@ -28,6 +28,7 @@ class User {
             business_name: userData.business_name || null,
             business_thumbnail: userData.business_thumbnail || null,
             business_backdrop: userData.business_backdrop || null,
+            business_description: userData.business_description || null,
             checkout_style: userData.checkout_style || 'inhouse',
             whatsapp_phone: userData.whatsapp_phone || null,
             status: 'active',
