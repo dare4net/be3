@@ -62,7 +62,9 @@ function registerProductRoutes(router, eventBus) {
             AND p.deleted_at IS NULL
             AND ($9::boolean OR p.is_variant = false)
             AND (NOT $5::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 6, 8)})
-            AND ($7::boolean OR pc.category_id = ANY($2))
+            -- If it's a vendor, they should see ALL their products regardless of category access.
+            -- Category access restrictions ($7/allowedCategories) should only apply to non-vendor staff.
+            AND ($5::boolean OR $7::boolean OR pc.category_id = ANY($2))
             ORDER BY p.created_at DESC
             LIMIT $3 OFFSET $4
         `;
@@ -75,7 +77,8 @@ function registerProductRoutes(router, eventBus) {
             AND p.deleted_at IS NULL
             AND ($7::boolean OR p.is_variant = false)
             AND (NOT $3::boolean OR ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 4, 6)})
-            AND ($5::boolean OR pc.category_id = ANY($2))
+            -- Bypass category restriction for vendors (param $3 is isVendor)
+            AND ($3::boolean OR $5::boolean OR pc.category_id = ANY($2))
         `;
 
         const shouldFilterByVendor = isVendor;
