@@ -12,6 +12,7 @@ const SearchAnalyticsService = require('../services/SearchAnalyticsService');
 const FilterService = require('../services/FilterService');
 const RandomizationService = require('../services/RandomizationService');
 const ProductService = require('../../products/services/ProductService');
+const ClauseTraversalService = require('../services/ClauseTraversalService');
 const { generateSearchSEO } = require('../../../lib/searchSEO');
 
 function registerSearchRoutes(router) {
@@ -549,6 +550,46 @@ function registerSearchRoutes(router) {
             },
             supportedSorts: ['relevance', 'price_asc', 'price_desc', 'date_desc', 'date_asc'],
             supportedContentTypes: ['product', 'category', 'page']
+        });
+    }));
+    // ── Clause Traversal Cards (for ClauseGrid/CarouselWidgets) ──
+    router.get('/storefront/clause-cards', asyncHandler(async (req, res) => {
+        const {
+            mode,
+            category_id,
+            category_ids,
+            source_type,
+            parent_category_id,
+            attribute_code,
+            max_items = '12',
+            allow_repeat_attribute = 'false'
+        } = req.query;
+
+        if (!mode) {
+            return res.status(400).json({
+                success: false,
+                error: 'mode is required. Valid modes: category_fixed_attribute_traverse_clauses, category_fixed_traverse_attributes, traverse_categories_fixed_attribute, controlled_random'
+            });
+        }
+
+        const config = {
+            mode,
+            categoryId: category_id || null,
+            categoryIds: category_ids ? category_ids.split(',').map(s => s.trim()) : null,
+            sourceType: source_type || null,
+            parentCategoryId: parent_category_id || null,
+            attributeCode: attribute_code || null,
+            maxItems: parseInt(max_items, 10) || 12,
+            allowRepeatAttribute: allow_repeat_attribute === 'true'
+        };
+
+        const cards = await ClauseTraversalService.traverse(req.tenantId, config);
+
+        res.json({
+            success: true,
+            mode,
+            count: cards.length,
+            cards
         });
     }));
 }

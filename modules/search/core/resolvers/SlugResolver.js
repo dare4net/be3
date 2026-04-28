@@ -5,6 +5,7 @@
 
 const { query } = require('../../../../config/database');
 const { generateBrandedSEO } = require('../../../../lib/seoHelpers');
+const ClauseImageCache = require('../../services/ClauseImageCache');
 
 class SlugResolver {
     /**
@@ -35,9 +36,9 @@ class SlugResolver {
             [tenantId]
         );
 
-        // Fetch all categories
+        // Fetch all categories (include description for SEO fallback)
         const catsRes = await query(
-            `SELECT id, name, slug FROM categories WHERE tenant_id = $1 AND is_active = true`,
+            `SELECT id, name, slug, image_url, description, meta_description FROM categories WHERE tenant_id = $1 AND is_active = true`,
             [tenantId]
         );
 
@@ -71,10 +72,18 @@ class SlugResolver {
                             operator: clause.operator || '='
                         };
 
+                        // Resolve cached product image for this clause/category pair
+                        const clauseValue = Array.isArray(clause.value) ? clause.value[0] : (clause.value ?? '1');
+                        const cachedImage = await ClauseImageCache.getClauseImage(
+                            tenantId, cat.id, attr.code, clauseValue, clause.operator || '='
+                        );
+
                         const seo = generateBrandedSEO(
                             cat,
                             attr,
-                            normalizedClause
+                            normalizedClause,
+                            '', // baseUrl
+                            cachedImage // cached product image → OG image
                         );
 
                         return {
