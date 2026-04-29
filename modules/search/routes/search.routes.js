@@ -124,6 +124,15 @@ function registerSearchRoutes(router) {
             baseUrl
         );
 
+        // Enrich with stats and ratings
+        try {
+            if (searchResults.results && searchResults.results.length > 0) {
+                await ProductService.enrichWithStats(req.tenantId, searchResults.results);
+            }
+        } catch (err) {
+            console.error('[Search] Failed to enrich results with stats:', err);
+        }
+
         res.json({
             success: true,
             query: searchQuery,
@@ -190,6 +199,15 @@ function registerSearchRoutes(router) {
             userId: req.user?.id || null,
             include_stats: include_stats === 'true'
         });
+
+        // Enrich with stats and ratings
+        try {
+            if (searchResults.results && searchResults.results.length > 0) {
+                await ProductService.enrichWithStats(req.tenantId, searchResults.results);
+            }
+        } catch (err) {
+            console.error('[Search] Failed to enrich products results with stats:', err);
+        }
 
         res.json({
             success: true,
@@ -346,6 +364,15 @@ function registerSearchRoutes(router) {
             page: 1,
             perPage
         });
+
+        // Enrich with stats and ratings
+        try {
+            if (results.results && results.results.length > 0) {
+                await ProductService.enrichWithStats(req.tenantId, results.results);
+            }
+        } catch (err) {
+            console.error('[Search] Failed to enrich random category results with stats:', err);
+        }
 
         res.json({
             success: true,

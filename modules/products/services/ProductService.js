@@ -220,7 +220,7 @@ class ProductService {
     }
 
     /**
-     * Enrich products with analytics stats (impressions and wishlist count)
+     * Enrich products with analytics stats (impressions and wishlist count) and ratings
      * @param {string} tenantId 
      * @param {Array} products 
      */
@@ -251,8 +251,22 @@ class ProductService {
                 GROUP BY product_id
             `, [tenantId, productIds]);
 
-            // 3. Map stats
+            // 3. Query Ratings (Reviews Module)
+            let ratingsRes = { rows: [] };
+            try {
+                ratingsRes = await query(`
+                    SELECT product_id, average_rating, total_ratings, total_reviews
+                    FROM product_rating_summary
+                    WHERE tenant_id = $1
+                    AND product_id = ANY($2)
+                `, [tenantId, productIds]);
+            } catch (e) {
+                // Ignore if reviews module table doesn't exist
+            }
+
+            // 4. Map stats
             const statsMap = {};
+            const ratingsMap = {};
 
             analyticsRes.rows.forEach(row => {
                 if (!statsMap[row.entity_id]) statsMap[row.entity_id] = { impressions: 0, wishlist_count: 0 };
@@ -264,9 +278,18 @@ class ProductService {
                 statsMap[row.product_id].wishlist_count = parseInt(row.count);
             });
 
-            // 4. Inject back into products
+            ratingsRes.rows.forEach(row => {
+                ratingsMap[row.product_id] = {
+                    average_rating: row.average_rating,
+                    total_ratings: row.total_ratings,
+                    total_reviews: row.total_reviews
+                };
+            });
+
+            // 5. Inject back into products
             products.forEach(p => {
                 p.stats = statsMap[p.id] || { impressions: 0, wishlist_count: 0 };
+                p.rating_summary = ratingsMap[p.id] || null;
             });
         } catch (err) {
             console.error('[ProductService] Failed to enrich products with stats:', err);
