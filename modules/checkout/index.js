@@ -29,13 +29,11 @@ async function bootstrap(context) {
         // Process Checkout (Mock Payment - Allow Guests)
         router.post('/process', optionalAuth, asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
-            const { cartId, billingAddress, shippingAddress, paymentMethod, email } = req.body;
+            const { cartId, billingAddress, shippingAddress, paymentMethod, email, vendorId } = req.body;
 
-            console.log(`[Checkout] Processing request for tenant: ${tenantId}, user: ${user?.id || 'guest'}, cart: ${cartId}`);
-            console.log('[Checkout] Headers:', JSON.stringify(req.headers));
+            console.log(`[Checkout] Processing request for tenant: ${tenantId}, user: ${user?.id || 'guest'}, cart: ${cartId}, vendor: ${vendorId || 'ALL'}`);
 
-            // 1. Get Cart and Items
-            // In a real app, we'd verify stock levels here
+            // 1. Get Cart
             const { query } = require('../../config/database');
             const cartSql = `SELECT * FROM carts WHERE id = $1 AND tenant_id = $2`;
             const cartResult = await query(cartSql, [cartId, tenantId]);
@@ -44,20 +42,33 @@ async function bootstrap(context) {
                 return res.status(404).json({ error: 'Cart not found' });
             }
 
-            const itemsSql = `
-                SELECT ci.*, p.name as product_name, p.created_by as vendor_id, p.image_url 
-                FROM cart_items ci
-                LEFT JOIN products p ON ci.product_id = p.id
-                WHERE ci.cart_id = $1
-            `;
-            const itemsResult = await query(itemsSql, [cartId]);
+            // 2. Get items — filtered by vendor if provided
+            let itemsSql, itemsParams;
+            if (vendorId) {
+                itemsSql = `
+                    SELECT ci.*, p.name as product_name, p.created_by as vendor_id, p.image_url 
+                    FROM cart_items ci
+                    LEFT JOIN products p ON ci.product_id = p.id
+                    WHERE ci.cart_id = $1 AND p.created_by = $2
+                `;
+                itemsParams = [cartId, vendorId];
+            } else {
+                itemsSql = `
+                    SELECT ci.*, p.name as product_name, p.created_by as vendor_id, p.image_url 
+                    FROM cart_items ci
+                    LEFT JOIN products p ON ci.product_id = p.id
+                    WHERE ci.cart_id = $1
+                `;
+                itemsParams = [cartId];
+            }
+            const itemsResult = await query(itemsSql, itemsParams);
             const items = itemsResult.rows;
 
             if (items.length === 0) {
                 return res.status(400).json({ error: 'Cart is empty' });
             }
 
-            // 2. Calculate Totals
+            // 3. Calculate Totals (only for this vendor's items)
             let subtotal = 0;
             items.forEach(item => {
                 subtotal += parseFloat(item.price) * item.quantity;
@@ -68,11 +79,10 @@ async function bootstrap(context) {
             const shipping = 15.00;
             const total = subtotal + tax + shipping;
 
-            // 3. Mock Payment Processing
+            // 4. Mock Payment Processing
             console.log('[Checkout] Processing payment...');
-            // await PaymentGateway.charge(...)
 
-            // 4. Emit Payment Success (Triggers Order Creation)
+            // 5. Emit Payment Success (Triggers Order Creation)
             const paymentData = {
                 transactionId: `txn_${Date.now()}`,
                 amount: total,
@@ -85,6 +95,7 @@ async function bootstrap(context) {
                 email: user ? user.email : email,
                 billingAddress,
                 shippingAddress,
+                vendorId: vendorId || null,
                 items: items.map(item => ({
                     productId: item.product_id,
                     variantId: item.variant_id,
@@ -102,8 +113,23 @@ async function bootstrap(context) {
                 paymentData
             });
 
-            // 5. Clear Cart (or mark as converted)
-            await query(`UPDATE carts SET status = 'completed' WHERE id = $1`, [cartId]);
+            // 6. Remove only the checked-out items from the cart (not the whole cart)
+            const checkedOutItemIds = items.map(i => i.id);
+            await query(
+                `DELETE FROM cart_items WHERE id = ANY($1::uuid[])`,
+                [checkedOutItemIds]
+            );
+
+            // Check if cart still has items from other vendors
+            const remainingItems = await query(
+                `SELECT COUNT(*) as count FROM cart_items WHERE cart_id = $1`,
+                [cartId]
+            );
+            
+            // Only mark cart as completed if no items remain
+            if (parseInt(remainingItems.rows[0].count) === 0) {
+                await query(`UPDATE carts SET status = 'completed' WHERE id = $1`, [cartId]);
+            }
 
             res.json({
                 success: true,

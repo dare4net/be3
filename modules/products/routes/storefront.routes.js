@@ -139,6 +139,17 @@ function registerStorefrontRoutes(router) {
                 impressions: parseInt(statsRes.rows[0]?.impressions || 0),
                 wishlist_count: parseInt(statsRes.rows[0]?.wishlist_count || 0)
             };
+
+            // Get Rating Summary
+            try {
+                const ratingRes = await query(
+                    `SELECT average_rating, total_ratings, total_reviews FROM product_rating_summary WHERE tenant_id = $1 AND product_id = $2`,
+                    [req.tenantId, product.id]
+                );
+                product.rating_summary = ratingRes.rows[0] || null;
+            } catch (e) {
+                product.rating_summary = null;
+            }
         }
 
         // Resolve dynamic tags (publicly using null userId context as resolve handles product.created_by)
@@ -287,6 +298,19 @@ function registerStorefrontRoutes(router) {
         await ProductService.resolve(req.tenantId, null, product);
         const primaryCategory = product.categories[0] || null; // Fallback to first if no explicit primary
         // Ideally we'd match product.category_id but simpler logic for now matches first found
+
+        // Fetch real rating summary (graceful fallback if reviews module not loaded)
+        try {
+            const summaryRes = await query(
+                `SELECT * FROM product_rating_summary WHERE tenant_id = $1 AND product_id = $2`,
+                [req.tenantId, product.id]
+            );
+            if (summaryRes.rows[0]) {
+                product.rating_summary = summaryRes.rows[0];
+            }
+        } catch (e) {
+            // Graceful: reviews module may not be installed
+        }
 
         product.seo = mergeProductSEO(product, primaryCategory);
 

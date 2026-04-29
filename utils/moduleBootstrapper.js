@@ -121,6 +121,7 @@ class ModuleBootstrapper {
             { name: 'wishlist', path: path.join(__dirname, '../modules/wishlist'), envVar: 'MODULE_WISHLIST_ENABLED' },
             { name: 'vector', path: path.join(__dirname, '../modules/vector'), envVar: 'MODULE_VECTOR_ENABLED' },
             { name: 'media', path: path.join(__dirname, '../modules/media'), envVar: 'MODULE_MEDIA_ENABLED' },
+            { name: 'reviews', path: path.join(__dirname, '../modules/reviews'), envVar: 'MODULE_REVIEWS_ENABLED' },
         ];
 
         console.log('\n=== Loading Feature Modules ===');

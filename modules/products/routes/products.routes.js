@@ -392,7 +392,8 @@ function registerProductRoutes(router, eventBus) {
             twitter_image: req.body.twitter_image,
             canonical_url: req.body.canonical_url,
             robots: req.body.robots,
-            structured_data: req.body.structured_data
+            structured_data: req.body.structured_data,
+            whats_included: req.body.whats_included || []
         };
 
         const product = await tenantInsert('products', req.tenantId, productData);

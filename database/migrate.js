@@ -31,7 +31,9 @@ async function runMigrations() {
         'migrations/065_register_storefront_templates.js',
         'migrations/066_vendor_category_ledger.js',
         'migrations/067_enhance_vendor_category_ledger_with_id.js',
-        'migrations/068_add_business_description_to_users.js'
+        'migrations/068_add_business_description_to_users.js',
+        'migrations/069_add_whats_included_to_products.sql',
+        'migrations/070_create_reviews_module.sql'
     ];
 
     for (const schemaPath of schemas) {
