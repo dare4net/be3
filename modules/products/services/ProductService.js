@@ -227,7 +227,7 @@ class ProductService {
     static async enrichWithStats(tenantId, products) {
         if (!products || products.length === 0) return products;
 
-        const productIds = products.map(p => p.id).filter(Boolean);
+        const productIds = products.map(p => p.id || p.content_id).filter(Boolean);
         if (productIds.length === 0) return products;
 
         try {
@@ -288,8 +288,9 @@ class ProductService {
 
             // 5. Inject back into products
             products.forEach(p => {
-                p.stats = statsMap[p.id] || { impressions: 0, wishlist_count: 0 };
-                p.rating_summary = ratingsMap[p.id] || null;
+                const pid = p.id || p.content_id;
+                p.stats = statsMap[pid] || { impressions: 0, wishlist_count: 0 };
+                p.rating_summary = ratingsMap[pid] || null;
             });
         } catch (err) {
             console.error('[ProductService] Failed to enrich products with stats:', err);
