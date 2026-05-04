@@ -122,6 +122,8 @@ class ModuleBootstrapper {
             { name: 'vector', path: path.join(__dirname, '../modules/vector'), envVar: 'MODULE_VECTOR_ENABLED' },
             { name: 'media', path: path.join(__dirname, '../modules/media'), envVar: 'MODULE_MEDIA_ENABLED' },
             { name: 'reviews', path: path.join(__dirname, '../modules/reviews'), envVar: 'MODULE_REVIEWS_ENABLED' },
+            { name: 'bloom', path: path.join(__dirname, '../modules/bloom'), envVar: 'MODULE_BLOOM_ENABLED' },
+            { name: 'be3_ai', path: path.join(__dirname, '../modules/be3_ai'), envVar: 'MODULE_BE3_AI_ENABLED' },
         ];
 
         console.log('\n=== Loading Feature Modules ===');

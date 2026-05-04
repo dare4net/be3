@@ -46,7 +46,8 @@ class SearchService {
             image: searchImage = null,
             userId = null,
             include_stats = false,
-            threshold = null
+            threshold = null,
+            strict = null  // null = normal AND→OR waterfall, true = AND only, false = OR only
         } = params;
 
         // Recursive Category Fetch + Auto Drill-down
@@ -307,12 +308,18 @@ class SearchService {
         }
 
         // Waterfall Strategy: Try AND first, then OR if filters exist
-        const modes = ['AND'];
-
-        // Determine if relaxation is allowed (requires at least one filter context)
-        const hasFilters = Object.keys(filters).length > 0 || originalCategoryId || collection;
-        if (hasFilters && finalQuery) {
-            modes.push('OR');
+        // strict=true → AND only, strict=false → OR only, null/undefined → normal waterfall
+        let modes;
+        if (strict === true) {
+            modes = ['AND'];
+        } else if (strict === false) {
+            modes = ['OR'];
+        } else {
+            modes = ['AND'];
+            const hasFilters = Object.keys(filters).length > 0 || originalCategoryId || collection;
+            if (hasFilters && finalQuery) {
+                modes.push('OR');
+            }
         }
 
         let lastAttempt = null;
