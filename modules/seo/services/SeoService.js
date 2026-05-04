@@ -33,7 +33,7 @@ class SeoService {
             WHERE tenant_id = $1 AND status = 'active'
         `, [tenantId]);
         products.rows.forEach(p => {
-            xml += this._createUrlNode(`${baseUrl}/${p.handle}`, p.updated_at, '0.9', 'weekly');
+            xml += this._createUrlNode(`${baseUrl}/products/${p.handle}`, p.updated_at, '0.9', 'weekly');
         });
 
         // Categories
