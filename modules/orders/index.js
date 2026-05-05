@@ -313,9 +313,26 @@ async function bootstrap(context) {
         // PRINCIPLE: All inter-module communication is event-based
         // Listen for payment success to create orders
         eventBus.registerListener('payment.success', async (event) => {
-            const { tenantId, cartId, paymentData } = event.data;
+            const { tenantId, cartId, paymentData, orderId: existingOrderId } = event.data;
 
             try {
+                // If the order was pre-created during payment initialization (Paystack flow),
+                // we just need to emit the order.created event — the order already exists.
+                if (paymentData?.fromExistingOrder && existingOrderId) {
+                    console.log(`[Orders] Payment confirmed for existing order: ${existingOrderId}`);
+                    const orderResult = await query(
+                        `SELECT order_number FROM orders WHERE id = $1 AND tenant_id = $2`,
+                        [existingOrderId, tenantId]
+                    );
+                    if (orderResult.rows[0]) {
+                        eventBus.emitEvent('order.created', {
+                            tenantId,
+                            orderId: existingOrderId,
+                            orderNumber: orderResult.rows[0].order_number,
+                        });
+                    }
+                    return; // Do NOT create a duplicate order
+                }
                 // We should group items by vendorId
                 const itemsByVendor = {};
                 for (const item of paymentData.items || []) {

@@ -21,8 +21,7 @@ async function tenantIdentifier(req, res, next) {
             '/modules', // Global module registry
             '/products/admin', // Super admin product management
             '/auth/signup', // Public signup (creates tenant + user)
-            '/auth/signup', // Public signup (creates tenant + user)
-            // '/auth/refresh', // Token refresh (uses token for context) - MOVED TO AUTHENTICATED/TENANT SCOPED
+            '/payments/webhooks', // Payment gateway webhooks (server-to-server, no tenant header)
         ];
 
         // Check if this is a public route

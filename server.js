@@ -42,6 +42,15 @@ const io = socketIo(server, {
 // Attach io to app for access in modules
 app.set('io', io);
 
+// Payment rooms — clients join to receive real-time payment confirmation
+io.on('connection', (socket) => {
+    socket.on('join:payment', (reference) => {
+        if (reference && typeof reference === 'string') {
+            socket.join(`payment:${reference}`);
+        }
+    });
+});
+
 const PORT = process.env.PORT || 3000;
 
 /**
@@ -88,7 +97,13 @@ async function initializeApp() {
     app.use(cookieParser()); // Read HTTP-Only cookies
     app.use(compression()); // Response compression
     app.use(morgan('combined')); // Logging
-    app.use(express.json({ limit: '50mb' })); // JSON body parser
+
+    // CRITICAL: The Paystack webhook MUST use raw body for HMAC-SHA512 signature verification.
+    // This route is registered BEFORE express.json() so the body buffer is preserved.
+    // Any route registered after express.json() will receive a parsed object, not a Buffer.
+    app.use('/payments/webhooks/paystack', express.raw({ type: 'application/json' }));
+
+    app.use(express.json({ limit: '50mb' })); // JSON body parser (all other routes)
     app.use(express.urlencoded({ limit: '50mb', extended: true }));
     app.use(express.urlencoded({ extended: true })); // URL-encoded body parser
 

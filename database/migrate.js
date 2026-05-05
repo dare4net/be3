@@ -36,7 +36,9 @@ async function runMigrations() {
         'migrations/070_create_reviews_module.sql',
         'migrations/071_add_oauth_to_users.js',
         'migrations/072_add_user_profile_fields.js',
-        'migrations/073_add_email_verification_expiry.js'
+        'migrations/073_add_email_verification_expiry.js',
+        'migrations/074_paystack_payments.js',
+        'migrations/075_expand_orders_status_constraint.js'
     ];
 
     for (const schemaPath of schemas) {
