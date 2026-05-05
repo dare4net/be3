@@ -312,7 +312,8 @@ function registerStorefrontRoutes(router) {
             // Graceful: reviews module may not be installed
         }
 
-        product.seo = mergeProductSEO(product, primaryCategory);
+        const baseUrl = req.headers['x-storefront-url'] || '';
+        product.seo = mergeProductSEO(product, primaryCategory, baseUrl);
 
         res.json({ success: true, product });
     }));
