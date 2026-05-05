@@ -37,6 +37,7 @@ class User {
             status: 'active',
             email_verified: false,
             email_verification_token: userData.email_verification_token || null,
+            email_verification_expires: userData.email_verification_expires || null,
         };
 
         return await tenantInsert('users', tenantId, data);
@@ -74,6 +75,32 @@ class User {
     }
 
     /**
+     * Find user by verification token
+     */
+    static async findByVerificationToken(tenantId, token) {
+        const sql = `
+      SELECT * FROM users 
+      WHERE tenant_id = $1 AND email_verification_token = $2 
+      AND (email_verification_expires IS NULL OR email_verification_expires > NOW())
+      AND deleted_at IS NULL
+    `;
+        const result = await query(sql, [tenantId, token]);
+        return result.rows[0] || null;
+    }
+
+    /**
+     * Find user by password reset token
+     */
+    static async findByResetToken(tenantId, token) {
+        const sql = `
+      SELECT * FROM users 
+      WHERE tenant_id = $1 AND password_reset_token = $2 AND deleted_at IS NULL
+    `;
+        const result = await query(sql, [tenantId, token]);
+        return result.rows[0] || null;
+    }
+
+    /**
      * Update user
      */
     static async update(tenantId, userId, updates) {
@@ -87,6 +114,17 @@ class User {
         return await tenantUpdate('users', tenantId, userId, {
             email_verified: true,
             email_verification_token: null,
+            email_verification_expires: null,
+        });
+    }
+
+    /**
+     * Set email verification token
+     */
+    static async setEmailVerificationToken(tenantId, userId, token, expiresAt) {
+        return await tenantUpdate('users', tenantId, userId, {
+            email_verification_token: token,
+            email_verification_expires: expiresAt,
         });
     }
 

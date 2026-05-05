@@ -529,6 +529,30 @@ router.get('/verify-email/:token', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * POST /auth/resend-verification
+ * Resend verification email
+ */
+router.post('/resend-verification', asyncHandler(async (req, res) => {
+    const { tenantId } = req;
+    const { email } = req.body;
+
+    if (!tenantId) {
+        return res.status(400).json({ error: 'TenantRequired', message: 'Tenant context is required' });
+    }
+
+    if (!email) {
+        return res.status(400).json({ error: 'ValidationError', message: 'Email is required' });
+    }
+
+    try {
+        await AuthService.resendVerification(tenantId, email);
+        res.json({ success: true, message: 'Verification email resent successfully' });
+    } catch (err) {
+        res.status(400).json({ error: 'ResendFailed', message: err.message });
+    }
+}));
+
+/**
  * GET /auth/me
  * Get current user (protected route)
  */

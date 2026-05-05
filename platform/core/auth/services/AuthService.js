@@ -30,8 +30,10 @@ class AuthService {
             parseInt(process.env.BCRYPT_ROUNDS) || 10
         );
 
-        // Generate email verification token
+        // Generate email verification token with 24h expiry
         const emailVerificationToken = uuidv4();
+        const emailVerificationExpires = new Date();
+        emailVerificationExpires.setHours(emailVerificationExpires.getHours() + 24);
 
         // Create user
         const user = await User.create(tenantId, {
@@ -40,6 +42,7 @@ class AuthService {
             first_name: userData.first_name,
             last_name: userData.last_name,
             email_verification_token: emailVerificationToken,
+            email_verification_expires: emailVerificationExpires,
         });
 
         // PRINCIPLE: All inter-module communication is event-based
@@ -48,6 +51,7 @@ class AuthService {
             tenantId,
             userId: user.id,
             email: user.email,
+            firstName: user.first_name,
             emailVerificationToken,
         });
 
@@ -308,14 +312,9 @@ class AuthService {
      */
     static async resetPassword(tenantId, resetToken, newPassword) {
         // Find user by reset token
-        const result = await User.findAll(tenantId, { limit: 1000 });
-        const user = result.find(u =>
-            u.password_reset_token === resetToken &&
-            u.password_reset_expires &&
-            new Date(u.password_reset_expires) > new Date()
-        );
+        const user = await User.findByResetToken(tenantId, resetToken);
 
-        if (!user) {
+        if (!user || !user.password_reset_expires || new Date(user.password_reset_expires) < new Date()) {
             throw new Error('Invalid or expired reset token');
         }
 
@@ -344,8 +343,7 @@ class AuthService {
      * Verify email
      */
     static async verifyEmail(tenantId, token) {
-        const result = await User.findAll(tenantId, { limit: 1000 });
-        const user = result.find(u => u.email_verification_token === token);
+        const user = await User.findByVerificationToken(tenantId, token);
 
         if (!user) {
             throw new Error('Invalid verification token');
@@ -358,6 +356,38 @@ class AuthService {
             tenantId,
             userId: user.id,
             email: user.email,
+        });
+
+        return true;
+    }
+
+    /**
+     * Resend verification email
+     */
+    static async resendVerification(tenantId, email) {
+        const user = await User.findByEmail(tenantId, email);
+        if (!user) {
+            throw new Error('User not found');
+        }
+
+        if (user.email_verified) {
+            throw new Error('Email is already verified');
+        }
+
+        // Generate new token with 24h expiry
+        const token = uuidv4();
+        const expiresAt = new Date();
+        expiresAt.setHours(expiresAt.getHours() + 24);
+
+        await User.setEmailVerificationToken(tenantId, user.id, token, expiresAt);
+
+        // Emit event for mail service
+        eventBus.emitEvent('user.registered', {
+            tenantId,
+            userId: user.id,
+            email: user.email,
+            firstName: user.first_name,
+            emailVerificationToken: token,
         });
 
         return true;
