@@ -32,8 +32,8 @@ const io = socketIo(server, {
         origin: (origin, callback) => {
             if (!origin) return callback(null, true);
             const isLocalIp = /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-            const isAllowedDomain = origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
-
+            const isAllowedDomain = origin === 'https://be3.shop' || origin === 'http://be3.shop' || origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
+            
             if (isLocalIp || isAllowedDomain) {
                 callback(null, true);
             } else {
@@ -97,7 +97,7 @@ async function initializeApp() {
             if (!origin) return callback(null, true);
             
             const isLocalIp = /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-            const isAllowedDomain = origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
+            const isAllowedDomain = origin === 'https://be3.shop' || origin === 'http://be3.shop' || origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
 
             if (isLocalIp || isAllowedDomain || allowedOrigins.includes(origin)) {
                 callback(null, true);
