@@ -319,7 +319,7 @@ async function bootstrap(context) {
                 // If the order was pre-created during payment initialization (Paystack flow),
                 // we just need to emit the order.created event — the order already exists.
                 if (paymentData?.fromExistingOrder && existingOrderId) {
-                    console.log(`[Orders] Payment confirmed for existing order: ${existingOrderId}`);
+                    console.log(`[Orders] Payment confirmed for pre-created order: ${existingOrderId}`);
                     const orderResult = await query(
                         `SELECT order_number FROM orders WHERE id = $1 AND tenant_id = $2`,
                         [existingOrderId, tenantId]

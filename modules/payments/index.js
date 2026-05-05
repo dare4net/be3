@@ -305,7 +305,7 @@ async function bootstrap(context) {
                 });
             }
 
-            // 7. Create payment record (UNIQUE constraint on `reference` prevents duplicates)
+            // 7. Create payment record
             await tenantInsert('payments', tenantId, {
                 order_id: order.id,
                 user_id: user?.id || null,
@@ -318,7 +318,19 @@ async function bootstrap(context) {
                 metadata: JSON.stringify({ cartId, orderNumber }),
             });
 
-            // 8. Call Paystack API
+            // 8. Remove only the checked-out items from the cart (surgical checkout).
+            //    The cart itself and any remaining items are untouched.
+            const orderedProductIds = items.map(i => i.product_id);
+            if (orderedProductIds.length > 0) {
+                await query(
+                    `DELETE FROM cart_items
+                     WHERE cart_id = $1
+                       AND product_id = ANY($2::uuid[])`,
+                    [cartId, orderedProductIds]
+                );
+            }
+
+            // 9. Call Paystack API
             const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3003';
             const callbackUrl = `${frontendUrl}/checkout/verify`;
 
@@ -332,7 +344,7 @@ async function bootstrap(context) {
                     orderId: order.id,
                     cartId,
                     userId: user?.id || null,
-                    orderNumber,
+                    orderNumber: order.order_number,
                 },
             });
 
@@ -341,40 +353,153 @@ async function bootstrap(context) {
                 authorization_url: paystackData.authorization_url,
                 reference,
                 orderId: order.id,
-                orderNumber,
+                orderNumber: order.order_number,
                 total: totalNGN,
             });
         }));
 
         // =====================================================================
         // GET /payments/paystack/status/:reference
-        // Frontend polls this — checks OUR DB, not Paystack API
+        // Verify page polls this — returns payment + order state
         // =====================================================================
         router.get('/paystack/status/:reference', optionalAuth, asyncHandler(async (req, res) => {
             const { reference } = req.params;
             const { tenantId } = req;
 
-            const paymentResult = await query(
-                `SELECT p.*, o.order_number, o.status as order_status, o.id as order_id
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
+
+            const result = await query(
+                `SELECT p.status as p_status, p.processed_at,
+                        o.id as order_id, o.order_number, o.status as order_status,
+                        o.payment_status as o_p_status, o.created_at as order_created_at
                  FROM payments p
                  LEFT JOIN orders o ON p.order_id = o.id
-                 WHERE p.reference = $1 AND p.tenant_id = $2`,
+                 WHERE p.reference = $1 AND p.tenant_id = $2
+                 ORDER BY p.created_at DESC
+                 LIMIT 1`,
                 [reference, tenantId]
             );
 
-            if (!paymentResult.rows[0]) {
+            if (!result.rows[0]) {
                 return res.status(404).json({ error: 'NotFound', message: 'Payment not found' });
             }
 
-            const payment = paymentResult.rows[0];
+            const row = result.rows[0];
+
+            // Derive effective status for the frontend state machine
+            // Normalize: payments table uses 'succeeded', orders table uses 'paid'
+            let effectiveStatus = row.p_status; // 'processing' | 'succeeded' | 'failed'
+            if (row.o_p_status === 'paid') effectiveStatus = 'succeeded';
+
+            // If still processing after 30 minutes, flag as timed_out
+            if (effectiveStatus === 'processing' && row.order_created_at) {
+                const ageMinutes = (Date.now() - new Date(row.order_created_at).getTime()) / 60000;
+                if (ageMinutes > 30) effectiveStatus = 'timed_out';
+            }
 
             return res.json({
                 success: true,
-                status: payment.status,
-                orderId: payment.order_id,
-                orderNumber: payment.order_number,
+                status: effectiveStatus,
+                orderId: row.order_id,
+                orderNumber: row.order_number,
             });
         }));
+
+        // =====================================================================
+        // POST /payments/paystack/retry/:orderId
+        // Retry payment — ONLY allowed if payment_status is explicitly 'failed'
+        // Blocked for: processing, pending, timed_out, succeeded
+        // =====================================================================
+        router.post('/paystack/retry/:orderId', optionalAuth, asyncHandler(async (req, res) => {
+            const { orderId } = req.params;
+            const { tenantId, user } = req;
+            const { email: guestEmail } = req.body;
+
+            // 1. Fetch the order
+            const orderResult = await query(
+                `SELECT * FROM orders WHERE id = $1 AND tenant_id = $2`,
+                [orderId, tenantId]
+            );
+            if (!orderResult.rows[0]) {
+                return res.status(404).json({ error: 'OrderNotFound', message: 'Order not found' });
+            }
+            const order = orderResult.rows[0];
+
+            // 2. Hard block: only retry if payment_status is 'failed'
+            if (order.payment_status !== 'failed') {
+                const messages = {
+                    paid: 'This order has already been paid.',
+                    pending: 'Payment is still being verified. Please wait.',
+                    processing: 'Payment is still processing. Please wait before retrying.',
+                };
+                return res.status(409).json({
+                    error: 'RetryNotAllowed',
+                    message: messages[order.payment_status] || 'Retry is not allowed for this order.',
+                    payment_status: order.payment_status,
+                });
+            }
+
+            const email = user?.email || guestEmail || order.customer_email;
+            if (!email) {
+                return res.status(400).json({ error: 'ValidationError', message: 'Email is required' });
+            }
+
+            // 3. Generate a fresh reference for this retry attempt
+            const reference = `be3_${uuidv4().replace(/-/g, '')}`;
+
+            // 4. Reset order status to pending_payment and update reference
+            await query(
+                `UPDATE orders
+                 SET status = 'pending_payment',
+                     payment_status = 'pending',
+                     paystack_reference = $1,
+                     updated_at = NOW()
+                 WHERE id = $2`,
+                [reference, orderId]
+            );
+
+            // 5. Create new payment attempt record
+            await tenantInsert('payments', tenantId, {
+                order_id: orderId,
+                user_id: user?.id || null,
+                provider: 'paystack',
+                reference,
+                idempotency_key: reference,
+                amount: parseFloat(order.total),
+                currency: order.currency || 'NGN',
+                status: 'processing',
+                metadata: JSON.stringify({ retry: true, orderId }),
+            });
+
+            // 6. Initialize with Paystack
+            const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3003';
+            const callbackUrl = `${frontendUrl}/checkout/verify`;
+            const totalKobo = Math.round(parseFloat(order.total) * 100);
+
+            const paystackData = await PaystackService.initializeTransaction({
+                reference,
+                email,
+                amountKobo: totalKobo,
+                callbackUrl,
+                metadata: {
+                    tenantId,
+                    orderId,
+                    userId: user?.id || null,
+                    orderNumber: order.order_number,
+                    isRetry: true,
+                },
+            });
+
+            return res.status(201).json({
+                success: true,
+                authorization_url: paystackData.authorization_url,
+                reference,
+                orderId,
+            });
+        }));
+
 
         app.use('/payments', router);
         console.log('[Payments] Paystack module initialized');

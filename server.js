@@ -29,11 +29,20 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: [
-            process.env.FRONTEND_URL || 'http://localhost:3000',
-            process.env.ADMIN_URL || 'http://localhost:3001',
-            /\.render\.com$/
-        ],
+        origin: (origin, callback) => {
+            if (!origin) return callback(null, true);
+            const isLocalIp = /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+            const isAllowedDomain = origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
+
+            if (isLocalIp || isAllowedDomain) {
+                callback(null, true);
+            } else {
+                callback(null, [
+                    process.env.FRONTEND_URL || 'http://localhost:3000',
+                    process.env.ADMIN_URL || 'http://localhost:3001'
+                ]);
+            }
+        },
         methods: ["GET", "POST"],
         credentials: true
     }
@@ -75,7 +84,7 @@ async function initializeApp() {
 
     // Global middleware
     app.use(helmet()); // Security headers
-    
+
     // Dynamic CORS for multi-tenant and local development
     const allowedOrigins = [
         process.env.FRONTEND_URL || 'http://localhost:3000',
@@ -86,8 +95,12 @@ async function initializeApp() {
     app.use(cors({
         origin: function (origin, callback) {
             if (!origin) return callback(null, true);
-            if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com')) {
-                callback(null, origin); // Reflect the exact matching origin
+            
+            const isLocalIp = /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+            const isAllowedDomain = origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
+
+            if (isLocalIp || isAllowedDomain || allowedOrigins.includes(origin)) {
+                callback(null, true);
             } else {
                 callback(new Error('Not allowed by CORS'));
             }
@@ -122,7 +135,7 @@ async function initializeApp() {
 
     // Health check endpoint (no tenant required)
     app.get('/health', (req, res) => {
-      res.status(200).send('OK');
+        res.status(200).send('OK');
     });
 
     // Root endpoint
