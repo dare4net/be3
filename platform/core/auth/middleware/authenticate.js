@@ -13,17 +13,22 @@ const User = require('../models/User');
  */
 async function authenticate(req, res, next) {
     try {
-        // Get token from Authorization header
+        // Get token from Authorization header or cookies
+        let token;
         const authHeader = req.headers.authorization;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.substring(7);
+        } else if (req.cookies && req.cookies.accessToken) {
+            token = req.cookies.accessToken;
+        }
+
+        if (!token) {
             return res.status(401).json({
                 error: 'Unauthorized',
                 message: 'No token provided',
             });
         }
-
-        const token = authHeader.substring(7); // Remove 'Bearer ' prefix
 
         // Verify token
         let decoded;
@@ -88,13 +93,18 @@ async function authenticate(req, res, next) {
  */
 async function optionalAuth(req, res, next) {
     try {
+        let token;
         const authHeader = req.headers.authorization;
 
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return next();
+        if (authHeader && authHeader.startsWith('Bearer ')) {
+            token = authHeader.substring(7);
+        } else if (req.cookies && req.cookies.accessToken) {
+            token = req.cookies.accessToken;
         }
 
-        const token = authHeader.substring(7);
+        if (!token) {
+            return next();
+        }
 
         const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 

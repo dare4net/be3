@@ -31,6 +31,9 @@ class User {
             business_description: userData.business_description || null,
             checkout_style: userData.checkout_style || 'inhouse',
             whatsapp_phone: userData.whatsapp_phone || null,
+            avatar_url: userData.avatar_url || null,
+            gender: userData.gender || null,
+            dob: userData.dob || null,
             status: 'active',
             email_verified: false,
             email_verification_token: userData.email_verification_token || null,
@@ -55,6 +58,18 @@ class User {
       WHERE tenant_id = $1 AND email = $2 AND deleted_at IS NULL
     `;
         const result = await query(sql, [tenantId, email.toLowerCase()]);
+        return result.rows[0] || null;
+    }
+
+    /**
+     * Find user by Google ID (tenant-scoped)
+     */
+    static async findByGoogleId(tenantId, googleId) {
+        const sql = `
+      SELECT * FROM users 
+      WHERE tenant_id = $1 AND google_id = $2 AND deleted_at IS NULL
+    `;
+        const result = await query(sql, [tenantId, googleId]);
         return result.rows[0] || null;
     }
 

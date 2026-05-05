@@ -10,6 +10,7 @@ require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
 const compression = require('compression');
 
@@ -65,7 +66,26 @@ async function initializeApp() {
 
     // Global middleware
     app.use(helmet()); // Security headers
-    app.use(cors()); // CORS
+    
+    // Dynamic CORS for multi-tenant and local development
+    const allowedOrigins = [
+        process.env.FRONTEND_URL || 'http://localhost:3000',
+        process.env.ADMIN_URL || 'http://localhost:3001',
+        'http://localhost:3002',
+        'http://localhost:3003'
+    ];
+    app.use(cors({
+        origin: function (origin, callback) {
+            if (!origin) return callback(null, true);
+            if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com')) {
+                callback(null, origin); // Reflect the exact matching origin
+            } else {
+                callback(new Error('Not allowed by CORS'));
+            }
+        },
+        credentials: true
+    }));
+    app.use(cookieParser()); // Read HTTP-Only cookies
     app.use(compression()); // Response compression
     app.use(morgan('combined')); // Logging
     app.use(express.json({ limit: '50mb' })); // JSON body parser

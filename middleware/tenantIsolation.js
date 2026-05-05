@@ -77,6 +77,25 @@ async function tenantIdentifier(req, res, next) {
             }
         }
 
+        // Method 4: Extract from query parameter (for OAuth redirects and public links)
+        if (!tenantId && req.query) {
+            if (req.query.tenantId) {
+                tenantId = req.query.tenantId;
+            } else if (req.query.state) {
+                // OAuth callbacks return the state parameter, which we now encode as base64 JSON {t: tenantId, r: returnUrl}
+                try {
+                    const decoded = JSON.parse(Buffer.from(req.query.state, 'base64').toString('utf8'));
+                    if (decoded && decoded.t) {
+                        tenantId = decoded.t;
+                    } else {
+                        tenantId = req.query.state;
+                    }
+                } catch (e) {
+                    tenantId = req.query.state;
+                }
+            }
+        }
+
         if (!tenantId) {
             return res.status(400).json({
                 error: 'TenantRequired',

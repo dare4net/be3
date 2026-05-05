@@ -111,6 +111,113 @@ class AuthService {
     }
 
     /**
+     * Login or Register user via Google OAuth
+     */
+    static async googleLogin(tenantId, profile) {
+        if (!tenantId) {
+            throw new Error('Tenant ID is required for OAuth login');
+        }
+
+        const email = profile.emails && profile.emails.length > 0 ? profile.emails[0].value : null;
+        if (!email) {
+            throw new Error('Google account must have an email address');
+        }
+
+        const googleId = profile.id;
+        const firstName = profile.name ? profile.name.givenName : '';
+        const lastName = profile.name ? profile.name.familyName : '';
+        const avatarUrl = profile.photos && profile.photos.length > 0 ? profile.photos[0].value : null;
+        
+        let gender = null;
+        let dob = null;
+        if (profile._json) {
+            if (profile._json.gender) gender = profile._json.gender;
+            if (profile._json.birthday) dob = profile._json.birthday;
+        }
+
+        // 1. Try to find user by Google ID
+        let user = await User.findByGoogleId(tenantId, googleId);
+
+        if (!user) {
+            // 2. Try to find user by Email
+            user = await User.findByEmail(tenantId, email);
+
+            if (user) {
+                // Link Google ID to existing account and backfill missing data
+                const updates = { google_id: googleId };
+                if (!user.avatar_url && avatarUrl) updates.avatar_url = avatarUrl;
+                if (!user.gender && gender) updates.gender = gender;
+                if (!user.dob && dob) updates.dob = dob;
+
+                await User.update(tenantId, user.id, updates);
+                user.google_id = googleId;
+                if (updates.avatar_url) user.avatar_url = avatarUrl;
+                if (updates.gender) user.gender = gender;
+                if (updates.dob) user.dob = dob;
+            } else {
+                // 3. Create new user
+                user = await User.create(tenantId, {
+                    email: email,
+                    google_id: googleId,
+                    first_name: firstName,
+                    last_name: lastName,
+                    avatar_url: avatarUrl,
+                    gender: gender,
+                    dob: dob,
+                    email_verification_token: null, // OAuth implies email is verified
+                });
+                
+                // Assign default role (e.g., Customer)
+                const RoleService = require('../../roles/services/RoleService');
+                try {
+                    await RoleService.assignRoleToUser(tenantId, user.id, 'Customer');
+                } catch (err) {
+                    console.error('Failed to assign default role to OAuth user:', err);
+                }
+            }
+        }
+
+        // Check if user is active
+        if (user.status !== 'active') {
+            throw new Error('Account is suspended or deleted');
+        }
+
+        // Update last login
+        await User.updateLastLogin(tenantId, user.id);
+
+        // Generate tokens
+        const accessToken = this._generateAccessToken(user);
+        const newRefreshToken = this._generateRefreshToken(user);
+
+        // Store refresh token
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 7);
+        await RefreshToken.create(tenantId, user.id, newRefreshToken, expiresAt);
+
+        // Emit event
+        eventBus.emitEvent('user.logged_in', {
+            tenantId,
+            userId: user.id,
+            email: user.email,
+            method: 'google'
+        });
+
+        // Get comprehensive permission context
+        const PermissionService = require('../../roles/services/PermissionService');
+        const permissionContext = await PermissionService.getUserPermissionContext(tenantId, user.id);
+
+        return {
+            user: this._sanitizeUser(user),
+            accessToken,
+            refreshToken: newRefreshToken,
+            permissions: permissionContext.permissions,
+            roles: permissionContext.roles,
+            allowedCategories: permissionContext.categoryAccess.allowedCategories,
+            hasUnrestrictedCategoryAccess: permissionContext.categoryAccess.hasUnrestrictedAccess
+        };
+    }
+
+    /**
      * Refresh access token
      */
     static async refreshAccessToken(refreshTokenString, tenantId) {
@@ -295,6 +402,9 @@ class AuthService {
         if (updates.business_description !== undefined) allowedUpdates.business_description = updates.business_description;
         if (updates.checkout_style !== undefined) allowedUpdates.checkout_style = updates.checkout_style;
         if (updates.whatsapp_phone !== undefined) allowedUpdates.whatsapp_phone = updates.whatsapp_phone;
+        if (updates.avatar_url !== undefined) allowedUpdates.avatar_url = updates.avatar_url;
+        if (updates.gender !== undefined) allowedUpdates.gender = updates.gender;
+        if (updates.dob !== undefined) allowedUpdates.dob = updates.dob;
 
         // Handle password update
         if (updates.password) {

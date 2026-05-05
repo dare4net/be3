@@ -11,6 +11,26 @@ const AuthService = require('./services/AuthService');
 const { authenticate } = require('./middleware/authenticate');
 const authorize = require('../roles/middleware/authorize');
 const { asyncHandler } = require('../../../middleware/errorHandler');
+const passport = require('./passport');
+
+// Helper to set HTTP-Only cookies
+function setTokenCookies(res, tokens) {
+    const isProd = process.env.NODE_ENV === 'production';
+    const cookieOpts = { httpOnly: true, secure: isProd, sameSite: isProd ? 'none' : 'lax' };
+    if (tokens.accessToken) {
+        res.cookie('accessToken', tokens.accessToken, { ...cookieOpts, maxAge: 15 * 60 * 1000 });
+    }
+    if (tokens.refreshToken) {
+        res.cookie('refreshToken', tokens.refreshToken, { ...cookieOpts, maxAge: 7 * 24 * 60 * 60 * 1000 });
+    }
+}
+
+function clearTokenCookies(res) {
+    const isProd = process.env.NODE_ENV === 'production';
+    const cookieOpts = { httpOnly: true, secure: isProd, sameSite: isProd ? 'none' : 'lax' };
+    res.clearCookie('accessToken', cookieOpts);
+    res.clearCookie('refreshToken', cookieOpts);
+}
 
 const router = express.Router();
 
@@ -139,6 +159,9 @@ router.post('/signup', asyncHandler(async (req, res) => {
         const tokens = await AuthService.login(tenant.id, value.email, value.password);
         console.log('[Signup] Signup complete, user logged in');
 
+        // Set HTTP-Only cookies
+        setTokenCookies(res, tokens);
+
         res.status(201).json({
             success: true,
             message: 'Account created successfully',
@@ -252,10 +275,13 @@ router.post('/login', asyncHandler(async (req, res) => {
 
         console.log('[Login] Login successful, user:', result.user.email);
 
+        // Set HTTP-Only cookies
+        setTokenCookies(res, result);
+
         res.json({
             success: true,
             message: 'Login successful',
-            token: result.accessToken,  // Match signup response
+            token: result.accessToken,  // Keep for backwards compatibility if needed
             ...result,
         });
     } catch (err) {
@@ -283,7 +309,17 @@ router.post('/refresh', asyncHandler(async (req, res) => {
 
     try {
         const { tenantId } = req;
-        const tokens = await AuthService.refreshAccessToken(value.refreshToken, tenantId);
+        // Check cookie first, fallback to body
+        const tokenToRefresh = req.cookies?.refreshToken || value.refreshToken;
+        
+        if (!tokenToRefresh) {
+            return res.status(400).json({ error: 'ValidationError', message: 'Refresh token required' });
+        }
+
+        const tokens = await AuthService.refreshAccessToken(tokenToRefresh, tenantId);
+
+        // Set new HTTP-Only cookies
+        setTokenCookies(res, tokens);
 
         res.json({
             success: true,
@@ -303,14 +339,95 @@ router.post('/refresh', asyncHandler(async (req, res) => {
  */
 router.post('/logout', authenticate, asyncHandler(async (req, res) => {
     const { tenantId, user } = req;
-    const { refreshToken } = req.body;
+    const refreshToken = req.cookies?.refreshToken || req.body.refreshToken;
 
-    await AuthService.logout(tenantId, user.id, refreshToken);
+    if (refreshToken) {
+        await AuthService.logout(tenantId, user.id, refreshToken);
+    }
+
+    clearTokenCookies(res);
 
     res.json({
         success: true,
         message: 'Logged out successfully',
     });
+}));
+
+/**
+ * GET /auth/google
+ * Initiate Google OAuth login
+ */
+router.get('/google', (req, res, next) => {
+    const tenantId = req.query.tenantId;
+    if (!tenantId) {
+        return res.status(400).json({ error: 'TenantRequired', message: 'tenantId query parameter is required' });
+    }
+    
+    // Determine where to send the user back to
+    let returnUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    if (req.query.returnUrl) {
+        returnUrl = req.query.returnUrl;
+    } else if (req.headers.referer) {
+        try {
+            const url = new URL(req.headers.referer);
+            returnUrl = url.origin;
+        } catch (e) {}
+    }
+
+    // Encode both into state
+    const stateObj = { t: tenantId, r: returnUrl };
+    const stateStr = Buffer.from(JSON.stringify(stateObj)).toString('base64');
+
+    passport.authenticate('google', { 
+        scope: [
+            'profile', 
+            'email',
+            'https://www.googleapis.com/auth/user.birthday.read',
+            'https://www.googleapis.com/auth/user.gender.read'
+        ], 
+        state: stateStr 
+    })(req, res, next);
+});
+
+/**
+ * GET /auth/google/callback
+ * Google OAuth callback
+ */
+router.get('/google/callback', passport.authenticate('google', { session: false, failureRedirect: '/login?error=auth_failed' }), asyncHandler(async (req, res) => {
+    const stateStr = req.query.state;
+    if (!stateStr) {
+        return res.status(400).send('State missing from callback');
+    }
+
+    let tenantId = null;
+    let frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    try {
+        const decodedState = JSON.parse(Buffer.from(stateStr, 'base64').toString('utf8'));
+        tenantId = decodedState.t;
+        if (decodedState.r) {
+            frontendUrl = decodedState.r;
+        }
+    } catch (e) {
+        tenantId = stateStr;
+    }
+
+    if (!tenantId) {
+        return res.status(400).send('Tenant ID missing from state');
+    }
+
+    try {
+        const tokens = await AuthService.googleLogin(tenantId, req.user);
+        
+        // Set HTTP-Only cookies
+        setTokenCookies(res, tokens);
+
+        // Redirect back to dynamic frontendUrl
+        res.redirect(`${frontendUrl}/auth/callback?success=true`);
+    } catch (err) {
+        console.error('[OAuth] Google login failed:', err);
+        res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+    }
 }));
 
 /**
