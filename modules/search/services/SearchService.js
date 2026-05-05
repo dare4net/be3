@@ -5,6 +5,7 @@
  */
 
 const { query } = require('../../../config/database');
+const { SEARCH_INDEX_SAFE_COLUMNS } = require('../../../utils/storefrontHelper');
 const SearchSynonym = require('../models/SearchSynonym'); // Kept if needed, but QueryProcessor handles synonyms now
 const CategoryResolver = require('../core/resolvers/CategoryResolver');
 const SlugResolver = require('../core/resolvers/SlugResolver');
@@ -335,7 +336,7 @@ class SearchService {
             if (expandedQuery) {
                 sql = `
                     SELECT 
-                        si.*,
+                        ${SEARCH_INDEX_SAFE_COLUMNS.split(',').map(c => 'si.' + c.trim()).join(', ')},
                         ts_rank(si.search_vector, query) as rank
                     FROM search_indexes si
                     JOIN products p ON si.content_id = p.id AND si.content_type = 'product'
@@ -351,7 +352,7 @@ class SearchService {
             } else {
                 sql = `
                     SELECT 
-                        si.*,
+                        ${SEARCH_INDEX_SAFE_COLUMNS.split(',').map(c => 'si.' + c.trim()).join(', ')},
                         1 as rank
                     FROM search_indexes si
                     JOIN products p ON si.content_id = p.id AND si.content_type = 'product'

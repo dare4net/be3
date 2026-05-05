@@ -8,6 +8,7 @@ const subscriptionGuard = require('../../../middleware/subscriptionGuard');
 const { asyncHandler } = require('../../../middleware/errorHandler');
 const { mergeProductSEO, mergeCategorySEO } = require('../../../lib/seoHelpers');
 const ProductService = require('../services/ProductService');
+const { PRODUCT_SAFE_COLUMNS } = require('../../../utils/storefrontHelper');
 
 function registerStorefrontRoutes(router) {
     // PUBLIC STOREFRONT ENDPOINT (No Auth, but requires Subscription/Module Access)
@@ -96,7 +97,8 @@ function registerStorefrontRoutes(router) {
 
         // Get products with filters
         const productsSQL = `
-            SELECT p.* FROM products p
+            SELECT ${PRODUCT_SAFE_COLUMNS.split(',').map(c => 'p.' + c.trim()).join(', ')} 
+            FROM products p
             WHERE ${whereSQL}
             ORDER BY ${orderBy}
             LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
@@ -192,7 +194,7 @@ function registerStorefrontRoutes(router) {
     // PUBLIC STOREFRONT PRODUCT DETAIL BY ID (used for parent product lookup on variant pages)
     router.get('/storefront/products/by-id/:id', subscriptionGuard('products'), asyncHandler(async (req, res) => {
         const productRes = await query(
-            `SELECT * FROM products WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND deleted_at IS NULL`,
+            `SELECT ${PRODUCT_SAFE_COLUMNS} FROM products WHERE tenant_id = $1 AND id = $2 AND status = 'active' AND deleted_at IS NULL`,
             [req.tenantId, req.params.id]
         );
         if (!productRes.rows[0]) {
@@ -210,7 +212,7 @@ function registerStorefrontRoutes(router) {
 
         // Get Product
         const productRes = await query(
-            `SELECT * FROM products WHERE tenant_id = $1 AND (handle = $2 OR id::text = $2) AND status = 'active' AND deleted_at IS NULL`,
+            `SELECT ${PRODUCT_SAFE_COLUMNS} FROM products WHERE tenant_id = $1 AND (handle = $2 OR id::text = $2) AND status = 'active' AND deleted_at IS NULL`,
             [req.tenantId, handle]
         );
         console.log(`[Products API] Found: ${productRes.rows.length} rows`);
@@ -361,7 +363,8 @@ function registerStorefrontRoutes(router) {
         category.breadcrumb = breadcrumbRes.rows || [];
 
         // SEO
-        category.seo = mergeCategorySEO(category);
+        const baseUrl = req.headers['x-storefront-url'] || '';
+        category.seo = mergeCategorySEO(category, baseUrl);
 
         res.json({ success: true, category });
     }));
