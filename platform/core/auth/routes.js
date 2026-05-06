@@ -393,42 +393,53 @@ router.get('/google', (req, res, next) => {
  * GET /auth/google/callback
  * Google OAuth callback
  */
-router.get('/google/callback', passport.authenticate('google', { session: false, failureRedirect: '/login?error=auth_failed' }), asyncHandler(async (req, res) => {
-    const stateStr = req.query.state;
-    if (!stateStr) {
-        return res.status(400).send('State missing from callback');
-    }
-
-    let tenantId = null;
+router.get('/google/callback', (req, res, next) => {
+    // Decode frontendUrl from state early so failureRedirect can point there
     let frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-
     try {
-        const decodedState = JSON.parse(Buffer.from(stateStr, 'base64').toString('utf8'));
-        tenantId = decodedState.t;
-        if (decodedState.r) {
-            frontendUrl = decodedState.r;
+        const stateStr = req.query.state;
+        if (stateStr) {
+            const decoded = JSON.parse(Buffer.from(stateStr, 'base64').toString('utf8'));
+            if (decoded.r) frontendUrl = decoded.r;
         }
-    } catch (e) {
-        tenantId = stateStr;
-    }
+    } catch (e) { /* use default */ }
 
-    if (!tenantId) {
-        return res.status(400).send('Tenant ID missing from state');
-    }
+    passport.authenticate('google', { session: false }, async (err, user, info) => {
+        if (err || !user) {
+            console.error('[OAuth] Passport authentication failed:', err || info);
+            return res.redirect(`${frontendUrl}/login?error=auth_failed`);
+        }
 
-    try {
-        const tokens = await AuthService.googleLogin(tenantId, req.user);
-        
-        // Set HTTP-Only cookies
-        setTokenCookies(res, tokens);
+        const stateStr = req.query.state;
+        let tenantId = null;
 
-        // Redirect back to dynamic frontendUrl
-        res.redirect(`${frontendUrl}/auth/callback?success=true`);
-    } catch (err) {
-        console.error('[OAuth] Google login failed:', err);
-        res.redirect(`${frontendUrl}/login?error=oauth_failed`);
-    }
-}));
+        try {
+            const decodedState = JSON.parse(Buffer.from(stateStr, 'base64').toString('utf8'));
+            tenantId = decodedState.t;
+            if (decodedState.r) frontendUrl = decodedState.r;
+        } catch (e) {
+            tenantId = stateStr;
+        }
+
+        if (!tenantId) {
+            console.error('[OAuth] No tenantId found in state');
+            return res.redirect(`${frontendUrl}/login?error=auth_failed`);
+        }
+
+        try {
+            const tokens = await AuthService.googleLogin(tenantId, user);
+
+            // Set HTTP-Only cookies
+            setTokenCookies(res, tokens);
+
+            // Redirect back to dynamic frontendUrl
+            res.redirect(`${frontendUrl}/auth/callback?success=true`);
+        } catch (loginErr) {
+            console.error('[OAuth] Google login failed:', loginErr);
+            res.redirect(`${frontendUrl}/login?error=oauth_failed`);
+        }
+    })(req, res, next);
+});
 
 /**
  * POST /auth/forgot-password
