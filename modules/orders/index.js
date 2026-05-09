@@ -72,6 +72,33 @@ async function bootstrap(context) {
                 conditions: { user_id: user.id }
             });
 
+            // Enrich each order with first-item thumbnail + item count (single batch query)
+            if (result.data && result.data.length > 0) {
+                const orderIds = result.data.map(o => o.id);
+                const enrichRes = await query(`
+                    SELECT DISTINCT ON (oi.order_id)
+                        oi.order_id,
+                        COUNT(oi.id) OVER (PARTITION BY oi.order_id) AS item_count,
+                        COALESCE(pm.url, p.image_url) AS thumbnail
+                    FROM order_items oi
+                    LEFT JOIN products p ON p.id = oi.product_id
+                    LEFT JOIN product_media pm ON pm.product_id = oi.product_id AND pm.media_type = 'image'
+                    WHERE oi.order_id = ANY($1) AND oi.tenant_id = $2
+                    ORDER BY oi.order_id, oi.created_at ASC
+                `, [orderIds, tenantId]);
+
+                const enrichMap = {};
+                enrichRes.rows.forEach(r => {
+                    enrichMap[r.order_id] = { thumbnail: r.thumbnail, item_count: parseInt(r.item_count) };
+                });
+
+                result.data = result.data.map(o => ({
+                    ...o,
+                    thumbnail: enrichMap[o.id]?.thumbnail || null,
+                    item_count: enrichMap[o.id]?.item_count || 0,
+                }));
+            }
+
             res.json({ success: true, ...result });
         }));
 

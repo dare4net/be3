@@ -58,7 +58,7 @@ class ProductService {
                     );
 
                     const vendorRes = await query(
-                        `SELECT created_at, business_name, first_name, last_name FROM users WHERE tenant_id = $1 AND id = $2`,
+                        `SELECT created_at, business_name, first_name, last_name, kyb_status FROM users WHERE tenant_id = $1 AND id = $2`,
                         [tenantId, product.created_by]
                     );
 
@@ -88,6 +88,7 @@ class ProductService {
                     
                     product.store_collection = storeCollection;
                     product.vendor = storeCollection?.name || fallbackName || 'Official Store';
+                    product.vendor_verified = vendorUser?.kyb_status === 'approved'; // KYB badge
                     product.vendor_stats = {
                         items_sold: itemsSold,
                         years_on_platform: yearsOnPlatform,

@@ -385,6 +385,22 @@ function registerStorefrontRoutes(router) {
 
         const collection = resCol.rows[0];
 
+        // For vendor stores, attach KYB verified status from the creator
+        if (collection.collection_type === 'vendor' && collection.created_by) {
+            try {
+                const vendorRes = await query(
+                    `SELECT kyb_status, business_name, business_description, business_thumbnail FROM users WHERE id = $1 AND tenant_id = $2`,
+                    [collection.created_by, req.tenantId]
+                );
+                const v = vendorRes.rows[0];
+                if (v) {
+                    collection.vendor_verified = v.kyb_status === 'approved';
+                    collection.vendor_thumbnail = collection.image_url || v.business_thumbnail || null;
+                    collection.vendor_bio = collection.description || v.business_description || null;
+                }
+            } catch (e) { /* non-fatal */ }
+        }
+
         // Basic SEO fallback
         if (!collection.seo) collection.seo = {};
         if (typeof collection.seo === 'string') {

@@ -38,7 +38,11 @@ async function runMigrations() {
         'migrations/072_add_user_profile_fields.js',
         'migrations/073_add_email_verification_expiry.js',
         'migrations/074_paystack_payments.js',
-        'migrations/075_expand_orders_status_constraint.js'
+        'migrations/075_expand_orders_status_constraint.js',
+        'migrations/076_tiered_verification.js',
+        'migrations/077_vendor_applications.js',
+        'migrations/078_vendor_test_products.js',
+        'migrations/079_vendor_permissions.js',
     ];
 
     for (const schemaPath of schemas) {

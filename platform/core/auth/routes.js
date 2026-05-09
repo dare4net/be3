@@ -637,19 +637,155 @@ router.get('/users/:id', authenticate, authorize('users.view'), asyncHandler(asy
 }));
 
 /**
- * PATCH /auth/users/:id
- * Update user details
+ * GET /auth/me/verification-status
+ * Returns the user's current verification tier statuses
  */
-router.patch('/users/:id', authenticate, authorize('users.manage'), asyncHandler(async (req, res) => {
-    const { tenantId } = req;
-    const { id } = req.params;
-
-    const updatedUser = await AuthService.updateUser(tenantId, id, req.body);
+router.get('/me/verification-status', authenticate, asyncHandler(async (req, res) => {
+    const { user } = req;
 
     res.json({
         success: true,
-        user: updatedUser
+        verification: {
+            tier1: {
+                label: 'Email Verification',
+                verified: !!user.email_verified,
+            },
+            tier2: {
+                label: 'Identity Verification (KYC)',
+                status: user.kyc_status || 'none',
+                submitted_at: user.kyc_submitted_at || null,
+                reviewed_at: user.kyc_reviewed_at || null,
+                rejection_reason: user.kyc_status === 'rejected' ? user.kyc_rejection_reason : null,
+            },
+            tier3: {
+                label: 'Business Verification (KYB)',
+                status: user.kyb_status || 'none',
+                submitted_at: user.kyb_submitted_at || null,
+                reviewed_at: user.kyb_reviewed_at || null,
+                rejection_reason: user.kyb_status === 'rejected' ? user.kyb_rejection_reason : null,
+                // KYB is locked until KYC is approved
+                locked: user.kyc_status !== 'approved',
+            },
+        }
+    });
+}));
+
+/**
+ * POST /auth/me/kyc/submit
+ * User submits their KYC document and liveness data
+ * Sets kyc_status = 'submitted' for admin review
+ */
+router.post('/me/kyc/submit', authenticate, asyncHandler(async (req, res) => {
+    const { tenantId, user } = req;
+    const { document_url, liveness_url } = req.body;
+
+    if (!document_url) {
+        return res.status(400).json({
+            error: 'ValidationError',
+            message: 'document_url is required'
+        });
+    }
+
+    // Can only submit if none or rejected
+    if (user.kyc_status === 'approved') {
+        return res.status(400).json({
+            error: 'AlreadyVerified',
+            message: 'Your KYC has already been approved'
+        });
+    }
+    if (user.kyc_status === 'submitted') {
+        return res.status(400).json({
+            error: 'AlreadySubmitted',
+            message: 'Your KYC is already under review'
+        });
+    }
+
+    const User = require('./models/User');
+    const updatedUser = await User.update(tenantId, user.id, {
+        kyc_status: 'submitted',
+        kyc_document_url: document_url,
+        kyc_liveness_url: liveness_url || null,
+        kyc_submitted_at: new Date(),
+        kyc_reviewed_at: null,
+        kyc_reviewed_by: null,
+        kyc_rejection_reason: null,
+    });
+
+    // Emit event for notifications
+    const eventBus = require('../../events/EventBus');
+    eventBus.emitEvent('user.kyc.submitted', {
+        tenantId,
+        userId: user.id,
+        userEmail: user.email,
+    });
+
+    res.json({
+        success: true,
+        message: 'KYC documents submitted successfully. You will be notified once reviewed.',
+        kyc_status: 'submitted'
+    });
+}));
+
+/**
+ * POST /auth/me/kyb/submit
+ * User submits their KYB business document
+ * Requires KYC to be approved first
+ */
+router.post('/me/kyb/submit', authenticate, asyncHandler(async (req, res) => {
+    const { tenantId, user } = req;
+    const { document_url } = req.body;
+
+    if (!document_url) {
+        return res.status(400).json({
+            error: 'ValidationError',
+            message: 'document_url is required'
+        });
+    }
+
+    // KYB requires KYC to be approved first
+    if (user.kyc_status !== 'approved') {
+        return res.status(403).json({
+            error: 'KYCRequired',
+            message: 'You must complete Identity Verification (KYC) before applying for Business Verification (KYB)'
+        });
+    }
+
+    if (user.kyb_status === 'approved') {
+        return res.status(400).json({
+            error: 'AlreadyVerified',
+            message: 'Your KYB has already been approved'
+        });
+    }
+    if (user.kyb_status === 'submitted') {
+        return res.status(400).json({
+            error: 'AlreadySubmitted',
+            message: 'Your KYB is already under review'
+        });
+    }
+
+    const User = require('./models/User');
+    await User.update(tenantId, user.id, {
+        kyb_status: 'submitted',
+        kyb_document_url: document_url,
+        kyb_submitted_at: new Date(),
+        kyb_reviewed_at: null,
+        kyb_reviewed_by: null,
+        kyb_rejection_reason: null,
+    });
+
+    const eventBus = require('../../events/EventBus');
+    eventBus.emitEvent('user.kyb.submitted', {
+        tenantId,
+        userId: user.id,
+        userEmail: user.email,
+    });
+
+    res.json({
+        success: true,
+        message: 'KYB documents submitted successfully. You will be notified once reviewed.',
+        kyb_status: 'submitted'
     });
 }));
 
 module.exports = router;
+

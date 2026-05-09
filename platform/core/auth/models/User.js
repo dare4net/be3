@@ -35,7 +35,7 @@ class User {
             gender: userData.gender || null,
             dob: userData.dob || null,
             status: 'active',
-            email_verified: false,
+            email_verified: userData.email_verified === true || false,
             email_verification_token: userData.email_verification_token || null,
             email_verification_expires: userData.email_verification_expires || null,
         };

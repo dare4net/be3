@@ -148,7 +148,7 @@ class AuthService {
 
             if (user) {
                 // Link Google ID to existing account and backfill missing data
-                const updates = { google_id: googleId };
+                const updates = { google_id: googleId, email_verified: true };
                 if (!user.avatar_url && avatarUrl) updates.avatar_url = avatarUrl;
                 if (!user.gender && gender) updates.gender = gender;
                 if (!user.dob && dob) updates.dob = dob;
@@ -168,7 +168,8 @@ class AuthService {
                     avatar_url: avatarUrl,
                     gender: gender,
                     dob: dob,
-                    email_verification_token: null, // OAuth implies email is verified
+                    email_verified: true,          // Google has verified the email
+                    email_verification_token: null,
                 });
                 
                 // Assign default role (e.g., Customer)
