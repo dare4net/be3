@@ -9,7 +9,8 @@ passport.use(new GoogleStrategy({
     clientSecret: process.env.GOOGLE_CLIENT_SECRET || 'dummy_client_secret',
     callbackURL: googleCallbackURL,
     passReqToCallback: true,
-    proxy: true,  // Trust X-Forwarded-Proto from Render/nginx so callbackURL uses https://
+    // proxy: true is intentionally omitted — callbackURL is explicitly set via
+    // API_BASE_URL so we don't need passport to auto-detect the protocol from headers.
   },
   function(req, accessToken, refreshToken, profile, cb) {
     // Pass profile to the route handler which handles finding/creating the user

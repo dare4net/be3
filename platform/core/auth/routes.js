@@ -362,30 +362,19 @@ router.get('/google', (req, res, next) => {
     if (!tenantId) {
         return res.status(400).json({ error: 'TenantRequired', message: 'tenantId query parameter is required' });
     }
-    
-    // Determine where to send the user back to
-    let returnUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    if (req.query.returnUrl) {
-        returnUrl = req.query.returnUrl;
-    } else if (req.headers.referer) {
-        try {
-            const url = new URL(req.headers.referer);
-            returnUrl = url.origin;
-        } catch (e) {}
-    }
 
-    // Encode both into state
-    const stateObj = { t: tenantId, r: returnUrl };
-    const stateStr = Buffer.from(JSON.stringify(stateObj)).toString('base64');
-
-    passport.authenticate('google', { 
+    // Use the raw tenantId UUID as the state — plain alphanumeric+hyphens only.
+    // Avoid base64/JSON in state: proxies (Render, Cloudflare, nginx) can corrupt
+    // the + and = characters that appear in base64 before Google returns the auth code.
+    // returnUrl is always FRONTEND_URL in production; no need to round-trip it.
+    passport.authenticate('google', {
         scope: [
-            'profile', 
+            'profile',
             'email',
-            'https://www.googleapis.com/auth/user.birthday.read',
-            'https://www.googleapis.com/auth/user.gender.read'
-        ], 
-        state: stateStr 
+            // birthday/gender scopes omitted: they are restricted scopes requiring
+            // Google app verification — cause invalid_grant for non-test users in production.
+        ],
+        state: tenantId
     })(req, res, next);
 });
 
@@ -394,15 +383,7 @@ router.get('/google', (req, res, next) => {
  * Google OAuth callback
  */
 router.get('/google/callback', (req, res, next) => {
-    // Decode frontendUrl from state early so failureRedirect can point there
-    let frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-    try {
-        const stateStr = req.query.state;
-        if (stateStr) {
-            const decoded = JSON.parse(Buffer.from(stateStr, 'base64').toString('utf8'));
-            if (decoded.r) frontendUrl = decoded.r;
-        }
-    } catch (e) { /* use default */ }
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
     passport.authenticate('google', { session: false }, async (err, user, info) => {
         if (err || !user) {
@@ -410,16 +391,8 @@ router.get('/google/callback', (req, res, next) => {
             return res.redirect(`${frontendUrl}/login?error=auth_failed`);
         }
 
-        const stateStr = req.query.state;
-        let tenantId = null;
-
-        try {
-            const decodedState = JSON.parse(Buffer.from(stateStr, 'base64').toString('utf8'));
-            tenantId = decodedState.t;
-            if (decodedState.r) frontendUrl = decodedState.r;
-        } catch (e) {
-            tenantId = stateStr;
-        }
+        // State is now the raw tenantId UUID — no base64/JSON decoding needed.
+        const tenantId = req.query.state;
 
         if (!tenantId) {
             console.error('[OAuth] No tenantId found in state');
@@ -428,11 +401,7 @@ router.get('/google/callback', (req, res, next) => {
 
         try {
             const tokens = await AuthService.googleLogin(tenantId, user);
-
-            // Set HTTP-Only cookies
             setTokenCookies(res, tokens);
-
-            // Redirect back to dynamic frontendUrl
             res.redirect(`${frontendUrl}/auth/callback?success=true`);
         } catch (loginErr) {
             console.error('[OAuth] Google login failed:', loginErr);
