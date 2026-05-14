@@ -13,6 +13,29 @@ const { asyncHandler } = require('../../../middleware/errorHandler');
 const { authenticate } = require('../../../platform/core/auth/middleware/authenticate');
 const authorize = require('../../../platform/core/roles/middleware/authorize');
 
+// ─── KYC Auto-Promotion Helper ────────────────────────────────────────────────
+// Called after each granular KYC section is approved.
+// If all three sections pass, flips kyc_status → 'approved' and emits the event.
+async function tryPromoteKyc(tenantId, userId, adminUserId) {
+    const User = require('../../../platform/core/auth/models/User');
+    const u = await User.findById(tenantId, userId);
+    if (!u) return;
+    if (u.poi_status === 'approved' && u.liveness_status === 'approved' && u.poa_status === 'approved') {
+        await User.update(tenantId, userId, {
+            kyc_status: 'approved',
+            kyc_reviewed_at: new Date(),
+            kyc_reviewed_by: adminUserId,
+            kyc_rejection_reason: null,
+        });
+        const eventBus = require('../../../platform/events/EventBus');
+        eventBus.emitEvent('user.kyc.approved', {
+            tenantId, userId, userEmail: u.email, reviewedBy: adminUserId
+        });
+        return true; // promoted
+    }
+    return false;
+}
+
 // ─── KYC Queue ────────────────────────────────────────────────────────────────
 
 /**
@@ -26,9 +49,11 @@ router.get('/kyc', authenticate, authorize('vendors.kyc.review'), asyncHandler(a
     const offset = (page - 1) * limit;
 
     const result = await query(
-        `SELECT id, email, first_name, last_name, kyc_status, kyc_document_url,
-                kyc_liveness_url, kyc_submitted_at, kyc_reviewed_at, kyc_rejection_reason,
-                kyc_reviewed_by
+        `SELECT id, email, first_name, last_name,
+                kyc_status, kyc_submitted_at,
+                poi_doc_type, poi_doc_url, poi_status, poi_submitted_at, poi_reviewed_at, poi_rejection_reason,
+                poa_doc_type, poa_doc_url, poa_status, poa_submitted_at, poa_reviewed_at, poa_rejection_reason,
+                liveness_video_url, liveness_status, liveness_reviewed_at, liveness_rejection_reason
          FROM users
          WHERE tenant_id = $1 AND kyc_status = $2 AND deleted_at IS NULL
          ORDER BY kyc_submitted_at ASC
@@ -47,42 +72,38 @@ router.get('/kyc', authenticate, authorize('vendors.kyc.review'), asyncHandler(a
     });
 }));
 
-/**
- * POST /vendor/admin/kyc/:userId/approve
- */
-router.post('/kyc/:userId/approve', authenticate, authorize('vendors.kyc.review'), asyncHandler(async (req, res) => {
+// ─── POI ──────────────────────────────────────────────────────────────────────
+
+/** POST /vendor/admin/kyc/:userId/poi/approve */
+router.post('/kyc/:userId/poi/approve', authenticate, authorize('vendors.kyc.review'), asyncHandler(async (req, res) => {
     const { tenantId, user: adminUser } = req;
     const { userId } = req.params;
 
     const User = require('../../../platform/core/auth/models/User');
     const targetUser = await User.findById(tenantId, userId);
     if (!targetUser) return res.status(404).json({ error: 'NotFound', message: 'User not found' });
-    if (targetUser.kyc_status !== 'submitted')
-        return res.status(400).json({ error: 'InvalidState', message: `User KYC status is '${targetUser.kyc_status}', not 'submitted'` });
+    if (targetUser.poi_status !== 'submitted')
+        return res.status(400).json({ error: 'InvalidState', message: `POI status is '${targetUser.poi_status}', not 'submitted'` });
 
     await User.update(tenantId, userId, {
-        kyc_status: 'approved',
-        kyc_reviewed_at: new Date(),
-        kyc_reviewed_by: adminUser.id,
-        kyc_rejection_reason: null,
+        poi_status: 'approved',
+        poi_reviewed_at: new Date(),
+        poi_reviewed_by: adminUser.id,
+        poi_rejection_reason: null,
     });
 
     const eventBus = require('../../../platform/events/EventBus');
-    eventBus.emitEvent('user.kyc.approved', {
-        tenantId, userId, userEmail: targetUser.email, reviewedBy: adminUser.id
-    });
+    eventBus.emitEvent('user.kyc.poi.approved', { tenantId, userId, userEmail: targetUser.email, reviewedBy: adminUser.id });
 
-    res.json({ success: true, message: `KYC approved for ${targetUser.email}` });
+    const promoted = await tryPromoteKyc(tenantId, userId, adminUser.id);
+    res.json({ success: true, message: `POI approved for ${targetUser.email}`, kyc_fully_approved: promoted });
 }));
 
-/**
- * POST /vendor/admin/kyc/:userId/reject
- */
-router.post('/kyc/:userId/reject', authenticate, authorize('vendors.kyc.review'), asyncHandler(async (req, res) => {
+/** POST /vendor/admin/kyc/:userId/poi/reject */
+router.post('/kyc/:userId/poi/reject', authenticate, authorize('vendors.kyc.review'), asyncHandler(async (req, res) => {
     const { tenantId, user: adminUser } = req;
     const { userId } = req.params;
     const { reason } = req.body;
-
     if (!reason) return res.status(400).json({ error: 'ValidationError', message: 'A rejection reason is required' });
 
     const User = require('../../../platform/core/auth/models/User');
@@ -90,18 +111,128 @@ router.post('/kyc/:userId/reject', authenticate, authorize('vendors.kyc.review')
     if (!targetUser) return res.status(404).json({ error: 'NotFound', message: 'User not found' });
 
     await User.update(tenantId, userId, {
+        // POI rejected
+        poi_status: 'rejected',
+        poi_reviewed_at: new Date(),
+        poi_reviewed_by: adminUser.id,
+        poi_rejection_reason: reason,
+        // Liveness is tied to the POI document — a new POI requires a new video
+        liveness_status: 'rejected',
+        liveness_reviewed_at: new Date(),
+        liveness_reviewed_by: adminUser.id,
+        liveness_rejection_reason: 'POI document was rejected — please resubmit with your new document',
+        // Overall KYC status
         kyc_status: 'rejected',
-        kyc_reviewed_at: new Date(),
-        kyc_reviewed_by: adminUser.id,
         kyc_rejection_reason: reason,
     });
 
     const eventBus = require('../../../platform/events/EventBus');
-    eventBus.emitEvent('user.kyc.rejected', {
-        tenantId, userId, userEmail: targetUser.email, reason, reviewedBy: adminUser.id
+    eventBus.emitEvent('user.kyc.poi.rejected', { tenantId, userId, userEmail: targetUser.email, reason, reviewedBy: adminUser.id });
+    res.json({ success: true, message: `POI rejected for ${targetUser.email}` });
+}));
+
+// ─── Liveness ─────────────────────────────────────────────────────────────────
+
+/** POST /vendor/admin/kyc/:userId/liveness/approve */
+router.post('/kyc/:userId/liveness/approve', authenticate, authorize('vendors.kyc.review'), asyncHandler(async (req, res) => {
+    const { tenantId, user: adminUser } = req;
+    const { userId } = req.params;
+
+    const User = require('../../../platform/core/auth/models/User');
+    const targetUser = await User.findById(tenantId, userId);
+    if (!targetUser) return res.status(404).json({ error: 'NotFound', message: 'User not found' });
+    if (targetUser.liveness_status !== 'submitted')
+        return res.status(400).json({ error: 'InvalidState', message: `Liveness status is '${targetUser.liveness_status}', not 'submitted'` });
+
+    await User.update(tenantId, userId, {
+        liveness_status: 'approved',
+        liveness_reviewed_at: new Date(),
+        liveness_reviewed_by: adminUser.id,
+        liveness_rejection_reason: null,
     });
 
-    res.json({ success: true, message: `KYC rejected for ${targetUser.email}` });
+    const eventBus = require('../../../platform/events/EventBus');
+    eventBus.emitEvent('user.kyc.liveness.approved', { tenantId, userId, userEmail: targetUser.email, reviewedBy: adminUser.id });
+
+    const promoted = await tryPromoteKyc(tenantId, userId, adminUser.id);
+    res.json({ success: true, message: `Liveness approved for ${targetUser.email}`, kyc_fully_approved: promoted });
+}));
+
+/** POST /vendor/admin/kyc/:userId/liveness/reject */
+router.post('/kyc/:userId/liveness/reject', authenticate, authorize('vendors.kyc.review'), asyncHandler(async (req, res) => {
+    const { tenantId, user: adminUser } = req;
+    const { userId } = req.params;
+    const { reason } = req.body;
+    if (!reason) return res.status(400).json({ error: 'ValidationError', message: 'A rejection reason is required' });
+
+    const User = require('../../../platform/core/auth/models/User');
+    const targetUser = await User.findById(tenantId, userId);
+    if (!targetUser) return res.status(404).json({ error: 'NotFound', message: 'User not found' });
+
+    await User.update(tenantId, userId, {
+        liveness_status: 'rejected',
+        liveness_reviewed_at: new Date(),
+        liveness_reviewed_by: adminUser.id,
+        liveness_rejection_reason: reason,
+        kyc_status: 'rejected',
+        kyc_rejection_reason: reason,
+    });
+
+    const eventBus = require('../../../platform/events/EventBus');
+    eventBus.emitEvent('user.kyc.liveness.rejected', { tenantId, userId, userEmail: targetUser.email, reason, reviewedBy: adminUser.id });
+    res.json({ success: true, message: `Liveness rejected for ${targetUser.email}` });
+}));
+
+// ─── POA ──────────────────────────────────────────────────────────────────────
+
+/** POST /vendor/admin/kyc/:userId/poa/approve */
+router.post('/kyc/:userId/poa/approve', authenticate, authorize('vendors.kyc.review'), asyncHandler(async (req, res) => {
+    const { tenantId, user: adminUser } = req;
+    const { userId } = req.params;
+
+    const User = require('../../../platform/core/auth/models/User');
+    const targetUser = await User.findById(tenantId, userId);
+    if (!targetUser) return res.status(404).json({ error: 'NotFound', message: 'User not found' });
+    if (targetUser.poa_status !== 'submitted')
+        return res.status(400).json({ error: 'InvalidState', message: `POA status is '${targetUser.poa_status}', not 'submitted'` });
+
+    await User.update(tenantId, userId, {
+        poa_status: 'approved',
+        poa_reviewed_at: new Date(),
+        poa_reviewed_by: adminUser.id,
+        poa_rejection_reason: null,
+    });
+
+    const eventBus = require('../../../platform/events/EventBus');
+    eventBus.emitEvent('user.kyc.poa.approved', { tenantId, userId, userEmail: targetUser.email, reviewedBy: adminUser.id });
+
+    const promoted = await tryPromoteKyc(tenantId, userId, adminUser.id);
+    res.json({ success: true, message: `POA approved for ${targetUser.email}`, kyc_fully_approved: promoted });
+}));
+
+/** POST /vendor/admin/kyc/:userId/poa/reject */
+router.post('/kyc/:userId/poa/reject', authenticate, authorize('vendors.kyc.review'), asyncHandler(async (req, res) => {
+    const { tenantId, user: adminUser } = req;
+    const { userId } = req.params;
+    const { reason } = req.body;
+    if (!reason) return res.status(400).json({ error: 'ValidationError', message: 'A rejection reason is required' });
+
+    const User = require('../../../platform/core/auth/models/User');
+    const targetUser = await User.findById(tenantId, userId);
+    if (!targetUser) return res.status(404).json({ error: 'NotFound', message: 'User not found' });
+
+    await User.update(tenantId, userId, {
+        poa_status: 'rejected',
+        poa_reviewed_at: new Date(),
+        poa_reviewed_by: adminUser.id,
+        poa_rejection_reason: reason,
+        kyc_status: 'rejected',
+        kyc_rejection_reason: reason,
+    });
+
+    const eventBus = require('../../../platform/events/EventBus');
+    eventBus.emitEvent('user.kyc.poa.rejected', { tenantId, userId, userEmail: targetUser.email, reason, reviewedBy: adminUser.id });
+    res.json({ success: true, message: `POA rejected for ${targetUser.email}` });
 }));
 
 // ─── KYB Queue ────────────────────────────────────────────────────────────────
@@ -118,7 +249,7 @@ router.get('/kyb', authenticate, authorize('vendors.kyb.review'), asyncHandler(a
 
     const result = await query(
         `SELECT id, email, first_name, last_name, business_name,
-                kyb_status, kyb_document_url, kyb_submitted_at,
+                kyb_status, kyb_cac_url, kyb_submitted_at,
                 kyb_reviewed_at, kyb_rejection_reason, kyb_reviewed_by
          FROM users
          WHERE tenant_id=$1 AND kyb_status=$2 AND deleted_at IS NULL
@@ -162,7 +293,6 @@ router.post('/kyb/:userId/approve', authenticate, authorize('vendors.kyb.review'
 
     const eventBus = require('../../../platform/events/EventBus');
     eventBus.emitEvent('user.kyb.approved', { tenantId, userId, userEmail: targetUser.email, reviewedBy: adminUser.id });
-
     res.json({ success: true, message: `KYB approved for ${targetUser.email}` });
 }));
 
@@ -173,7 +303,6 @@ router.post('/kyb/:userId/reject', authenticate, authorize('vendors.kyb.review')
     const { tenantId, user: adminUser } = req;
     const { userId } = req.params;
     const { reason } = req.body;
-
     if (!reason) return res.status(400).json({ error: 'ValidationError', message: 'A rejection reason is required' });
 
     const User = require('../../../platform/core/auth/models/User');
@@ -189,7 +318,6 @@ router.post('/kyb/:userId/reject', authenticate, authorize('vendors.kyb.review')
 
     const eventBus = require('../../../platform/events/EventBus');
     eventBus.emitEvent('user.kyb.rejected', { tenantId, userId, userEmail: targetUser.email, reason, reviewedBy: adminUser.id });
-
     res.json({ success: true, message: `KYB rejected for ${targetUser.email}` });
 }));
 

@@ -43,6 +43,7 @@ async function runMigrations() {
         'migrations/077_vendor_applications.js',
         'migrations/078_vendor_test_products.js',
         'migrations/079_vendor_permissions.js',
+        'migrations/080_kyc_poi_poa_liveness.js',
     ];
 
     for (const schemaPath of schemas) {

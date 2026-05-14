@@ -55,6 +55,42 @@ class CloudinaryService {
     }
 
     /**
+     * Upload a video file to Cloudinary (for KYC liveness checks)
+     * @param {string} filePath - Local path to the video file
+     * @param {string} folder   - Destination folder (e.g. 'kyc/liveness')
+     */
+    async uploadVideo(filePath, folder = 'kyc/liveness') {
+        try {
+            const result = await cloudinary.uploader.upload(filePath, {
+                folder: `be3/${folder}`,
+                resource_type: 'video',
+                use_filename: true,
+                unique_filename: true,
+                overwrite: false,
+            });
+
+            const isLocalFile = !filePath.startsWith('http') && !filePath.startsWith('data:');
+            if (isLocalFile && fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+
+            return {
+                url: result.secure_url,
+                publicId: result.public_id,
+                duration: result.duration || null,
+                format: result.format,
+            };
+        } catch (error) {
+            console.error('[CloudinaryService] Video upload failed:', error);
+            const isLocalFile = !filePath.startsWith('http') && !filePath.startsWith('data:');
+            if (isLocalFile && fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+            throw new Error(`Video upload failed: ${error.message}`);
+        }
+    }
+
+    /**
      * Delete an image from Cloudinary
      * @param {string} publicId - The public ID of the image
      */
@@ -123,6 +159,36 @@ class CloudinaryService {
         } catch (error) {
             console.error('[CloudinaryService] Delete by URL failed:', error);
             return false;
+        }
+    }
+
+    /**
+     * Upload a KYC/KYB document (image or PDF) to Cloudinary.
+     * PDFs use resource_type: 'raw' — Cloudinary stores them as-is and returns a direct download URL.
+     * Images use resource_type: 'image' as normal.
+     * @param {string} filePath - Local temp file path
+     * @param {string} folder   - Destination folder (e.g. 'kyc/documents')
+     * @param {boolean} isPdf   - Whether the file is a PDF
+     */
+    async uploadDocument(filePath, folder = 'kyc/documents', isPdf = false) {
+        const fs = require('fs');
+        try {
+            const cloudinary = require('cloudinary').v2;
+
+            const result = await cloudinary.uploader.upload(filePath, {
+                folder: `be3/${folder}`,
+                resource_type: isPdf ? 'raw' : 'image',
+                use_filename: false,
+                unique_filename: true,
+            });
+
+            try { fs.unlinkSync(filePath); } catch (_) {}
+
+            return { url: result.secure_url, publicId: result.public_id };
+        } catch (error) {
+            try { require('fs').unlinkSync(filePath); } catch (_) {}
+            console.error('[CloudinaryService] Document upload failed:', error);
+            throw error;
         }
     }
 }
