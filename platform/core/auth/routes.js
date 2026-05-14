@@ -401,8 +401,21 @@ router.get('/google/callback', (req, res, next) => {
 
         try {
             const tokens = await AuthService.googleLogin(tenantId, user);
+
+            // Keep HTTP-only cookies for same-domain use (API calls from server-rendered pages)
             setTokenCookies(res, tokens);
-            res.redirect(`${frontendUrl}/auth/callback?success=true`);
+
+            // Also pass the token in the redirect URL so the frontend can store it in
+            // localStorage — avoids cross-site cookie blocking in Chrome/Safari.
+            // The payload is base64-encoded (not sensitive: it's a short-lived JWT the
+            // frontend would receive anyway on a successful login).
+            const payload = Buffer.from(JSON.stringify({
+                accessToken: tokens.accessToken,
+                refreshToken: tokens.refreshToken,
+                user: tokens.user,
+            })).toString('base64url'); // base64url has no +/= chars — safe in URLs
+
+            res.redirect(`${frontendUrl}/auth/callback?success=true&payload=${payload}`);
         } catch (loginErr) {
             console.error('[OAuth] Google login failed:', loginErr);
             res.redirect(`${frontendUrl}/login?error=oauth_failed`);
