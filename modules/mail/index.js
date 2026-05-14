@@ -1,10 +1,19 @@
 /**
  * Mail Module
- * 
+ *
+ * Selects the active mail transport based on USE_RESEND_API env var:
+ *   USE_RESEND_API=true  → ResendMailService (Resend HTTP API, no SMTP)
+ *   USE_RESEND_API=false → MailService (nodemailer / SMTP)
+ *
  * PRINCIPLE: Any module can be removed without crashing the system
  */
 
-const MailService = require('./services/MailService');
+const useResend = process.env.USE_RESEND_API === 'true';
+const MailService = useResend
+    ? require('./services/ResendMailService')
+    : require('./services/MailService');
+
+console.log(`[MailModule] Transport: ${useResend ? 'Resend API' : 'SMTP/nodemailer'}`);
 
 async function bootstrap(context) {
     const { eventBus } = context;

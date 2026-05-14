@@ -27,6 +27,11 @@ const socketIo = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
+
+// Trust the first proxy hop (Render / nginx) so req.ip, req.protocol,
+// and secure cookies work correctly behind a reverse proxy.
+app.set('trust proxy', 1);
+
 const io = socketIo(server, {
     cors: {
         origin: (origin, callback) => {
