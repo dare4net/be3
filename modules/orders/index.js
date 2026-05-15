@@ -1,8 +1,18 @@
 /**
  * Orders Module Bootstrapper
- * 
+ *
  * PRINCIPLE: All inter-module communication is event-based
- * Listens to payment.success event to create orders
+ * PRINCIPLE: Order status is operational (fulfillment). Payment status is financial.
+ *
+ * Status taxonomy:
+ *   order status:   pending → processing → shipped → delivered → returned
+ *                   pending/processing → cancelled
+ *   payment status: unpaid → processing → paid/failed → refunded  (platform)
+ *                   unpaid → fulfilled → refunded                  (manual vendor confirm)
+ *
+ * Payment gate: order status CANNOT be advanced if payment_status is unpaid/failed/processing.
+ * Exception: pending → processing with unpaid triggers a 402 prompt so the vendor can
+ * manually confirm off-platform payment (sets payment_status = 'fulfilled').
  */
 
 const express = require('express');
@@ -13,6 +23,32 @@ const { authenticate, optionalAuth } = require('../../platform/core/auth/middlew
 const authorize = require('../../platform/core/roles/middleware/authorize');
 const subscriptionGuard = require('../../middleware/subscriptionGuard');
 const { asyncHandler } = require('../../middleware/errorHandler');
+
+// Valid one-way transitions. Any move not in this map is rejected.
+const VALID_TRANSITIONS = {
+    pending: ['processing', 'cancelled'],
+    processing: ['shipped', 'cancelled'],
+    shipped: ['delivered'],
+    delivered: ['returned'],
+    returned: [],
+    cancelled: [],
+};
+
+// Payment statuses that allow order status changes.
+const PAYMENT_STATUSES_ALLOWING_ADVANCE = ['paid', 'fulfilled'];
+
+// Helper: fetch user roles once
+async function getUserRoles(tenantId, userId) {
+    return Role.getUserRoles(tenantId, userId);
+}
+
+function isAdmin(roles) {
+    return roles.some(r => r.name === 'Admin' || r === 'Admin' || r.name === 'Super Admin' || r === 'Super Admin');
+}
+
+function isVendor(roles) {
+    return roles.some(r => r.name === 'Vendor' || r === 'Vendor');
+}
 
 async function bootstrap(context) {
     const { app, eventBus } = context;
@@ -133,46 +169,147 @@ async function bootstrap(context) {
             });
         }));
 
-        // Update order status
+        // ── PATCH /:id/status ──────────────────────────────────────────────────
+        // Update order status with full transition validation + payment gate.
         router.patch('/:id/status', authenticate, authorize('orders.manage'), asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
             const orderId = req.params.id;
+            const { status: newStatus } = req.body;
 
-            // 1. Fetch order to check ownership if vendor
-            const checkSql = `SELECT vendor_id FROM orders WHERE id = $1 AND tenant_id = $2`;
-            const checkResult = await query(checkSql, [orderId, tenantId]);
-
-            if (checkResult.rows.length === 0) {
-                return res.status(404).json({ error: 'Order not found' });
+            if (!newStatus) {
+                return res.status(400).json({ error: 'ValidationError', message: 'status is required' });
             }
 
-            const orderToUpdate = checkResult.rows[0];
-
-            // 2. Security: If user is Vendor, they must own the order
-            if (!user.roles) {
-                user.roles = await Role.getUserRoles(tenantId, user.id);
+            // 1. Fetch current order
+            const orderResult = await query(
+                `SELECT * FROM orders WHERE id = $1 AND tenant_id = $2`,
+                [orderId, tenantId]
+            );
+            if (!orderResult.rows[0]) {
+                return res.status(404).json({ error: 'OrderNotFound', message: 'Order not found' });
             }
-            const isVendor = user.roles.some(r => r.name === 'Vendor' || r === 'Vendor');
-            const isAdmin = user.roles.some(r => r.name === 'Admin' || r === 'Admin' || r.name === 'Super Admin' || r === 'Super Admin');
+            const order = orderResult.rows[0];
 
-            if (isVendor && !isAdmin) {
-                if (orderToUpdate.vendor_id !== user.id) {
-                    return res.status(403).json({ error: 'Unauthorized: You can only manage your own orders' });
+            // 2. Vendor ownership check
+            if (!user.roles) user.roles = await getUserRoles(tenantId, user.id);
+            const userIsVendor = isVendor(user.roles);
+            const userIsAdmin = isAdmin(user.roles);
+
+            if (userIsVendor && !userIsAdmin && order.vendor_id !== user.id) {
+                return res.status(403).json({ error: 'Forbidden', message: 'You can only manage your own orders' });
+            }
+
+            // 3. Transition validation — one-way, permanent
+            const allowed = VALID_TRANSITIONS[order.status] || [];
+            if (!allowed.includes(newStatus)) {
+                return res.status(400).json({
+                    error: 'InvalidTransition',
+                    message: `Cannot move order from '${order.status}' to '${newStatus}'`,
+                    current: order.status,
+                    allowed,
+                });
+            }
+
+            // 4. Payment gate — cannot advance status without payment
+            //    Exception: pending → processing when unpaid triggers the manual confirm prompt (402)
+            if (!PAYMENT_STATUSES_ALLOWING_ADVANCE.includes(order.payment_status)) {
+                // Special case: vendor is moving pending → processing on an unpaid order
+                if (order.status === 'pending' && newStatus === 'processing' &&
+                    (order.payment_status === 'unpaid' || order.payment_status === 'failed')) {
+                    return res.status(402).json({
+                        error: 'PaymentRequired',
+                        action: 'confirm_manual_payment',
+                        message: 'This order has no confirmed payment. Did the customer pay outside the platform?',
+                        orderId: order.id,
+                        targetStatus: newStatus,
+                    });
                 }
+
+                // All other blocked transitions
+                return res.status(402).json({
+                    error: 'PaymentRequired',
+                    message: `Cannot change order status while payment is '${order.payment_status}'. Resolve payment first.`,
+                    payment_status: order.payment_status,
+                });
             }
 
-            // 3. Update
-            const order = await tenantUpdate('orders', tenantId, orderId, {
-                status: req.body.status,
-            });
+            // 5. Apply update with relevant timestamps (updated_at is added automatically by tenantUpdate)
+            const updates = { status: newStatus };
+            if (newStatus === 'shipped') updates.shipped_at = new Date();
+            if (newStatus === 'delivered') updates.delivered_at = new Date();
+            if (newStatus === 'cancelled') updates.cancelled_at = new Date();
+
+            const updated = await tenantUpdate('orders', tenantId, orderId, updates);
 
             eventBus.emitEvent('order.status_changed', {
                 tenantId,
-                orderId: order.id,
-                status: order.status,
+                orderId: updated.id,
+                oldStatus: order.status,
+                newStatus: updated.status,
             });
 
-            res.json({ success: true, order });
+            res.json({ success: true, order: updated });
+        }));
+
+        // ── PATCH /:id/payment-status ──────────────────────────────────────────
+        // Vendor/admin manually sets payment status (fulfilled or refunded labels).
+        // Platform payment statuses (paid, failed, processing) are set by webhook only.
+        router.patch('/:id/payment-status', authenticate, authorize('orders.manage'), asyncHandler(async (req, res) => {
+            const { tenantId, user } = req;
+            const orderId = req.params.id;
+            const { payment_status: newPaymentStatus } = req.body;
+
+            const MANUAL_ALLOWED = ['fulfilled', 'refunded'];
+            if (!MANUAL_ALLOWED.includes(newPaymentStatus)) {
+                return res.status(400).json({
+                    error: 'ValidationError',
+                    message: `Manual payment status must be one of: ${MANUAL_ALLOWED.join(', ')}`,
+                });
+            }
+
+            const orderResult = await query(
+                `SELECT * FROM orders WHERE id = $1 AND tenant_id = $2`,
+                [orderId, tenantId]
+            );
+            if (!orderResult.rows[0]) {
+                return res.status(404).json({ error: 'OrderNotFound', message: 'Order not found' });
+            }
+            const order = orderResult.rows[0];
+
+            // Vendor ownership
+            if (!user.roles) user.roles = await getUserRoles(tenantId, user.id);
+            if (isVendor(user.roles) && !isAdmin(user.roles) && order.vendor_id !== user.id) {
+                return res.status(403).json({ error: 'Forbidden', message: 'You can only manage your own orders' });
+            }
+
+            // Transition rules for manual payment status
+            if (newPaymentStatus === 'fulfilled' && !['unpaid', 'failed'].includes(order.payment_status)) {
+                return res.status(400).json({
+                    error: 'InvalidTransition',
+                    message: `Cannot mark as fulfilled when payment is already '${order.payment_status}'`,
+                });
+            }
+            if (newPaymentStatus === 'refunded' && !['paid', 'fulfilled'].includes(order.payment_status)) {
+                return res.status(400).json({
+                    error: 'InvalidTransition',
+                    message: `Cannot refund when payment status is '${order.payment_status}'`,
+                });
+            }
+
+            // updated_at is added automatically by tenantUpdate
+            const updates = {
+                payment_status: newPaymentStatus,
+            };
+
+            // Record audit trail for fulfilled confirmation
+            if (newPaymentStatus === 'fulfilled') {
+                updates.confirmed_by = user.id;
+                updates.payment_confirmed_at = new Date();
+            }
+
+            const updated = await tenantUpdate('orders', tenantId, orderId, updates);
+
+            res.json({ success: true, order: updated });
         }));
 
         // Cancel order (Public/Guest with session match or Auth)
@@ -226,7 +363,7 @@ async function bootstrap(context) {
         // Record WhatsApp order
         router.post('/whatsapp', optionalAuth, asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
-            const { cartId, vendorId, items, total, customerName, customerEmail, session_id } = req.body;
+            const { cartId, vendorId, items, total, customerName, customerEmail, shippingAddress, session_id } = req.body;
 
             console.log(`[Orders] Recording WhatsApp order for vendor: ${vendorId}`);
 
@@ -240,12 +377,15 @@ async function bootstrap(context) {
                 user_id: user ? user.id : null,
                 session_id: session_id || null,
                 vendor_id: dbVendorId,
-                status: 'pending_whatsapp',
-                payment_status: 'pending',
+                checkout_type: 'whatsapp',
+                status: 'pending',
+                payment_status: 'unpaid',
                 subtotal: total,
                 total: total,
-                currency: 'USD',
+                currency: 'NGN',
                 customer_email: customerEmail || (user ? user.email : null),
+                customer_name: customerName || null,
+                shipping_address: shippingAddress ? JSON.stringify(shippingAddress) : null,
                 metadata: {
                     is_whatsapp: true,
                     customer_name: customerName,
@@ -298,11 +438,12 @@ async function bootstrap(context) {
                 user_id: user ? user.id : null,
                 session_id: session_id || null,
                 vendor_id: dbVendorId,
+                checkout_type: 'platform',
                 status: 'pending',
-                payment_status: 'pending',
+                payment_status: 'unpaid',
                 subtotal: total,
                 total: total,
-                currency: 'USD',
+                currency: 'NGN',
                 customer_email: customerEmail || (user ? user.email : null),
                 metadata: {
                     is_bot_preorder: true,

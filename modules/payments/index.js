@@ -168,7 +168,7 @@ async function bootstrap(context) {
 
                     await client.query(
                         `UPDATE orders
-                         SET status = 'payment_failed',
+                         SET status = 'pending',
                              payment_status = 'failed',
                              updated_at = NOW()
                          WHERE id = $1`,
@@ -273,13 +273,14 @@ async function bootstrap(context) {
             const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
             const dbVendorId = !vendorId || vendorId === 'platform' ? null : vendorId;
 
-            // 5. Create order with status `pending_payment`
+            // 5. Create order — status 'pending' until webhook confirms payment
             const order = await tenantInsert('orders', tenantId, {
                 order_number: orderNumber,
                 user_id: user?.id || null,
                 vendor_id: dbVendorId,
-                status: 'pending_payment',
-                payment_status: 'pending',
+                checkout_type: 'platform',
+                status: 'pending',
+                payment_status: 'unpaid',
                 paystack_reference: reference,
                 subtotal: subtotalNGN,
                 total: totalNGN,
@@ -388,10 +389,91 @@ async function bootstrap(context) {
 
             const row = result.rows[0];
 
-            // Derive effective status for the frontend state machine
-            // Normalize: payments table uses 'succeeded', orders table uses 'paid'
-            let effectiveStatus = row.p_status; // 'processing' | 'succeeded' | 'failed'
+            // Derive effective status for the frontend state machine.
+            // payments.status = 'processing' | 'succeeded' | 'failed'
+            // orders.payment_status = 'unpaid' | 'processing' | 'paid' | 'failed' | 'fulfilled' | 'refunded'
+            // orders.status = 'pending' | 'processing' | 'shipped' | 'delivered' | 'returned' | 'cancelled'
+            let effectiveStatus = row.p_status;
+
+            // Platform payment confirmed by Paystack webhook
             if (row.o_p_status === 'paid') effectiveStatus = 'succeeded';
+
+            // Manually confirmed by vendor (fulfilled = off-platform payment)
+            if (row.o_p_status === 'fulfilled') effectiveStatus = 'succeeded';
+
+            // If order has been advanced past pending, payment must have been resolved
+            const ADVANCED_ORDER_STATUSES = ['processing', 'shipped', 'delivered'];
+            if (ADVANCED_ORDER_STATUSES.includes(row.order_status)) effectiveStatus = 'succeeded';
+
+            // If payment explicitly failed
+            if (row.p_status === 'failed') effectiveStatus = 'failed';
+
+            // ── Paystack verify fallback ─────────────────────────────────────────
+            // If still processing after polling, call Paystack directly.
+            // This handles cases where the webhook didn't reach the server.
+            if (effectiveStatus === 'processing') {
+                try {
+                    const paystackResult = await PaystackService.verifyTransaction(reference);
+                    console.log(`[Payments/Status] Fallback verify — ref: ${reference}, status: ${paystackResult.status}`);
+
+                    if (paystackResult.status === 'success') {
+                        // Commit the same updates the webhook would have done
+                        const dbClient = await require('../../config/database').pool.connect();
+                        try {
+                            await dbClient.query('BEGIN');
+
+                            await dbClient.query(
+                                `UPDATE payments
+                                 SET status = 'succeeded',
+                                     provider_payment_id = $1,
+                                     processed_at = NOW(),
+                                     gateway_response = $2,
+                                     updated_at = NOW()
+                                 WHERE reference = $3`,
+                                [paystackResult.id?.toString() || null, JSON.stringify(paystackResult), reference]
+                            );
+
+                            await dbClient.query(
+                                `UPDATE orders
+                                 SET status = 'processing',
+                                     payment_status = 'paid',
+                                     paid_at = NOW(),
+                                     updated_at = NOW()
+                                 WHERE id = $1`,
+                                [row.order_id]
+                            );
+
+                            await dbClient.query('COMMIT');
+                            console.log(`[Payments/Status] ✓ Fallback verify committed — orderId: ${row.order_id}`);
+                            effectiveStatus = 'succeeded';
+                        } catch (commitErr) {
+                            await dbClient.query('ROLLBACK');
+                            console.error('[Payments/Status] Fallback verify commit failed:', commitErr.message);
+                        } finally {
+                            dbClient.release();
+                        }
+
+                        // Emit socket event so verify page resolves immediately
+                        const io = app.get('io');
+                        if (io) {
+                            io.to(`payment:${reference}`).emit('payment.confirmed', {
+                                reference, orderId: row.order_id, status: 'succeeded',
+                            });
+                        }
+
+                    } else if (paystackResult.status === 'failed' || paystackResult.gateway_response === 'Declined') {
+                        await query(
+                            `UPDATE payments SET status = 'failed', updated_at = NOW() WHERE reference = $1`,
+                            [reference]
+                        );
+                        effectiveStatus = 'failed';
+                    }
+                } catch (verifyErr) {
+                    // Paystack verify failed — don't crash, just keep polling
+                    console.warn('[Payments/Status] Paystack verify fallback failed:', verifyErr.message);
+                }
+            }
+            // ────────────────────────────────────────────────────────────────────
 
             // If still processing after 30 minutes, flag as timed_out
             if (effectiveStatus === 'processing' && row.order_created_at) {
@@ -427,11 +509,12 @@ async function bootstrap(context) {
             }
             const order = orderResult.rows[0];
 
-            // 2. Hard block: only retry if payment_status is 'failed'
-            if (order.payment_status !== 'failed') {
+            // 2. Block if already paid or currently verifying
+            const blockedStatuses = ['paid', 'processing', 'fulfilled'];
+            if (blockedStatuses.includes(order.payment_status)) {
                 const messages = {
                     paid: 'This order has already been paid.',
-                    pending: 'Payment is still being verified. Please wait.',
+                    fulfilled: 'This order has already been fulfilled.',
                     processing: 'Payment is still processing. Please wait before retrying.',
                 };
                 return res.status(409).json({
@@ -440,6 +523,7 @@ async function bootstrap(context) {
                     payment_status: order.payment_status,
                 });
             }
+            // Allow retry for 'failed' AND 'unpaid' (e.g. WhatsApp orders paying via platform)
 
             const email = user?.email || guestEmail || order.customer_email;
             if (!email) {
@@ -449,11 +533,11 @@ async function bootstrap(context) {
             // 3. Generate a fresh reference for this retry attempt
             const reference = `be3_${uuidv4().replace(/-/g, '')}`;
 
-            // 4. Reset order status to pending_payment and update reference
+            // 4. Mark order as awaiting payment and store new reference
             await query(
                 `UPDATE orders
-                 SET status = 'pending_payment',
-                     payment_status = 'pending',
+                 SET status = 'pending',
+                     payment_status = 'processing',
                      paystack_reference = $1,
                      updated_at = NOW()
                  WHERE id = $2`,
