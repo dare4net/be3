@@ -24,3 +24,7 @@ build/
 *.swp
 *.swo
 *~
+
+# Firebase Service Account Key — never commit this
+*service-account*.json
+modules/notifications/fcm/*.json

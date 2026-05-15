@@ -7,19 +7,38 @@ let messaging = null;
 function getMessaging() {
     if (messaging) return messaging;
 
-    const rawPath = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-    if (!rawPath || !rawPath.trim()) {
-        console.warn('[FCM] FIREBASE_SERVICE_ACCOUNT_JSON not set — push notifications disabled');
-        return null;
-    }
-
-    const serviceAccountPath = path.resolve(rawPath.trim());
-
     try {
         if (!admin) {
+            let serviceAccount;
+
+            // 1. Production: Base64 Encoded JSON string
+            if (process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) {
+                serviceAccount = JSON.parse(
+                    Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, 'base64').toString('utf8')
+                );
+            }
+            // 2. Production: Individual Environment Variables
+            else if (process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
+                serviceAccount = {
+                    type: 'service_account',
+                    project_id: process.env.FIREBASE_PROJECT_ID,
+                    private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID,
+                    client_email: process.env.FIREBASE_CLIENT_EMAIL,
+                    // Replace literal \n with actual newlines (dotenv may or may not expand them)
+                    private_key: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+                };
+            }
+            // 3. Local Development: File Path
+            else if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+                const rawPath = process.env.FIREBASE_SERVICE_ACCOUNT_JSON.trim();
+                serviceAccount = require(path.resolve(rawPath));
+            } else {
+                console.warn('[FCM] No Firebase credentials provided (Base64, Env Vars, or Path) — push disabled');
+                return null;
+            }
+
             admin = require('firebase-admin');
             if (!admin.apps.length) {
-                const serviceAccount = require(serviceAccountPath);
                 admin.initializeApp({
                     credential: admin.credential.cert(serviceAccount),
                 });
