@@ -244,6 +244,9 @@ async function bootstrap(context) {
             eventBus.emitEvent('order.status_changed', {
                 tenantId,
                 orderId: updated.id,
+                orderNumber: updated.order_number,
+                userId: updated.user_id || null,
+                vendorId: updated.vendor_id || null,
                 oldStatus: order.status,
                 newStatus: updated.status,
             });
@@ -354,7 +357,9 @@ async function bootstrap(context) {
             eventBus.emitEvent('order.cancelled', {
                 tenantId,
                 orderId: order.id,
-                orderNumber: order.order_number
+                orderNumber: order.order_number,
+                userId: order.user_id || null,
+                vendorId: order.vendor_id || null,
             });
 
             res.json({ success: true, message: 'Order cancelled', order: updatedOrder });
@@ -412,7 +417,9 @@ async function bootstrap(context) {
                 tenantId,
                 orderId: order.id,
                 orderNumber: order.order_number,
-                isWhatsapp: true
+                userId: order.user_id || null,
+                vendorId: order.vendor_id || null,
+                isWhatsapp: true,
             });
 
             // If we have a cartId, mark those specific items as removed/completed

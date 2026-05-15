@@ -120,11 +120,12 @@ async function bootstrap(context) {
                         [orderId]
                     );
 
-                    // Clear cart
+                    // Fetch order context for events and cart cleanup
                     const orderResult = await client.query(
-                        `SELECT metadata FROM orders WHERE id = $1`, [orderId]
+                        `SELECT vendor_id, user_id, order_number, customer_email, metadata FROM orders WHERE id = $1`, [orderId]
                     );
-                    const cartId = orderResult.rows[0]?.metadata?.cart_id;
+                    const orderRow = orderResult.rows[0] || {};
+                    const cartId = orderRow.metadata?.cart_id;
                     if (cartId) {
                         await client.query(`DELETE FROM cart_items WHERE cart_id = $1`, [cartId]);
                         await client.query(`UPDATE carts SET status = 'completed' WHERE id = $1`, [cartId]);
@@ -137,13 +138,14 @@ async function bootstrap(context) {
                     eventBus.emitEvent('payment.success', {
                         tenantId,
                         orderId,
+                        orderNumber: orderRow.order_number || null,
+                        vendorId: orderRow.vendor_id || null,
                         reference,
                         paymentData: {
-                            userId: data.metadata?.userId || null,
-                            email: data.customer?.email,
+                            userId: data.metadata?.userId || orderRow.user_id || null,
+                            email: data.customer?.email || orderRow.customer_email || null,
                             amount: data.amount / 100,
                             currency: data.currency,
-                            fromExistingOrder: true,
                         },
                     });
 
@@ -178,7 +180,17 @@ async function bootstrap(context) {
                     await client.query('COMMIT');
                     console.log(`[Payments/Webhook] charge.failed — ref: ${reference}`);
 
-                    eventBus.emitEvent('payment.failed', { tenantId, orderId, reference });
+                    // Fetch order context for notification routing
+                    const failedOrder = await require('../../config/database').query(
+                        `SELECT vendor_id, user_id, order_number FROM orders WHERE id = $1`, [orderId]
+                    );
+                    const failedRow = failedOrder.rows[0] || {};
+                    eventBus.emitEvent('payment.failed', {
+                        tenantId, orderId, reference,
+                        orderNumber: failedRow.order_number || null,
+                        vendorId: failedRow.vendor_id || null,
+                        userId: failedRow.user_id || null,
+                    });
 
                     const io = app.get('io');
                     if (io) {
@@ -374,7 +386,8 @@ async function bootstrap(context) {
             const result = await query(
                 `SELECT p.status as p_status, p.processed_at,
                         o.id as order_id, o.order_number, o.status as order_status,
-                        o.payment_status as o_p_status, o.created_at as order_created_at
+                        o.payment_status as o_p_status, o.created_at as order_created_at,
+                        o.vendor_id, o.user_id
                  FROM payments p
                  LEFT JOIN orders o ON p.order_id = o.id
                  WHERE p.reference = $1 AND p.tenant_id = $2
@@ -451,6 +464,25 @@ async function bootstrap(context) {
                             console.error('[Payments/Status] Fallback verify commit failed:', commitErr.message);
                         } finally {
                             dbClient.release();
+                        }
+
+                        // Emit payment.success on eventBus so notification listeners fire
+                        // (mirrors what the Paystack webhook handler does on line ~138)
+                        try {
+                            eventBus.emitEvent('payment.success', {
+                                tenantId,
+                                orderId: row.order_id,
+                                orderNumber: row.order_number || null,
+                                vendorId: row.vendor_id || null,
+                                reference,
+                                paymentData: {
+                                    userId: row.user_id || null,
+                                    amount: (paystackResult.amount || 0) / 100,
+                                    currency: paystackResult.currency || 'NGN',
+                                },
+                            });
+                        } catch (evtErr) {
+                            console.warn('[Payments/Status] payment.success event failed:', evtErr.message);
                         }
 
                         // Emit socket event so verify page resolves immediately

@@ -190,4 +190,12 @@ module.exports = {
         { name: 'location.delete', module: 'location', description: 'Delete locations' },
         { name: 'location.manage', module: 'location', description: 'Full location management' },
     ],
+    // ============================================
+    // NOTIFICATIONS PERMISSIONS
+    // ============================================
+    NOTIFICATIONS: [
+        { name: 'notifications.orders', module: 'notifications', description: 'Receive order notifications' },
+        { name: 'notifications.payments', module: 'notifications', description: 'Receive payment notifications' },
+        { name: 'notifications.all', module: 'notifications', description: 'Receive all notification types' },
+    ],
 };

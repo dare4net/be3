@@ -136,8 +136,33 @@ async function bootstrap(context) {
                 tenantId, conversationId, senderId, content, type
             );
 
+            // Notify the other participant
+            try {
+                const recipientRes = await query(
+                    `SELECT cp.user_id
+                     FROM chat_participants cp
+                     WHERE cp.conversation_id = $1 AND cp.user_id != $2
+                     LIMIT 1`,
+                    [conversationId, senderId]
+                );
+                const recipientId = recipientRes.rows[0]?.user_id;
+                if (recipientId) {
+                    eventBus.emitEvent('chat.message', {
+                        tenantId,
+                        recipientId,
+                        senderName: `${req.user.first_name || ''} ${req.user.last_name || ''}`.trim() || 'Someone',
+                        messagePreview: (content || '').slice(0, 80),
+                        conversationId,
+                    });
+                }
+            } catch (notifErr) {
+                // Non-critical — don't fail the send if notification fails
+                console.warn('[Chat] Notification emit failed:', notifErr.message);
+            }
+
             res.json({ success: true, message });
         }));
+
 
         app.use('/chat', router);
         console.log('[Chat] Module initialized');

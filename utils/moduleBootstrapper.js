@@ -126,6 +126,7 @@ class ModuleBootstrapper {
             { name: 'be3_ai', path: path.join(__dirname, '../modules/be3_ai'), envVar: 'MODULE_BE3_AI_ENABLED' },
             { name: 'seo', path: path.join(__dirname, '../modules/seo'), envVar: 'MODULE_SEO_ENABLED' },
             { name: 'mail', path: path.join(__dirname, '../modules/mail'), envVar: 'MODULE_MAIL_ENABLED' },
+            { name: 'notifications', path: path.join(__dirname, '../modules/notifications'), envVar: 'MODULE_NOTIFICATIONS_ENABLED' },
         ];
 
         console.log('\n=== Loading Feature Modules ===');

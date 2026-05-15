@@ -20,8 +20,12 @@ class RoleService {
             ...ALL_PERMISSIONS.SETTINGS,
             ...ALL_PERMISSIONS.ANALYTICS,
             ...ALL_PERMISSIONS.MARKETING,
-            ...ALL_PERMISSIONS.SYSTEM
+            ...ALL_PERMISSIONS.SYSTEM,
+            ...(ALL_PERMISSIONS.CHAT || []),
+            ...(ALL_PERMISSIONS.LOCATION || []),
+            ...(ALL_PERMISSIONS.NOTIFICATIONS || []),
         ];
+
 
         // Define Role Definitions with comprehensive permissions
         const ROLE_DEFINITIONS = [

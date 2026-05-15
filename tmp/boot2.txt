@@ -1,0 +1,145 @@
+🔌 Redis: Using TCP Client (node-redis)
+
+========================================
+  Multi-Tenant SaaS eCommerce Platform
+========================================
+
+✓ Redis Client Ready
+✓ Database connected
+✓ Database connection established
+✓ Event Logger initialized
+✓ Events module initialized
+
+--- Loading Core Modules ---
+
+=== Loading Core Modules ===
+[Passport] Google OAuth callbackURL: http://localhost:3000/auth/google/callback
+[Auth] Routes registered at /auth
+[Auth] Users API registered at /users
+[EventBus] auth registered listener for 'tenant.created'
+[Auth] Event listeners registered
+✓ Module loaded: auth
+[Tenants] Routes registered at /tenants
+[Tenants] Event listeners registered
+✓ Module loaded: tenants
+[Roles] Permission management routes registered at /api/permissions
+[Roles] Roles routes registered at /roles
+✓ Module loaded: roles
+[Subscriptions] Routes registered at /subscriptions
+✓ Module loaded: subscriptions
+[ModuleRegistry] Routes registered at /modules
+✓ Module loaded: module_registry
+✓ Super Admin panel initialized at /admin
+✓ Module loaded: super_admin
+
+--- Loading Feature Modules ---
+
+=== Loading Feature Modules ===
+[Storefront] Module initialized
+✓ Module loaded: storefront
+[Products] Module initialized 
+✓ Module loaded: products
+[Cart] Module initialized
+✓ Module loaded: cart
+[Checkout] Module initialized
+✓ Module loaded: checkout
+[EventBus] orders registered listener for 'payment.success'
+[Orders] Module initialized
+✓ Module loaded: orders
+[Page Builder] Routes registered at /page-builder
+✓ Module loaded: page_builder
+[Payments] Paystack module initialized
+✓ Module loaded: payments
+[EventBus] shipping registered listener for 'order.created'
+[Shipping] Module initialized
+✓ Module loaded: shipping
+[Marketing] Module initialized
+✓ Module loaded: marketing
+[EventBus] analytics registered listener for 'order.created'
+[EventBus] analytics registered listener for 'user.registered'
+[Analytics] Module initialized with SWR Cache
+✓ Module loaded: analytics
+[VectorEngine] Initialized: Xenova/bge-small-en-v1.5 (BGE=true, CLIP=false, 384D)
+[EventBus] search registered listener for 'product.created'
+[EventBus] search registered listener for 'product.updated'
+[EventBus] search registered listener for 'product.deleted'
+[EventBus] search registered listener for 'category.created'
+[EventBus] search registered listener for 'category.updated'
+[EventBus] search registered listener for 'category.deleted'
+[EventBus] search registered listener for 'collection.created'
+[EventBus] search registered listener for 'collection.updated'
+[EventBus] search registered listener for 'collection.deleted'
+[Search] Event listeners initialized
+[Search] Module initialized
+✓ Module loaded: search
+[ModuleBootstrapper] Module menus not found at C:\Users\chatz\Downloads\eCommerce\be3_backend\modules\menus, skipping...
+✓ Module loaded: banner
+[Variables] Module initialized
+✓ Module loaded: variables
+[Vendor] Routes mounted: /vendor/application, /vendor/admin
+[VariableRegistry] Registered variable: [BUSINESS_NAME]
+[VariableRegistry] Registered variable: [STORE_NAME]
+[VariableRegistry] Registered variable: [VENDOR_ID]
+[Vendor] Module initialized
+✓ Module loaded: vendor
+[RealtimeService] Initialized with Socket.io
+[Chat] Module initialized
+✓ Module loaded: chat
+[Location] Module initialized at /location
+✓ Module loaded: location
+✓ Module loaded: wishlist
+[Vector] Module initialized
+✓ Module loaded: vector
+✓ Module loaded: media
+[Reviews] Module initialized ✓
+✓ Module loaded: reviews
+[EventBus] bloom registered listener for 'product.created'
+[EventBus] bloom registered listener for 'product.updated'
+[EventBus] bloom registered listener for 'product.deleted'
+[EventBus] bloom registered listener for 'category.created'
+[EventBus] bloom registered listener for 'category.updated'
+[EventBus] bloom registered listener for 'category.deleted'
+[EventBus] bloom registered listener for 'collection.created'
+[EventBus] bloom registered listener for 'collection.updated'
+[EventBus] bloom registered listener for 'collection.deleted'
+[Bloom] Event listeners initialized
+[Bloom:Scanner] Scheduled every 6.0h
+[Bloom] Module initialized
+✓ Module loaded: bloom
+[be3_ai] Module initialized
+✓ Module loaded: be3_ai
+[EventBus] seo registered listener for 'product.created'
+[EventBus] seo registered listener for 'product.updated'
+[EventBus] seo registered listener for 'product.deleted'
+[EventBus] seo registered listener for 'category.created'
+[EventBus] seo registered listener for 'category.updated'
+[EventBus] seo registered listener for 'category.deleted'
+[EventBus] seo registered listener for 'collection.created'
+[EventBus] seo registered listener for 'collection.updated'
+[EventBus] seo registered listener for 'collection.deleted'
+[EventBus] seo registered listener for 'page.created'
+[EventBus] seo registered listener for 'page.updated'
+[EventBus] seo registered listener for 'page.deleted'
+✓ Module loaded: seo
+✓ ResendMailService: Resend API transport initialized
+[MailModule] Transport: Resend API
+[MailModule] Initializing...
+[EventBus] MailModule registered listener for 'user.registered'
+[EventBus] MailModule registered listener for 'password.reset_requested'
+✓ Mail module initialized
+✓ Module loaded: mail
+✓ Database connected
+✓ Database connected
+[Migration 083] notifications tables created
+[EventBus] NotificationsModule registered listener for 'order.created'
+[EventBus] NotificationsModule registered listener for 'payment.success'
+[EventBus] NotificationsModule registered listener for 'payment.failed'
+[EventBus] NotificationsModule registered listener for 'order.status_changed'
+[EventBus] NotificationsModule registered listener for 'order.cancelled'
+[EventBus] NotificationsModule registered listener for 'chat.message'
+✓ Notifications listeners registered
+[Notifications] Module initialized
+✓ Module loaded: notifications
+
+✓ Application initialized successfully
+✓ Loaded modules: auth, tenants, roles, subscriptions, module_registry, super_admin, storefront, products, cart, checkout, orders, page_builder, payments, shipping, marketing, analytics, search, banner, variables, vendor, chat, location, wishlist, vector, media, reviews, bloom, be3_ai, seo, mail, notifications

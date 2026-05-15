@@ -1,0 +1,9 @@
+[ModuleBootstrapper] Failed to require module notifications: Cannot find module '../../config/database'
+Require stack:
+- C:\Users\chatz\Downloads\eCommerce\be3_backend\modules\notifications\channels\inapp.js
+- C:\Users\chatz\Downloads\eCommerce\be3_backend\modules\notifications\NotificationService.js
+- C:\Users\chatz\Downloads\eCommerce\be3_backend\modules\notifications\listeners.js
+- C:\Users\chatz\Downloads\eCommerce\be3_backend\modules\notifications\index.js
+- C:\Users\chatz\Downloads\eCommerce\be3_backend\utils\moduleBootstrapper.js
+- C:\Users\chatz\Downloads\eCommerce\be3_backend\server.js
+💥 Uncaught Exception: listen EADDRINUSE: address already in use 0.0.0.0:3000

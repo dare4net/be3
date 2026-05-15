@@ -63,6 +63,13 @@ io.on('connection', (socket) => {
             socket.join(`payment:${reference}`);
         }
     });
+
+    // User notification rooms — clients join after auth to receive real-time notifications
+    socket.on('join:user', (userId) => {
+        if (userId && typeof userId === 'string') {
+            socket.join(`user:${userId}`);
+        }
+    });
 });
 
 const PORT = process.env.PORT || 3000;
