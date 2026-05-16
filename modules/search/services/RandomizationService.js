@@ -75,7 +75,7 @@ class RandomizationService {
 
                 if (stalePlan) {
                     console.log(`[RandomizationService] SWR TRIGGERED: Serving stale snapshot for ${tenantId}/${pageHandle}`);
-                    this.revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets).catch(e => {
+                    this.revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets, stalePlan).catch(e => {
                         console.error('[RandomizationService] Background revalidation fail', e);
                     });
                     return { 
@@ -87,8 +87,10 @@ class RandomizationService {
             }
 
             // 4. Fresh Resolution (always for context pages, cache-miss for others)
-            console.log(`[RandomizationService] Resolving fresh for ${tenantId}/${pageHandle} — context: ${JSON.stringify(context) || 'none'}`);
-            const plan = await this.resolveMasterPlan(tenantId, widgets, context);
+            // Exclude categories from the stale/previous plan to guarantee cross-window variety
+            const prevCategoryIds = this.extractPlanCategoryIds(stalePlan);
+            console.log(`[RandomizationService] Resolving fresh for ${tenantId}/${pageHandle} — context: ${JSON.stringify(context) || 'none'} — excluding ${prevCategoryIds.size} prev categories`);
+            const plan = await this.resolveMasterPlan(tenantId, widgets, context, prevCategoryIds);
 
             // Only persist to cache if no context (context-aware plans use live ledger)
             if (!context) {
@@ -152,10 +154,13 @@ class RandomizationService {
         }
     }
 
-    async revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets) {
+    async revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets, prevPlan = null) {
         try {
             console.log(`[RandomizationService] Background resolution starting for ${bucketKey}...`);
-            const plan = await this.resolveMasterPlan(tenantId, widgets);
+            // Exclude prev window's categories so the new plan always rotates
+            const prevCategoryIds = this.extractPlanCategoryIds(prevPlan);
+            console.log(`[RandomizationService] Background revalidation — excluding ${prevCategoryIds.size} prev categories`);
+            const plan = await this.resolveMasterPlan(tenantId, widgets, null, prevCategoryIds);
             await this.persistSnapshot(tenantId, pageHandle, bucketKey, plan);
             console.log(`[RandomizationService] Background revalidation complete for ${bucketKey}`);
         } catch (err) {
@@ -164,15 +169,39 @@ class RandomizationService {
     }
 
     /**
+     * Extract the set of category IDs that were selected in a previous plan.
+     * Used to exclude them from the next window's pool.
+     */
+    extractPlanCategoryIds(plan) {
+        const ids = new Set();
+        if (!plan) return ids;
+        for (const result of plan) {
+            if (result.multiple) {
+                for (const s of (result.selections || [])) {
+                    if (s.resolvedType === 'category' && s.selection?.id) {
+                        ids.add(String(s.selection.id));
+                    }
+                }
+            } else if (result.resolvedType === 'category' && result.selection?.id) {
+                ids.add(String(result.selection.id));
+            }
+        }
+        return ids;
+    }
+
+    /**
      * Resolve a master plan for a set of widget intents
      * @param {string} tenantId 
      * @param {Array} widgets - Array of { id, intent, config }
      */
-    async resolveMasterPlan(tenantId, widgets, context) {
+    async resolveMasterPlan(tenantId, widgets, context, prevCategoryIds = new Set()) {
         console.log(`[RandomizationService] Resolving fresh plan for ${widgets.length} widgets (context: ${context ? JSON.stringify({ contextType: context.contextType, contextValue: context.contextValue }) : 'none'})`);
 
+        // Calculate total categories needed across all widgets (for fallback threshold)
+        const totalRequired = widgets.reduce((sum, w) => sum + (w.intent?.count || w.intent?.randomCount || 1), 0);
+
         // 1. Gather pools — vendor context uses ledger-filtered pools
-        const pools = await this.getFreshPools(tenantId, context);
+        const pools = await this.getFreshPools(tenantId, context, prevCategoryIds, totalRequired);
 
         const used = {
             categories: new Set(),
@@ -224,7 +253,7 @@ class RandomizationService {
     /**
      * Get fresh pools — vendor context uses ledger; default uses full search index
      */
-    async getFreshPools(tenantId, context) {
+    async getFreshPools(tenantId, context, prevCategoryIds = new Set(), minPoolSize = 6) {
         // ── VENDOR CONTEXT: use vendor_category_ledger for fast, accurate pools ──
         if (context?.contextType === 'vendor') {
             const vendorName = context.contextValue;
@@ -359,14 +388,17 @@ class RandomizationService {
         }
 
         // ── DEFAULT: full tenant pools from search index ──
-        return this.getDefaultFreshPools(tenantId);
+        return this.getDefaultFreshPools(tenantId, prevCategoryIds, minPoolSize);
 
     }
 
     /**
      * Default full-tenant pool (original logic)
+     * @param {string} tenantId
+     * @param {Set<string>} prevCategoryIds - category IDs to exclude (from previous window)
+     * @param {number} minPoolSize - minimum pool size before falling back to full pool
      */
-    async getDefaultFreshPools(tenantId) {
+    async getDefaultFreshPools(tenantId, prevCategoryIds = new Set(), minPoolSize = 6) {
         const categoriesRes = await query(
             `SELECT c.id, c.name, c.slug, c.image_url, c.parent_id
              FROM categories c
@@ -380,6 +412,20 @@ class RandomizationService {
             [tenantId]
         );
 
+        // Cross-window exclusion: remove categories that appeared in the previous snapshot.
+        // Fall back to the full pool if excluding would leave us with less than we need.
+        const allCategories = categoriesRes.rows;
+        let categories = allCategories;
+        if (prevCategoryIds.size > 0) {
+            const filtered = allCategories.filter(c => !prevCategoryIds.has(String(c.id)));
+            if (filtered.length >= minPoolSize) {
+                categories = filtered;
+                console.log(`[RandomizationService] Pool exclusion applied — ${allCategories.length} → ${filtered.length} categories (excluded ${prevCategoryIds.size} from prev window)`);
+            } else {
+                console.log(`[RandomizationService] Pool exclusion skipped — remaining (${filtered.length}) < minPoolSize (${minPoolSize}), using full pool of ${allCategories.length}`);
+            }
+        }
+
         const collectionsRes = await query(
             `SELECT id, name, slug FROM collections WHERE tenant_id = $1`,
             [tenantId]
@@ -391,7 +437,7 @@ class RandomizationService {
         );
 
         return {
-            categories: categoriesRes.rows,
+            categories,
             collections: collectionsRes.rows,
             clauses: this.buildClauses(attributesRes.rows)
         };

@@ -67,7 +67,7 @@ async function bootstrap(context) {
                 id: w.id,
                 intent: {
                     allowedTypes: w.config.randomize.allowedTypes || (w.widget_type.includes('category') ? ['category'] : ['category', 'collection', 'clause']),
-                    count: w.config.randomize.count || (w.widget_type.includes('category') ? (w.config.randomCount || 6) : 1),
+                    count: w.config.randomize.count || (w.widget_type.includes('category') ? (w.config.maxCategories || w.config.randomCount || 6) : 1),
                     sourceType: w.config.sourceType,
                     parentCategoryId: w.config.parentCategoryId,
                     manualCategoryIds: w.config.manualCategoryIds
