@@ -237,7 +237,7 @@ async function bootstrap(context) {
         // =====================================================================
         router.post('/paystack/initialize', optionalAuth, asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
-            const { cartId, email: guestEmail, shippingAddress, vendorId, couponCode } = req.body;
+            const { cartId, email: guestEmail, shippingAddress, vendorId, couponCode, customerName, customerPhone } = req.body;
 
             const email = user?.email || guestEmail;
 
@@ -327,11 +327,15 @@ async function bootstrap(context) {
                 total: totalNGN,
                 currency: 'NGN',
                 customer_email: email,
+                customer_name: customerName || null,
                 coupon_code: couponCode || null,
                 metadata: {
                     cart_id: cartId,
                     shipping_address: shippingAddress || null,
                     coupon_code: couponCode || null,
+                    customer_name: customerName || null,
+                    customer_phone: customerPhone || null,
+                    customer_email: email
                 }
             });
 

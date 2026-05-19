@@ -20,7 +20,7 @@ const { asyncHandler } = require('../../middleware/errorHandler');
 function fmt(amount, currency = 'NGN') {
     const num = parseFloat(amount || 0);
     try {
-        return new Intl.NumberFormat('en-NG', { style: 'currency', currency }).format(num);
+        return `${currency} ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num)}`;
     } catch {
         return `${currency} ${num.toFixed(2)}`;
     }
@@ -29,9 +29,10 @@ function fmt(amount, currency = 'NGN') {
 // ── Fetch order + items + tenant info ─────────────────────────────────────────
 async function fetchOrderData(orderId, tenantId) {
     const orderRes = await query(
-        `SELECT o.*, t.name as store_name, t.settings as tenant_settings
+        `SELECT o.*, t.name as store_name, t.settings as tenant_settings, u.business_name, u.first_name as vendor_first, u.last_name as vendor_last, u.email as vendor_email, u.whatsapp_phone as vendor_phone
          FROM orders o
          JOIN tenants t ON t.id = o.tenant_id
+         LEFT JOIN users u ON u.id = o.vendor_id
          WHERE (o.id::text = $1 OR o.order_number = $1) AND o.tenant_id = $2`,
         [orderId, tenantId]
     );
@@ -39,12 +40,40 @@ async function fetchOrderData(orderId, tenantId) {
 
     const order = orderRes.rows[0];
     const itemsRes = await query(
-        `SELECT oi.*, p.image_url FROM order_items oi
+        `SELECT oi.*, p.image_url, p.created_by as product_vendor_id 
+         FROM order_items oi
          LEFT JOIN products p ON p.id = oi.product_id
          WHERE oi.order_id = $1`,
         [order.id]
     );
     order.items = itemsRes.rows;
+
+    // ── Dynamically resolve true vendor from items ──
+    const uniqueVendors = [...new Set(order.items.map(i => i.product_vendor_id).filter(Boolean))];
+    
+    if (uniqueVendors.length === 1) {
+        const vRes = await query(`SELECT business_name, first_name, last_name, email, whatsapp_phone FROM users WHERE id = $1`, [uniqueVendors[0]]);
+        if (vRes.rows[0]) {
+            order.vendor_data = vRes.rows[0];
+        }
+    } else if (uniqueVendors.length > 1) {
+        order.vendor_data = {
+            business_name: order.store_name,
+            first_name: 'Multiple',
+            last_name: 'Vendors',
+            email: order.tenant_settings?.support_email || '',
+            whatsapp_phone: order.tenant_settings?.support_phone || ''
+        };
+    } else {
+        order.vendor_data = {
+            business_name: order.business_name,
+            first_name: order.vendor_first,
+            last_name: order.vendor_last,
+            email: order.vendor_email,
+            whatsapp_phone: order.vendor_phone
+        };
+    }
+
     return order;
 }
 
@@ -91,7 +120,24 @@ function buildPDF(order, type = 'invoice') {
     doc.font('Helvetica-Bold').fontSize(9).fillColor('#ffffff')
         .text((order.payment_status || 'UNPAID').toUpperCase(), doc.page.width - 148, 88, { width: 96, align: 'center' });
 
-    let y = 145;
+    let y = 140;
+
+    // ── Store / Vendor info ────────────────────────────────────────────
+    const vData = order.vendor_data || {};
+    const storeBusinessName = vData.business_name || order.business_name || storeName;
+    const vendorName = [vData.first_name, vData.last_name].filter(Boolean).join(' ') || 
+                       [order.vendor_first, order.vendor_last].filter(Boolean).join(' ') || storeName;
+    const supportPhone = vData.whatsapp_phone || order.vendor_phone || settings.support_phone || '';
+    const supportEmail = vData.email || order.vendor_email || settings.support_email || '';
+
+    doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text('ISSUED BY', 50, y);
+    doc.font('Helvetica').fontSize(10).fillColor(MUTED);
+    doc.text(`Store Name: ${storeBusinessName}`, 50, y + 16);
+    doc.text(`Vendor: ${vendorName}`, 50, y + 30);
+    doc.text(`Phone Number: ${supportPhone}`, 50, y + 44);
+    doc.text(`Email: ${supportEmail}`, 50, y + 58);
+
+    y += 90;
 
     // ── Billing / Customer info ────────────────────────────────────────────
     doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text('BILLED TO', 50, y);
@@ -109,7 +155,17 @@ function buildPDF(order, type = 'invoice') {
         const addr = meta.shipping_address || order.shipping_address;
         doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text('SHIP TO', 300, y);
         doc.font('Helvetica').fontSize(10).fillColor(DARK);
-        const addrStr = typeof addr === 'string' ? addr : `${addr.line1 || ''}, ${addr.city || ''}, ${addr.state || ''}`;
+        
+        let addrStr = '';
+        if (typeof addr === 'string') {
+            addrStr = addr;
+        } else {
+            const line1 = addr.address || addr.line1 || '';
+            const location = [addr.city, addr.state].filter(Boolean).join(', ');
+            const country = addr.country || '';
+            addrStr = [line1, location, country].filter(Boolean).join('\n');
+        }
+        
         doc.text(addrStr, 300, y + 16, { width: 200 });
     }
 
@@ -156,14 +212,13 @@ function buildPDF(order, type = 'invoice') {
     y += 20;
 
     // ── Totals ────────────────────────────────────────────────────────────
-    const totalsX = 380;
-    const totalsWidth = pageWidth - 330;
+    const totalsX = 350;
 
     const row = (label, value, bold = false) => {
         doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(10)
             .fillColor(bold ? DARK : MUTED)
-            .text(label, totalsX, y, { width: 100 })
-            .text(value, totalsX + 110, y, { width: 100, align: 'right' });
+            .text(label, totalsX, y, { width: 90 })
+            .text(value, totalsX + 90, y, { width: 100, align: 'right' });
         y += 20;
     };
 
@@ -204,11 +259,29 @@ function buildPDF(order, type = 'invoice') {
     }
 
     // ── Footer ────────────────────────────────────────────────────────────
-    const footerY = doc.page.height - 60;
-    doc.rect(0, footerY - 10, doc.page.width, 70).fill(LIGHT_BG);
+    const footerY = doc.page.height - 90;
+    
+    // Draw footer background
+    doc.rect(0, footerY - 15, doc.page.width, 105).fill(LIGHT_BG);
+
+    // Calculate center positioning for Powered by Be3
+    doc.font('Helvetica').fontSize(9);
+    const pWidth = doc.widthOfString('Powered by ');
+    doc.font('Helvetica-Bold').fontSize(9);
+    const bWidth = doc.widthOfString('Be3');
+    const totalW = pWidth + bWidth;
+    const startX = 50 + (pageWidth - totalW) / 2;
+
+    // Powered by Be3
+    doc.font('Helvetica').fontSize(9).fillColor(MUTED)
+       .text('Powered by ', startX, footerY, { continued: true })
+       .font('Helvetica-Bold').fontSize(9).fillColor(BLUE)
+       .text('Be3', { link: 'https://be3.shop' });
+
+    // Thank you text
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)
-        .text(`Thank you for shopping with ${storeName}. For support, reply to this ${isReceipt ? 'receipt' : 'invoice'}.`,
-            50, footerY, { align: 'center', width: pageWidth });
+        .text(`Thank you for shopping with ${order.business_name || storeName}. For support, reply to this ${isReceipt ? 'receipt' : 'invoice'}.`,
+            50, footerY + 20, { align: 'center', width: pageWidth });
 
     return doc;
 }
