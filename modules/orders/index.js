@@ -58,8 +58,139 @@ async function bootstrap(context) {
 
         router.use(subscriptionGuard('orders'));
 
+        // ── POST / — Vendor/Admin manual order creation ─────────────────────
+        router.post('/', authenticate, authorize('orders.manage'), asyncHandler(async (req, res) => {
+            const { tenantId, user } = req;
+            const {
+                customer_name, customer_email, customer_phone,
+                items,               // [{ product_id, variant_id?, quantity, price? }]
+                payment_method,      // 'manual' | 'cash' | 'bank_transfer' | 'pos'
+                payment_status: reqPaymentStatus, // 'fulfilled' | 'unpaid'
+                shipping_address,
+                notes,
+                discount_amount
+            } = req.body;
+
+            if (!items || !Array.isArray(items) || items.length === 0) {
+                return res.status(400).json({ error: 'items array is required' });
+            }
+            if (!customer_email && !customer_name) {
+                return res.status(400).json({ error: 'customer_email or customer_name is required' });
+            }
+
+            if (!user.roles) user.roles = await getUserRoles(tenantId, user.id);
+            const userIsVendor = isVendor(user.roles);
+            const userIsAdmin = isAdmin(user.roles);
+
+            // Build enriched item list + calculate totals
+            let subtotal = 0;
+            const enrichedItems = [];
+
+            for (const item of items) {
+                if (!item.product_id || !item.quantity) {
+                    return res.status(400).json({ error: `Each item must have product_id and quantity` });
+                }
+
+                let productSql = `SELECT id, name, price, image_url, status, created_by FROM products WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`;
+                const productRes = await query(productSql, [item.product_id, tenantId]);
+                if (!productRes.rows[0]) {
+                    return res.status(404).json({ error: `Product ${item.product_id} not found` });
+                }
+                const product = productRes.rows[0];
+
+                // Vendor can only include their own products
+                if (userIsVendor && !userIsAdmin && product.created_by !== user.id) {
+                    return res.status(403).json({ error: `You do not own product: ${product.name}` });
+                }
+
+                const unitPrice = parseFloat(item.price ?? product.price);
+                const lineTotal = unitPrice * parseInt(item.quantity);
+                subtotal += lineTotal;
+
+                enrichedItems.push({
+                    product_id: product.id,
+                    variant_id: item.variant_id || null,
+                    product_name: product.name,
+                    quantity: parseInt(item.quantity),
+                    price: unitPrice,
+                    total: lineTotal,
+                    image_url: product.image_url || null,
+                    vendor_id: product.created_by,
+                });
+            }
+
+            const discountAmt = parseFloat(discount_amount || 0);
+            const total = Math.max(0, subtotal - discountAmt);
+
+            // Generate unique order number
+            const orderCount = await query(`SELECT COUNT(*) FROM orders WHERE tenant_id = $1`, [tenantId]);
+            const seq = parseInt(orderCount.rows[0].count) + 1;
+            const order_number = `ORD-${String(seq).padStart(5, '0')}-${Date.now().toString(36).toUpperCase()}`;
+
+            // Determine vendor_id (for vendor-scoped orders, all items must be from same vendor)
+            const vendorId = userIsVendor && !userIsAdmin ? user.id
+                : (enrichedItems.length > 0 ? enrichedItems[0].vendor_id : null);
+
+            // Create order
+            const order = await tenantInsert('orders', tenantId, {
+                order_number,
+                user_id: null,                        // manual order, no storefront user
+                vendor_id: vendorId,
+                status: 'processing',
+                payment_status: reqPaymentStatus || (payment_method === 'manual' ? 'fulfilled' : 'unpaid'),
+                payment_method: payment_method || 'manual',
+                subtotal,
+                total,
+                discount_amount: discountAmt,
+                notes: notes || null,
+                created_by: user.id,
+                metadata: {
+                    customer_name,
+                    customer_email,
+                    customer_phone,
+                    shipping_address,
+                    source: 'vendor_created',
+                }
+            });
+
+            // Insert order items
+            for (const item of enrichedItems) {
+                await tenantInsert('order_items', tenantId, {
+                    order_id: order.id,
+                    product_id: item.product_id,
+                    variant_id: item.variant_id,
+                    product_name: item.product_name,
+                    quantity: item.quantity,
+                    price: item.price,
+                    total: item.total,
+                    image_url: item.image_url,
+                    vendor_id: item.vendor_id,
+                });
+            }
+
+            // Fire events — triggers existing notification listeners
+            eventBus.emitEvent('order.created', {
+                tenantId,
+                orderId: order.id,
+                orderNumber: order.order_number,
+                userId: null,
+                email: customer_email,
+                total,
+                source: 'vendor_created',
+            });
+            eventBus.emitEvent('admin.order.new', {
+                tenantId,
+                orderId: order.id,
+                orderNumber: order.order_number,
+                total,
+            });
+
+            res.status(201).json({ success: true, order, items: enrichedItems });
+        }));
+
         // List orders (Admin/Manager or Bot via session_id)
         router.get('/', optionalAuth, asyncHandler(async (req, res) => {
+
             const { tenantId, user, query: reqQuery } = req;
             const filters = {};
             if (reqQuery.status) filters.status = reqQuery.status;
@@ -368,7 +499,7 @@ async function bootstrap(context) {
         // Record WhatsApp order
         router.post('/whatsapp', optionalAuth, asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
-            const { cartId, vendorId, items, total, customerName, customerEmail, shippingAddress, session_id } = req.body;
+            const { cartId, vendorId, items, total, customerName, customerEmail, shippingAddress, session_id, couponCode } = req.body;
 
             console.log(`[Orders] Recording WhatsApp order for vendor: ${vendorId}`);
 
@@ -376,6 +507,34 @@ async function bootstrap(context) {
 
             // Convert "platform" string to null for database UUID compatibility
             const dbVendorId = vendorId === 'platform' ? null : vendorId;
+
+            // Server-side calculation
+            const calculatedSubtotal = items.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
+            let discountAmount = 0;
+
+            if (couponCode) {
+                const discountRes = await require('../../config/database').query(
+                    `SELECT * FROM discounts WHERE tenant_id = $1 AND UPPER(code) = UPPER($2) AND is_active = true`,
+                    [tenantId, couponCode]
+                );
+                const coupon = discountRes.rows[0];
+                if (coupon) {
+                    if (coupon.type === 'percentage') {
+                        discountAmount = (calculatedSubtotal * parseFloat(coupon.value)) / 100;
+                    } else if (coupon.type === 'fixed') {
+                        discountAmount = Math.min(parseFloat(coupon.value), calculatedSubtotal);
+                    }
+                    
+                    // Increment usage since WhatsApp orders bypass payment gateway
+                    await require('../../config/database').query(
+                        `UPDATE discounts SET used_count = used_count + 1 WHERE tenant_id = $1 AND UPPER(code) = UPPER($2)`,
+                        [tenantId, couponCode]
+                    );
+                    eventBus.emitEvent('coupon.applied', { tenantId, code: couponCode });
+                }
+            }
+
+            const calculatedTotal = Math.max(0, calculatedSubtotal - discountAmount);
 
             const order = await tenantInsert('orders', tenantId, {
                 order_number: orderNumber,
@@ -385,8 +544,9 @@ async function bootstrap(context) {
                 checkout_type: 'whatsapp',
                 status: 'pending',
                 payment_status: 'unpaid',
-                subtotal: total,
-                total: total,
+                subtotal: calculatedSubtotal,
+                discount_amount: discountAmount,
+                total: calculatedTotal,
                 currency: 'NGN',
                 customer_email: customerEmail || (user ? user.email : null),
                 customer_name: customerName || null,
@@ -394,7 +554,8 @@ async function bootstrap(context) {
                 metadata: {
                     is_whatsapp: true,
                     customer_name: customerName,
-                    cart_id: cartId
+                    cart_id: cartId,
+                    coupon_code: couponCode || null,
                 }
             });
 

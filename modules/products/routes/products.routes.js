@@ -561,6 +561,51 @@ function registerProductRoutes(router, eventBus) {
         res.json({ success: true, product });
     }));
 
+    // ── Inventory Toggle (lean in-stock / out-of-stock switch) ──────────
+    router.patch('/:id/inventory', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+        const { tenantId } = req;
+        const { in_stock } = req.body;
+
+        if (typeof in_stock !== 'boolean') {
+            return res.status(400).json({ error: 'in_stock (boolean) is required' });
+        }
+
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { isVendor, vendorName } = await PermissionService.getUserPermissionContext(tenantId, req.user.id);
+
+        // Vendor ownership guard
+        if (isVendor && vendorName) {
+            const check = await query(
+                `SELECT id FROM products WHERE id = $1 AND tenant_id = $2 AND ${ProductService.getVendorIsolationFilter(true, vendorName, req.user.id, 3, 4)}`,
+                [req.params.id, tenantId, vendorName, req.user.id]
+            );
+            if (check.rows.length === 0) {
+                return res.status(403).json({ error: 'Access denied: You do not own this product' });
+            }
+        }
+
+        const newStatus = in_stock ? 'active' : 'out_of_stock';
+        const updates = { status: newStatus };
+        if (!in_stock) updates.inventory_quantity = 0;
+
+        await query(
+            `UPDATE products SET status = $1 ${!in_stock ? ', inventory_quantity = 0' : ''}, updated_at = NOW()
+             WHERE id = $2 AND tenant_id = $3`,
+            [newStatus, req.params.id, tenantId]
+        );
+
+        const updated = await query(`SELECT id, name, status, inventory_quantity FROM products WHERE id = $1`, [req.params.id]);
+
+        eventBus.emitEvent('product.updated', { tenantId, productId: req.params.id });
+
+        res.json({
+            success: true,
+            in_stock,
+            status: newStatus,
+            product: updated.rows[0]
+        });
+    }));
+
     // Delete product (Soft delete)
     router.delete('/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
         const PermissionService = require('../../../platform/core/roles/services/PermissionService');

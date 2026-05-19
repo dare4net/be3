@@ -25,6 +25,7 @@ const TYPES = {
 
     // ── System ────────────────────────────────────────────────────────
     'system.verified':       { inapp: true,  email: true,  fcm: false, target: 'customer' },
+    'coupon.applied':        { inapp: true,  email: false, fcm: false, target: 'customer' },
 };
 
 module.exports = TYPES;

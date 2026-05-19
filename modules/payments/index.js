@@ -131,6 +131,14 @@ async function bootstrap(context) {
                         await client.query(`UPDATE carts SET status = 'completed' WHERE id = $1`, [cartId]);
                     }
 
+                    const couponCode = orderRow.metadata?.coupon_code;
+                    if (couponCode) {
+                        await client.query(
+                            `UPDATE discounts SET used_count = used_count + 1 WHERE tenant_id = $1 AND UPPER(code) = UPPER($2)`,
+                            [tenantId, couponCode]
+                        );
+                    }
+
                     await client.query('COMMIT');
                     console.log(`[Payments/Webhook] ✓ charge.success — ref: ${reference}, orderId: ${orderId}`);
 
@@ -228,7 +236,7 @@ async function bootstrap(context) {
         // =====================================================================
         router.post('/paystack/initialize', optionalAuth, asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
-            const { cartId, email: guestEmail, shippingAddress, vendorId } = req.body;
+            const { cartId, email: guestEmail, shippingAddress, vendorId, couponCode } = req.body;
 
             const email = user?.email || guestEmail;
 
@@ -276,8 +284,27 @@ async function bootstrap(context) {
 
             // 3. Calculate totals SERVER-SIDE (never trust the frontend for amounts)
             const subtotalNGN = items.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
-            const shippingNGN = FLAT_SHIPPING_NGN;
-            const totalNGN = subtotalNGN + shippingNGN;
+            let shippingNGN = FLAT_SHIPPING_NGN;
+            let discountAmount = 0;
+
+            if (couponCode) {
+                const discountRes = await query(
+                    `SELECT * FROM discounts WHERE tenant_id = $1 AND UPPER(code) = UPPER($2) AND is_active = true`,
+                    [tenantId, couponCode]
+                );
+                const coupon = discountRes.rows[0];
+                if (coupon) {
+                    if (coupon.type === 'percentage') {
+                        discountAmount = (subtotalNGN * parseFloat(coupon.value)) / 100;
+                    } else if (coupon.type === 'fixed') {
+                        discountAmount = Math.min(parseFloat(coupon.value), subtotalNGN);
+                    } else if (coupon.type === 'free_shipping') {
+                        shippingNGN = 0;
+                    }
+                }
+            }
+
+            const totalNGN = Math.max(0, subtotalNGN + shippingNGN - discountAmount);
             const totalKobo = Math.round(totalNGN * 100);
 
             // 4. Generate OUR idempotency reference BEFORE any DB or Paystack call
@@ -295,12 +322,14 @@ async function bootstrap(context) {
                 payment_status: 'unpaid',
                 paystack_reference: reference,
                 subtotal: subtotalNGN,
+                discount_amount: discountAmount,
                 total: totalNGN,
                 currency: 'NGN',
                 customer_email: email,
                 metadata: {
                     cart_id: cartId,
                     shipping_address: shippingAddress || null,
+                    coupon_code: couponCode || null,
                 }
             });
 
