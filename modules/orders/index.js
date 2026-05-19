@@ -139,19 +139,19 @@ async function bootstrap(context) {
                 vendor_id: vendorId,
                 status: 'processing',
                 payment_status: reqPaymentStatus || (payment_method === 'manual' ? 'fulfilled' : 'unpaid'),
-                payment_method: payment_method || 'manual',
                 subtotal,
                 total,
                 discount_amount: discountAmt,
                 coupon_code: coupon_code || null,
                 notes: notes || null,
-                created_by: user.id,
                 metadata: {
                     customer_name,
                     customer_email,
                     customer_phone,
                     shipping_address,
                     source: 'vendor_created',
+                    payment_method: payment_method || 'manual',
+                    created_by: user.id
                 }
             });
 
@@ -165,8 +165,7 @@ async function bootstrap(context) {
                     quantity: item.quantity,
                     price: item.price,
                     total: item.total,
-                    image_url: item.image_url,
-                    vendor_id: item.vendor_id,
+                    image_url: item.image_url
                 });
             }
 
