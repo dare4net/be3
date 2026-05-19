@@ -68,7 +68,8 @@ async function bootstrap(context) {
                 payment_status: reqPaymentStatus, // 'fulfilled' | 'unpaid'
                 shipping_address,
                 notes,
-                discount_amount
+                discount_amount,
+                coupon_code
             } = req.body;
 
             if (!items || !Array.isArray(items) || items.length === 0) {
@@ -142,6 +143,7 @@ async function bootstrap(context) {
                 subtotal,
                 total,
                 discount_amount: discountAmt,
+                coupon_code: coupon_code || null,
                 notes: notes || null,
                 created_by: user.id,
                 metadata: {
@@ -184,6 +186,15 @@ async function bootstrap(context) {
                 orderNumber: order.order_number,
                 total,
             });
+
+            if (order.payment_status === 'fulfilled' || order.payment_status === 'paid') {
+                eventBus.emitEvent('order.payment_status_changed', {
+                    tenantId,
+                    orderId: order.id,
+                    newStatus: order.status,
+                    newPaymentStatus: order.payment_status
+                });
+            }
 
             res.status(201).json({ success: true, order, items: enrichedItems });
         }));
@@ -443,6 +454,14 @@ async function bootstrap(context) {
 
             const updated = await tenantUpdate('orders', tenantId, orderId, updates);
 
+            eventBus.emitEvent('order.payment_status_changed', {
+                tenantId,
+                orderId: updated.id,
+                newStatus: updated.status,
+                newPaymentStatus: updated.payment_status,
+                oldPaymentStatus: order.payment_status
+            });
+
             res.json({ success: true, order: updated });
         }));
 
@@ -524,13 +543,6 @@ async function bootstrap(context) {
                     } else if (coupon.type === 'fixed') {
                         discountAmount = Math.min(parseFloat(coupon.value), calculatedSubtotal);
                     }
-                    
-                    // Increment usage since WhatsApp orders bypass payment gateway
-                    await require('../../config/database').query(
-                        `UPDATE discounts SET used_count = used_count + 1 WHERE tenant_id = $1 AND UPPER(code) = UPPER($2)`,
-                        [tenantId, couponCode]
-                    );
-                    eventBus.emitEvent('coupon.applied', { tenantId, code: couponCode });
                 }
             }
 
@@ -547,6 +559,7 @@ async function bootstrap(context) {
                 subtotal: calculatedSubtotal,
                 discount_amount: discountAmount,
                 total: calculatedTotal,
+                coupon_code: couponCode || null,
                 currency: 'NGN',
                 customer_email: customerEmail || (user ? user.email : null),
                 customer_name: customerName || null,
@@ -600,6 +613,8 @@ async function bootstrap(context) {
 
             // Convert "platform" string to null for database UUID compatibility
             const dbVendorId = vendorId === 'platform' ? null : vendorId;
+            
+            const couponCode = req.body.couponCode || null;
 
             const order = await tenantInsert('orders', tenantId, {
                 order_number: orderNumber,
@@ -611,6 +626,7 @@ async function bootstrap(context) {
                 payment_status: 'unpaid',
                 subtotal: total,
                 total: total,
+                coupon_code: couponCode,
                 currency: 'NGN',
                 customer_email: customerEmail || (user ? user.email : null),
                 metadata: {
@@ -699,6 +715,7 @@ async function bootstrap(context) {
                         payment_status: 'paid',
                         subtotal: vendorSubtotal,
                         total: vendorSubtotal + vendorTax + vendorShipping,
+                        coupon_code: paymentData.couponCode || null,
                         customer_email: paymentData.email,
                         paid_at: new Date(),
                     });

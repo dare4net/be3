@@ -29,7 +29,7 @@ async function bootstrap(context) {
         // Process Checkout (Mock Payment - Allow Guests)
         router.post('/process', optionalAuth, asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
-            const { cartId, billingAddress, shippingAddress, paymentMethod, email, vendorId } = req.body;
+            const { cartId, billingAddress, shippingAddress, paymentMethod, email, vendorId, couponCode } = req.body;
 
             console.log(`[Checkout] Processing request for tenant: ${tenantId}, user: ${user?.id || 'guest'}, cart: ${cartId}, vendor: ${vendorId || 'ALL'}`);
 
@@ -96,6 +96,7 @@ async function bootstrap(context) {
                 billingAddress,
                 shippingAddress,
                 vendorId: vendorId || null,
+                couponCode: couponCode || null,
                 items: items.map(item => ({
                     productId: item.product_id,
                     variantId: item.variant_id,

@@ -150,6 +150,36 @@ function registerCategoryRoutes(router, eventBus) {
         res.json({ success: true, categories: result.rows });
     }));
 
+    // Get categories where the vendor currently has products (from ledger)
+    router.get('/categories/vendor-active', authenticate, asyncHandler(async (req, res) => {
+        const PermissionService = require('../../../platform/core/roles/services/PermissionService');
+        const { isVendor, vendorName, roles } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+        
+        const isAdmin = roles.some(r => r.name === 'Admin' || r.name === 'Super Admin' || r === 'Admin' || r === 'Super Admin');
+
+        // If Admin, return all active categories
+        if (isAdmin) {
+            const sql = `SELECT * FROM categories WHERE tenant_id = $1 AND is_active = true ORDER BY name`;
+            const result = await query(sql, [req.tenantId]);
+            return res.json({ success: true, categories: result.rows });
+        }
+
+        // If Vendor, return only categories from their ledger
+        const sql = `
+            SELECT c.id, c.name, c.slug, c.image_url, vcl.product_count 
+            FROM categories c
+            JOIN vendor_category_ledger vcl ON c.id = vcl.category_id
+            WHERE c.tenant_id = $1 
+            AND vcl.tenant_id = $1
+            AND (vcl.vendor_id = $2 OR vcl.vendor_name = $3)
+            AND vcl.product_count > 0
+            AND c.is_active = true
+            ORDER BY c.name
+        `;
+        const result = await query(sql, [req.tenantId, req.user.id, vendorName]);
+        res.json({ success: true, categories: result.rows });
+    }));
+
     // Get children of a specific category (Admin - for hierarchical navigation)
     router.get('/categories/:id/children', authenticate, asyncHandler(async (req, res) => {
         const PermissionService = require('../../../platform/core/roles/services/PermissionService');

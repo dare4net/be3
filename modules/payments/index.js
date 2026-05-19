@@ -131,18 +131,19 @@ async function bootstrap(context) {
                         await client.query(`UPDATE carts SET status = 'completed' WHERE id = $1`, [cartId]);
                     }
 
-                    const couponCode = orderRow.metadata?.coupon_code;
-                    if (couponCode) {
-                        await client.query(
-                            `UPDATE discounts SET used_count = used_count + 1 WHERE tenant_id = $1 AND UPPER(code) = UPPER($2)`,
-                            [tenantId, couponCode]
-                        );
-                    }
+                    // Coupon usage is now handled exclusively by the 'order.payment_status_changed' event listener in the discount module.
 
                     await client.query('COMMIT');
                     console.log(`[Payments/Webhook] ✓ charge.success — ref: ${reference}, orderId: ${orderId}`);
 
                     // Side effects OUTSIDE transaction (non-critical async)
+                    eventBus.emitEvent('order.payment_status_changed', {
+                        tenantId,
+                        orderId,
+                        newStatus: 'processing',
+                        newPaymentStatus: 'paid'
+                    });
+
                     eventBus.emitEvent('payment.success', {
                         tenantId,
                         orderId,
@@ -326,6 +327,7 @@ async function bootstrap(context) {
                 total: totalNGN,
                 currency: 'NGN',
                 customer_email: email,
+                coupon_code: couponCode || null,
                 metadata: {
                     cart_id: cartId,
                     shipping_address: shippingAddress || null,
@@ -498,6 +500,13 @@ async function bootstrap(context) {
                         // Emit payment.success on eventBus so notification listeners fire
                         // (mirrors what the Paystack webhook handler does on line ~138)
                         try {
+                            eventBus.emitEvent('order.payment_status_changed', {
+                                tenantId,
+                                orderId: row.order_id,
+                                newStatus: 'processing',
+                                newPaymentStatus: 'paid'
+                            });
+
                             eventBus.emitEvent('payment.success', {
                                 tenantId,
                                 orderId: row.order_id,
