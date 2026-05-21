@@ -514,10 +514,12 @@ async function bootstrap(context) {
             res.json({ success: true, message: 'Order cancelled', order: updatedOrder });
         }));
 
+        const { calculateSecureShipping } = require('../shipping/shippingService');
+
         // Record WhatsApp order
         router.post('/whatsapp', optionalAuth, asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
-            const { cartId, vendorId, items, total, customerName, customerEmail, shippingAddress, session_id, couponCode } = req.body;
+            const { cartId, vendorId, items: rawItems, customerName, customerEmail, shippingAddress, session_id, couponCode } = req.body;
 
             console.log(`[Orders] Recording WhatsApp order for vendor: ${vendorId}`);
 
@@ -526,8 +528,21 @@ async function bootstrap(context) {
             // Convert "platform" string to null for database UUID compatibility
             const dbVendorId = vendorId === 'platform' ? null : vendorId;
 
+            // Fetch validated backend items to calculate logic safely (since WhatsApp flow might omit cart validation)
+            const itemsRes = await require('../../config/database').query(`
+                SELECT ci.*, p.price, p.created_by as vendor_id, p.name as product_name, p.shipping_base_fee_override, p.disable_shipping_multiplier
+                FROM cart_items ci
+                JOIN products p ON p.id = ci.product_id
+                WHERE ci.cart_id = $1
+            `, [cartId]);
+            const cartItems = itemsRes.rows;
+
+            if (cartItems.length === 0) {
+                return res.status(400).json({ error: 'EmptyCart', message: 'Cart not found or empty.' });
+            }
+
             // Server-side calculation
-            const calculatedSubtotal = items.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
+            const calculatedSubtotal = cartItems.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
             let discountAmount = 0;
 
             if (couponCode) {
@@ -541,11 +556,30 @@ async function bootstrap(context) {
                         discountAmount = (calculatedSubtotal * parseFloat(coupon.value)) / 100;
                     } else if (coupon.type === 'fixed') {
                         discountAmount = Math.min(parseFloat(coupon.value), calculatedSubtotal);
+                    } else if (coupon.type === 'free_shipping') {
+                        // ignore shipping fee calculation logically if free shipping coupon applied
                     }
                 }
             }
 
-            const calculatedTotal = Math.max(0, calculatedSubtotal - discountAmount);
+            let serverShippingFee = 0;
+            if (shippingAddress) {
+                try {
+                    const destination = {
+                        country_id: shippingAddress.country_id,
+                        state_id: shippingAddress.state_id,
+                        landmark_id: shippingAddress.landmark_id
+                    };
+                    const shippingResult = await calculateSecureShipping(tenantId, cartItems, destination);
+                    serverShippingFee = parseFloat(shippingResult.total_fee || 0);
+                } catch (e) {
+                    return res.status(400).json({ error: 'ShippingError', message: e.message });
+                }
+            }
+
+            const finalShipping = (coupon && coupon.type === 'free_shipping') ? 0 : serverShippingFee;
+
+            const calculatedTotal = Math.max(0, calculatedSubtotal + finalShipping - discountAmount);
 
             const order = await tenantInsert('orders', tenantId, {
                 order_number: orderNumber,
@@ -567,12 +601,13 @@ async function bootstrap(context) {
                     is_whatsapp: true,
                     customer_name: customerName,
                     cart_id: cartId,
+                    shipping_fee: finalShipping,
                     coupon_code: couponCode || null,
                 }
             });
 
             // Insert order items
-            for (const item of items) {
+            for (const item of rawItems) {
                 await tenantInsert('order_items', tenantId, {
                     order_id: order.id,
                     product_id: item.product_id,
@@ -612,7 +647,7 @@ async function bootstrap(context) {
 
             // Convert "platform" string to null for database UUID compatibility
             const dbVendorId = vendorId === 'platform' ? null : vendorId;
-            
+
             const couponCode = req.body.couponCode || null;
 
             const order = await tenantInsert('orders', tenantId, {

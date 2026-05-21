@@ -231,6 +231,8 @@ async function bootstrap(context) {
         const router = express.Router();
         router.use(subscriptionGuard('payments'));
 
+        const { calculateSecureShipping } = require('../shipping/shippingService');
+
         // =====================================================================
         // POST /payments/paystack/initialize
         // Initializes a Paystack transaction and creates a pending order + payment
@@ -283,9 +285,26 @@ async function bootstrap(context) {
                 return res.status(400).json({ error: 'EmptyCart', message: 'Cart has no items' });
             }
 
-            // 3. Calculate totals SERVER-SIDE (never trust the frontend for amounts)
+            // 3. Calculate totals SERVER-SIDE (Backend-enforced topologies only)
             const subtotalNGN = items.reduce((sum, item) => sum + (parseFloat(item.price) * item.quantity), 0);
-            let shippingNGN = FLAT_SHIPPING_NGN;
+
+            let shippingNGN = 0;
+            if (shippingAddress) {
+                try {
+                    const destination = {
+                        country_id: shippingAddress.country_id,
+                        state_id: shippingAddress.state_id,
+                        landmark_id: shippingAddress.landmark_id
+                    };
+                    const shippingResult = await calculateSecureShipping(tenantId, items, destination);
+                    shippingNGN = parseFloat(shippingResult.total_fee || 0);
+                } catch (e) {
+                    return res.status(400).json({ error: 'ShippingError', message: e.message });
+                }
+            } else {
+                shippingNGN = FLAT_SHIPPING_NGN; // Generic fallback
+            }
+
             let discountAmount = 0;
 
             if (couponCode) {
@@ -332,6 +351,7 @@ async function bootstrap(context) {
                 metadata: {
                     cart_id: cartId,
                     shipping_address: shippingAddress || null,
+                    shipping_fee: shippingNGN,
                     coupon_code: couponCode || null,
                     customer_name: customerName || null,
                     customer_phone: customerPhone || null,

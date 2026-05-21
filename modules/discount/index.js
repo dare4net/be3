@@ -44,13 +44,13 @@ async function runMigration() {
             deleted_at      TIMESTAMPTZ DEFAULT NULL
         );
     `);
-    
+
     // Schema updates
     try {
         await query(`ALTER TABLE discounts ADD COLUMN IF NOT EXISTS max_uses_per_user INTEGER DEFAULT NULL;`);
         await query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code VARCHAR(64);`);
         await query(`ALTER TABLE discounts ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ DEFAULT NULL;`);
-        
+
         // Update constraint to allow vendor-scoped coupons with same code and soft deletes
         await query(`ALTER TABLE discounts DROP CONSTRAINT IF EXISTS discounts_tenant_id_code_key CASCADE;`);
         await query(`ALTER TABLE discounts DROP CONSTRAINT IF EXISTS discounts_tenant_id_code_vendor_id_key CASCADE;`);
@@ -88,7 +88,7 @@ async function validateCoupon(tenantId, code, items = [], vendorId = null, userI
         console.log('[DEBUG validateCoupon] Coupon not found for code:', code);
         return { valid: false, error: 'Coupon not found or inactive' };
     }
-    
+
     // Explicitly reject if checkout is for Vendor A but coupon belongs to Vendor B
     if (vendorId && vendorId !== 'null' && vendorId !== 'undefined') {
         if (coupon.vendor_id && coupon.vendor_id !== vendorId) {
@@ -96,7 +96,7 @@ async function validateCoupon(tenantId, code, items = [], vendorId = null, userI
             return { valid: false, error: 'This coupon belongs to a different vendor' };
         }
     }
-    
+
     console.log('[DEBUG validateCoupon] Found coupon:', coupon.id, 'with vendor_id:', coupon.vendor_id);
 
     const now = new Date();
@@ -109,9 +109,9 @@ async function validateCoupon(tenantId, code, items = [], vendorId = null, userI
     if (coupon.max_uses !== null && coupon.used_count >= coupon.max_uses) {
         return { valid: false, error: 'Coupon usage limit reached' };
     }
-    
+
     const productIds = items.map(i => i.product_id);
-    
+
     // Scoping to vendor if it's a vendor coupon
     let scopedProductIds = productIds;
     if (coupon.vendor_id && productIds.length > 0) {
@@ -119,7 +119,7 @@ async function validateCoupon(tenantId, code, items = [], vendorId = null, userI
             SELECT id FROM products WHERE id = ANY($1) AND created_by = $2
         `, [productIds, coupon.vendor_id]);
         scopedProductIds = vpQuery.rows.map(r => r.id);
-        
+
         if (scopedProductIds.length === 0) {
             return { valid: false, error: 'Coupon is specific to a vendor not in your cart' };
         }
@@ -145,7 +145,7 @@ async function validateCoupon(tenantId, code, items = [], vendorId = null, userI
                 )
                 SELECT id FROM cat_tree
             `, [tenantId, coupon.applicable_ids]);
-            
+
             const expandedApplicableIds = expandedIdsRes.rows.map(r => r.id);
 
             // Check both products table (native category_id) and product_categories table
@@ -158,7 +158,7 @@ async function validateCoupon(tenantId, code, items = [], vendorId = null, userI
                 FROM product_categories pc 
                 WHERE pc.product_id = ANY($1) AND pc.tenant_id = $2
             `, [scopedProductIds, tenantId]);
-            
+
             for (const row of catQuery.rows) {
                 if (expandedApplicableIds.includes(row.category_id)) {
                     if (!eligibleProductIds.includes(row.product_id)) {
@@ -170,7 +170,7 @@ async function validateCoupon(tenantId, code, items = [], vendorId = null, userI
                 return { valid: false, error: 'Coupon not applicable to any items in your cart' };
             }
         } else {
-             return { valid: false, error: 'Coupon not applicable to an empty order' };
+            return { valid: false, error: 'Coupon not applicable to an empty order' };
         }
     } else {
         eligibleProductIds = [...scopedProductIds];
@@ -245,7 +245,7 @@ async function bootstrap(context) {
             }
 
             const countRes = await query(`SELECT COUNT(*) FROM discounts d ${whereClause}`, params);
-            
+
             let sql = `
                 SELECT d.*, u.business_name as vendor_name 
                 FROM discounts d
@@ -315,6 +315,9 @@ async function bootstrap(context) {
             if (!['percentage', 'fixed', 'free_shipping'].includes(type)) {
                 return res.status(400).json({ error: 'type must be percentage, fixed, or free_shipping' });
             }
+            if (!description || description.trim().length < 15 || description.trim().length > 60) {
+                return res.status(400).json({ error: 'Description must be between 15 and 60 characters' });
+            }
 
             const Role = require('../../platform/core/roles/models/Role');
             const roles = await Role.getUserRoles(tenantId, user.id);
@@ -348,6 +351,9 @@ async function bootstrap(context) {
             const updates = { ...rest };
             if (code) updates.code = code.toUpperCase();
             if (updates.value !== undefined) updates.value = parseFloat(updates.value);
+            if (updates.description !== undefined && (updates.description.trim().length < 15 || updates.description.trim().length > 60)) {
+                return res.status(400).json({ error: 'Description must be between 15 and 60 characters' });
+            }
 
             const coupon = await tenantUpdate('discounts', tenantId, req.params.id, updates);
             if (!coupon) return res.status(404).json({ error: 'Coupon not found' });
@@ -397,7 +403,7 @@ async function bootstrap(context) {
         }));
 
         // Remove POST /apply and replace with event listeners
-        
+
         eventBus.registerListener('order.payment_status_changed', async (event) => {
             const { tenantId, orderId, newStatus, newPaymentStatus } = event.data;
             if (newPaymentStatus === 'paid' || newPaymentStatus === 'fulfilled') {
@@ -409,21 +415,79 @@ async function bootstrap(context) {
                 if (order && order.coupon_code) {
                     let updateQuery = `UPDATE discounts SET used_count = used_count + 1, updated_at = NOW() WHERE tenant_id = $1 AND UPPER(code) = UPPER($2)`;
                     let queryParams = [tenantId, order.coupon_code];
-                    
+
                     if (order.vendor_id) {
                         updateQuery += ` AND (vendor_id = $3 OR vendor_id IS NULL)`;
                         queryParams.push(order.vendor_id);
                     } else {
                         updateQuery += ` AND vendor_id IS NULL`;
                     }
-                    
+
                     await query(updateQuery, queryParams);
                     console.log(`[Discount] Incremented usage for coupon ${order.coupon_code} via payment_status_changed`);
                 }
             }
         });
 
+        // ── GET /storefront — public list of active coupons for storefront ──
+        router.get('/storefront', optionalAuth, asyncHandler(async (req, res) => {
+            const { tenantId } = req;
+            const { vendor_id } = req.query;
 
+            let sql = `
+                SELECT d.id, d.code, d.description, d.type, d.value, d.min_order_value, 
+                       d.max_uses, d.used_count, d.applicable_to, d.applicable_ids, 
+                       d.vendor_id, d.starts_at, d.expires_at, d.created_at,
+                       u.business_name as vendor_name, (u.kyb_status = 'approved') as vendor_verified,
+                       (SELECT slug FROM collections c WHERE c.created_by = d.vendor_id AND c.is_active = true ORDER BY c.created_at ASC LIMIT 1) as vendor_slug
+                FROM discounts d
+                LEFT JOIN users u ON d.vendor_id = u.id
+                WHERE d.tenant_id = $1 
+                  AND d.is_active = true 
+                  AND d.deleted_at IS NULL 
+                  AND (d.starts_at IS NULL OR d.starts_at <= NOW())
+                  AND (d.expires_at IS NULL OR d.expires_at > NOW())
+            `;
+            const params = [tenantId];
+
+            if (vendor_id) {
+                // If a vendor is specified, only return platform wide coupons and coupons for this vendor
+                params.push(vendor_id);
+                sql += ` AND (d.vendor_id IS NULL OR d.vendor_id = $${params.length})`;
+            }
+
+            sql += ` ORDER BY d.created_at DESC`;
+
+            const { rows } = await query(sql, params);
+
+            // Fetch category names for specific categories
+            const categoryIdsToFetch = new Set();
+            for (const row of rows) {
+                if (row.applicable_to === 'categories' && row.applicable_ids?.length > 0) {
+                    row.applicable_ids.forEach(id => categoryIdsToFetch.add(id));
+                }
+            }
+
+            let categoryMap = {};
+            if (categoryIdsToFetch.size > 0) {
+                const catRes = await query(
+                    `SELECT id, name FROM categories WHERE id = ANY($1) AND tenant_id = $2`,
+                    [Array.from(categoryIdsToFetch), tenantId]
+                );
+                catRes.rows.forEach(c => {
+                    categoryMap[c.id] = c.name;
+                });
+            }
+
+            const enrichedRows = rows.map(row => {
+                if (row.applicable_to === 'categories' && row.applicable_ids?.length > 0) {
+                    row.applicable_names = row.applicable_ids.map(id => categoryMap[id] || id);
+                }
+                return row;
+            });
+
+            res.json({ success: true, data: enrichedRows });
+        }));
 
         app.use('/discounts', router);
         console.log('[Discount] Module initialized');

@@ -50,7 +50,7 @@ async function fetchOrderData(orderId, tenantId) {
 
     // ── Dynamically resolve true vendor from items ──
     const uniqueVendors = [...new Set(order.items.map(i => i.product_vendor_id).filter(Boolean))];
-    
+
     if (uniqueVendors.length === 1) {
         const vRes = await query(`SELECT business_name, first_name, last_name, email, whatsapp_phone FROM users WHERE id = $1`, [uniqueVendors[0]]);
         if (vRes.rows[0]) {
@@ -125,8 +125,8 @@ function buildPDF(order, type = 'invoice') {
     // ── Store / Vendor info ────────────────────────────────────────────
     const vData = order.vendor_data || {};
     const storeBusinessName = vData.business_name || order.business_name || storeName;
-    const vendorName = [vData.first_name, vData.last_name].filter(Boolean).join(' ') || 
-                       [order.vendor_first, order.vendor_last].filter(Boolean).join(' ') || storeName;
+    const vendorName = [vData.first_name, vData.last_name].filter(Boolean).join(' ') ||
+        [order.vendor_first, order.vendor_last].filter(Boolean).join(' ') || storeName;
     const supportPhone = vData.whatsapp_phone || order.vendor_phone || settings.support_phone || '';
     const supportEmail = vData.email || order.vendor_email || settings.support_email || '';
 
@@ -155,7 +155,7 @@ function buildPDF(order, type = 'invoice') {
         const addr = meta.shipping_address || order.shipping_address;
         doc.fillColor(DARK).font('Helvetica-Bold').fontSize(10).text('SHIP TO', 300, y);
         doc.font('Helvetica').fontSize(10).fillColor(DARK);
-        
+
         let addrStr = '';
         if (typeof addr === 'string') {
             addrStr = addr;
@@ -165,7 +165,7 @@ function buildPDF(order, type = 'invoice') {
             const country = addr.country || '';
             addrStr = [line1, location, country].filter(Boolean).join('\n');
         }
-        
+
         doc.text(addrStr, 300, y + 16, { width: 200 });
     }
 
@@ -222,12 +222,20 @@ function buildPDF(order, type = 'invoice') {
         y += 20;
     };
 
-    row('Subtotal', fmt(order.subtotal || order.total, currency));
-    if (parseFloat(order.discount_amount) > 0) {
-        row('Discount', `- ${fmt(order.discount_amount, currency)}`);
+    const discount = parseFloat(order.discount_amount || 0);
+    const subtotal = parseFloat(order.subtotal || order.total || 0);
+    const total = parseFloat(order.total || 0);
+    const metaShipping = order.metadata?.shipping_fee;
+    const shipping = metaShipping !== undefined
+        ? parseFloat(metaShipping)
+        : Math.max(0, (total + discount) - subtotal);
+
+    row('Subtotal', fmt(subtotal, currency));
+    if (discount > 0) {
+        row('Discount', `- ${fmt(discount, currency)}`);
     }
-    if (parseFloat(order.shipping_cost || 0) > 0) {
-        row('Shipping', fmt(order.shipping_cost, currency));
+    if (shipping > 0) {
+        row('Shipping', fmt(shipping, currency));
     }
     if (parseFloat(order.tax_amount || 0) > 0) {
         row('Tax', fmt(order.tax_amount, currency));
@@ -260,7 +268,7 @@ function buildPDF(order, type = 'invoice') {
 
     // ── Footer ────────────────────────────────────────────────────────────
     const footerY = doc.page.height - 90;
-    
+
     // Draw footer background
     doc.rect(0, footerY - 15, doc.page.width, 105).fill(LIGHT_BG);
 
@@ -274,9 +282,9 @@ function buildPDF(order, type = 'invoice') {
 
     // Powered by Be3
     doc.font('Helvetica').fontSize(9).fillColor(MUTED)
-       .text('Powered by ', startX, footerY, { continued: true })
-       .font('Helvetica-Bold').fontSize(9).fillColor(BLUE)
-       .text('Be3', { link: 'https://be3.shop' });
+        .text('Powered by ', startX, footerY, { continued: true })
+        .font('Helvetica-Bold').fontSize(9).fillColor(BLUE)
+        .text('Be3', { link: 'https://be3.shop' });
 
     // Thank you text
     doc.fillColor(MUTED).font('Helvetica').fontSize(8)

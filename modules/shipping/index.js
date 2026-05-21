@@ -43,6 +43,8 @@ async function bootstrap(context) {
             res.status(201).json({ success: true, rate });
         }));
 
+        const { calculateSecureShipping } = require('./shippingService');
+
         // Advanced Calculate Shipping (Public/Checkout)
         router.post('/calculate', optionalAuth, asyncHandler(async (req, res) => {
             const { tenantId } = req;
@@ -52,100 +54,30 @@ async function bootstrap(context) {
                 return res.status(400).json({ error: 'Cart items and destination are required' });
             }
 
-            const { country_id, state_id, landmark_id } = destination;
-
-            // Group items by vendor
-            const vendorGroups = {};
+            // Fill missing overrides automatically before passing to secure engine if product object missing it
             for (const item of cart_items) {
-                if (!vendorGroups[item.vendor_id]) {
-                    vendorGroups[item.vendor_id] = [];
-                }
-                vendorGroups[item.vendor_id].push(item);
-            }
-
-            const results = {};
-            let total_fee = 0;
-
-            for (const [vendorId, items] of Object.entries(vendorGroups)) {
-                // 1. Fetch Vendor Config
-                const vConfRes = await query(`SELECT * FROM vendor_shipping_configs WHERE tenant_id = $1 AND vendor_id = $2`, [tenantId, vendorId]);
-                const vConfig = vConfRes.rows[0] || { global_base_fee: 0, global_processing_min: 1, global_processing_max: 2 };
-
-                // 2. Fetch Zonal Rules matching the destination
-                const vZonesRes = await query(`
-                    SELECT * FROM vendor_shipping_zones WHERE tenant_id = $1 AND vendor_id = $2 
-                    AND (
-                        (location_type = 'country' AND location_id = $3) OR
-                        (location_type = 'state' AND location_id = $4) OR
-                        (location_type = 'landmark' AND location_id = $5)
-                    )
-                `, [tenantId, vendorId, country_id || 0, state_id || 0, landmark_id || 0]);
-
-                const zones = vZonesRes.rows;
-                const landmarkZone = zones.find(z => z.location_type === 'landmark');
-                const stateZone = zones.find(z => z.location_type === 'state');
-                const countryZone = zones.find(z => z.location_type === 'country');
-
-                // If destination has a state/landmark but vendor has NO rules for it AND NO country wildcard, they might not cover it.
-                // However, in our system, if NO matching zone is found, it means no coverage unless we fallback.
-                if (!countryZone && !stateZone && !landmarkZone) {
-                    return res.status(400).json({ error: `Vendor ${vendorId} does not deliver to this location.`, vendor_id: vendorId });
-                }
-
-                const fallbackMultiplier = landmarkZone?.multiplier ?? stateZone?.multiplier ?? countryZone?.multiplier ?? 1;
-                const fallbackTransitMin = landmarkZone?.transit_min ?? stateZone?.transit_min ?? countryZone?.transit_min ?? 1;
-                const fallbackTransitMax = landmarkZone?.transit_max ?? stateZone?.transit_max ?? countryZone?.transit_max ?? 3;
-
-                let highestFee = 0;
-                let highestDaysMin = 0;
-                let highestDaysMax = 0;
-
-                // 3. Process each item
-                for (const item of items) {
-                    // Fetch product overrides if item doesn't already have them populated
-                    let pData = item.product;
-                    if (!pData || pData.shipping_base_fee_override === undefined) {
-                        const pRes = await query(`
-                            SELECT shipping_base_fee_override, disable_shipping_multiplier,
+                let pData = item.product;
+                if (!pData || pData.shipping_base_fee_override === undefined) {
+                    const pRes = await query(`
+                        SELECT shipping_base_fee_override, disable_shipping_multiplier,
                         processing_min_override, processing_max_override,
                         transit_min_override, transit_max_override
-                            FROM products WHERE id = $1 AND tenant_id = $2
-                        `, [item.product_id, tenantId]);
-                        pData = pRes.rows[0];
-                    }
-
-                    if (!pData) continue; // Item doesn't exist
-
-                    // Calculate Fee
-                    const itemBaseFee = parseFloat(pData.shipping_base_fee_override ?? vConfig.global_base_fee ?? 0);
-                    const activeMultiplier = pData.disable_shipping_multiplier ? 1 : fallbackMultiplier;
-                    const itemShippingFee = itemBaseFee * parseFloat(activeMultiplier);
-
-                    // Calculate Logistics
-                    const processMin = pData.processing_min_override ?? vConfig.global_processing_min ?? 1;
-                    const processMax = pData.processing_max_override ?? vConfig.global_processing_max ?? 2;
-                    const transitMin = pData.transit_min_override ?? fallbackTransitMin;
-                    const transitMax = pData.transit_max_override ?? fallbackTransitMax;
-
-                    const itemDaysMin = processMin + transitMin;
-                    const itemDaysMax = processMax + transitMax;
-
-                    // Aggregate
-                    if (itemShippingFee > highestFee) highestFee = itemShippingFee;
-                    if (itemDaysMin > highestDaysMin) highestDaysMin = itemDaysMin;
-                    if (itemDaysMax > highestDaysMax) highestDaysMax = itemDaysMax;
+                        FROM products WHERE id = $1 AND tenant_id = $2
+                    `, [item.product_id, tenantId]);
+                    if (pRes.rows[0]) item.product = { ...(item.product || {}), ...pRes.rows[0] };
                 }
-
-                results[vendorId] = {
-                    fee: highestFee,
-                    delivery_days_min: highestDaysMin,
-                    delivery_days_max: highestDaysMax,
-                    currency: 'NGN' // Will adapt to multi-currency later
-                };
-                total_fee += highestFee;
             }
 
-            res.json({ success: true, total_fee, breakdowns: results });
+            try {
+                const { total_fee, breakdowns } = await calculateSecureShipping(tenantId, cart_items, destination);
+                res.json({ success: true, total_fee, breakdowns });
+            } catch (err) {
+                if (err.message.includes('does not deliver')) {
+                    const vIdMatch = err.message.match(/Vendor ([\w-]+)/);
+                    return res.status(400).json({ error: err.message, vendor_id: vIdMatch ? vIdMatch[1] : null });
+                }
+                throw err;
+            }
         }));
 
         // ==========================================
@@ -295,7 +227,7 @@ async function bootstrap(context) {
 
             // 1. Get global config
             const configReq = await query(`SELECT * FROM vendor_shipping_configs WHERE tenant_id = $1 AND vendor_id = $2`, [req.tenantId, vendorId]);
-            const config = configReq.rows[0] || { global_base_fee: 1500, global_processing_min: 1, global_processing_max: 2 };
+            const config = configReq.rows[0] || { unconfigured: true, global_base_fee: 1500, global_processing_min: 1, global_processing_max: 2 };
 
             // 2. Get zones
             const zonesReq = await query(`
