@@ -311,7 +311,7 @@ router.post('/refresh', asyncHandler(async (req, res) => {
         const { tenantId } = req;
         // Check cookie first, fallback to body
         const tokenToRefresh = req.cookies?.refreshToken || value.refreshToken;
-        
+
         if (!tokenToRefresh) {
             return res.status(400).json({ error: 'ValidationError', message: 'Refresh token required' });
         }
@@ -570,6 +570,9 @@ router.patch('/me', authenticate, asyncHandler(async (req, res) => {
         user: updatedUser
     });
 }));
+
+// Mount Address book routes
+router.use('/me/addresses', require('./routes/addresses.routes'));
 
 /**
  * GET /auth/users

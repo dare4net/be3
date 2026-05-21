@@ -98,7 +98,8 @@ class IndexService {
             handle: product.handle || null,
             image_url: product.image_url || null,
             tags: resolvedTags,
-            created_by: product.created_by || null
+            created_by: product.created_by || null,
+            delivery_type: product.delivery_type || 'normal'
         };
 
         // Add product attributes if they exist

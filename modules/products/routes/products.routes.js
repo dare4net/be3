@@ -213,9 +213,9 @@ function registerProductRoutes(router, eventBus) {
         // 2. Protection Logic: If it's a vendor-managed collection, reject manual rule/identity changes
         if (current.collection_type === 'vendor' && (updates.rules || updates.slug || updates.name)) {
             console.warn(`[Products] REJECTED: Manual tampering attempted on vendor collection ${collectionId}`);
-            return res.status(403).json({ 
-                error: 'Manual update denied', 
-                message: 'This is an automatic vendor collection. Rules, names, and slugs are managed by the business profile and cannot be edited manually.' 
+            return res.status(403).json({
+                error: 'Manual update denied',
+                message: 'This is an automatic vendor collection. Rules, names, and slugs are managed by the business profile and cannot be edited manually.'
             });
         }
 
@@ -393,7 +393,15 @@ function registerProductRoutes(router, eventBus) {
             canonical_url: req.body.canonical_url,
             robots: req.body.robots,
             structured_data: req.body.structured_data,
-            whats_included: req.body.whats_included || []
+            whats_included: req.body.whats_included || [],
+            // Delivery & Shipping Fields
+            delivery_type: (req.body.delivery_type === 'express' && isVendor) ? 'normal' : (req.body.delivery_type || 'normal'),
+            shipping_base_fee_override: req.body.shipping_base_fee_override || null,
+            disable_shipping_multiplier: req.body.disable_shipping_multiplier || false,
+            processing_min_override: req.body.processing_min_override || null,
+            processing_max_override: req.body.processing_max_override || null,
+            transit_min_override: req.body.transit_min_override || null,
+            transit_max_override: req.body.transit_max_override || null
         };
 
         const product = await tenantInsert('products', req.tenantId, productData);
@@ -471,6 +479,11 @@ function registerProductRoutes(router, eventBus) {
 
             // Ensure dynamic vendor tag remains and is sanitized
             updateData.tags = ProductService.sanitizeTags(updateData.tags || [], isVendor, vendorName);
+
+            // Enforce delivery_type permission for vendors
+            if (updateData.delivery_type === 'express') {
+                updateData.delivery_type = 'normal';
+            }
         }
 
         // If variant_label is updated, automatically synchronize the full product name
@@ -484,6 +497,15 @@ function registerProductRoutes(router, eventBus) {
                 }
             }
         }
+
+        // Scrub all empty strings from payload safely mapping them to native table NULLs
+        Object.keys(updateData).forEach(key => {
+            if (typeof updateData[key] === 'string' && updateData[key].trim() === "") {
+                updateData[key] = null;
+            }
+        });
+
+        console.log('[Product PATCH] Injecting safe payload:', updateData);
 
         const product = await tenantUpdate('products', req.tenantId, req.params.id, updateData);
 

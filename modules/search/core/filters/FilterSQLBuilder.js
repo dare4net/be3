@@ -231,6 +231,13 @@ class FilterSQLBuilder {
             index++;
         }
 
+        // Delivery type filter
+        if (filters.delivery_type) {
+            sql += ` AND p.delivery_type = $${index}`;
+            queryParams.push(filters.delivery_type);
+            index++;
+        }
+
         // Featured filter
         if (filters.is_featured !== undefined) {
             sql += ` AND (si.metadata->>'is_featured')::boolean = $${index}`;
@@ -516,6 +523,13 @@ class FilterSQLBuilder {
         if (filters.status) {
             sql += ` AND p.status = $${index}`;
             queryParams.push(filters.status);
+            index++;
+        }
+
+        // Delivery type filter
+        if (filters.delivery_type) {
+            sql += ` AND p.delivery_type = $${index}`;
+            queryParams.push(filters.delivery_type);
             index++;
         }
 

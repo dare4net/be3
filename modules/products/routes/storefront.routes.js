@@ -13,7 +13,7 @@ const { PRODUCT_SAFE_COLUMNS } = require('../../../utils/storefrontHelper');
 function registerStorefrontRoutes(router) {
     // PUBLIC STOREFRONT ENDPOINT (No Auth, but requires Subscription/Module Access)
     router.get('/storefront', subscriptionGuard('products'), asyncHandler(async (req, res) => {
-        const { featured, category, category_id, limit, exclude, sort, q, price_min, price_max, vendor_name } = req.query;
+        const { featured, category, category_id, limit, exclude, sort, q, price_min, price_max, vendor_name, delivery_type } = req.query;
         const page = parseInt(req.query.page) || 1;
         const perPage = parseInt(limit || req.query.per_page) || 20;
         const offset = (page - 1) * perPage;
@@ -59,6 +59,11 @@ function registerStorefrontRoutes(router) {
         if (vendor_name) {
             queryParams.push(vendor_name);
             whereConditions.push(`p.attributes->>'vendor' = $${queryParams.length}`);
+        }
+
+        if (delivery_type) {
+            queryParams.push(delivery_type);
+            whereConditions.push(`p.delivery_type = $${queryParams.length}`);
         }
 
         if (category_id || category) {

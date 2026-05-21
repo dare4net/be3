@@ -466,7 +466,8 @@ class SearchService {
                     description: row.metadata.description || row.content,
                     attributes: row.metadata.attributes || {},
                     tags: row.metadata.tags || [],
-                    created_by: row.metadata.created_by || null
+                    created_by: row.metadata.created_by || null,
+                    delivery_type: row.metadata.delivery_type || 'normal'
                 };
             }
             return row;

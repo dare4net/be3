@@ -13,7 +13,10 @@ const PRODUCT_SAFE_COLUMNS = `
     og_title, og_description, og_image, og_type, twitter_card, 
     twitter_title, twitter_description, twitter_image, canonical_url, 
     robots, structured_data, image_url, created_by, parent_id, 
-    is_variant, variant_label, whats_included, attributes
+    is_variant, variant_label, whats_included, delivery_type, 
+    shipping_base_fee_override, disable_shipping_multiplier, 
+    processing_min_override, processing_max_override, 
+    transit_min_override, transit_max_override, attributes
 `.trim();
 
 const SEARCH_INDEX_SAFE_COLUMNS = `

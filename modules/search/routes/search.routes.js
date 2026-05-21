@@ -43,7 +43,8 @@ function registerSearchRoutes(router) {
             similar_to: similarTo,
             image,
             include_stats,
-            threshold
+            threshold,
+            delivery_type
         } = combined;
 
         // Parse content types
@@ -70,6 +71,7 @@ function registerSearchRoutes(router) {
         if (collection_id) filters.collection_id = collection_id;
         if (collection_slug) filters.collection_slug = collection_slug;
         if (tag) filters.tag = tag;
+        if (delivery_type) filters.delivery_type = delivery_type;
         if (tags) {
             filters.tags = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim());
         }
@@ -172,7 +174,8 @@ function registerSearchRoutes(router) {
             mode,
             similar_to: similarTo,
             image,
-            include_stats
+            include_stats,
+            delivery_type
         } = { ...req.query, ...req.body };
 
         const filters = {};
@@ -181,6 +184,7 @@ function registerSearchRoutes(router) {
         if (category) filters.category_id = category; // SearchService.search resolves slug via CategoryResolver
         if (vendor) filters['attribute.vendor'] = vendor;
         if (tag) filters.tag = tag;
+        if (delivery_type) filters.delivery_type = delivery_type;
         if (tags) {
             filters.tags = Array.isArray(tags) ? tags : tags.split(',').map(t => t.trim());
         }

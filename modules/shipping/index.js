@@ -8,7 +8,6 @@ const express = require('express');
 const { query } = require('../../config/database');
 const { tenantInsert, paginatedTenantQuery } = require('../../utils/dbHelpers');
 const { authenticate, optionalAuth } = require('../../platform/core/auth/middleware/authenticate');
-const subscriptionGuard = require('../../middleware/subscriptionGuard');
 const { asyncHandler } = require('../../middleware/errorHandler');
 
 async function bootstrap(context) {
@@ -16,7 +15,6 @@ async function bootstrap(context) {
 
     try {
         const router = express.Router();
-        router.use(subscriptionGuard('shipping'));
 
         // List Zones
         router.get('/zones', authenticate, asyncHandler(async (req, res) => {
@@ -45,41 +43,348 @@ async function bootstrap(context) {
             res.status(201).json({ success: true, rate });
         }));
 
-        // Calculate Shipping (Public/Checkout)
-        // Simple logic: returns all applicable rates for "US" (default)
+        // Advanced Calculate Shipping (Public/Checkout)
         router.post('/calculate', optionalAuth, asyncHandler(async (req, res) => {
             const { tenantId } = req;
-            const { country, subtotal } = req.body;
+            const { cart_items, destination } = req.body;
 
-            // 1. Find matching zone
-            // (Simplified: assuming 'US' is in the regions array)
-            const zoneSql = `
-                SELECT id FROM shipping_zones 
-                WHERE tenant_id = $1 AND $2 = ANY(regions)
-                LIMIT 1
-            `;
-            const zoneRes = await query(zoneSql, [tenantId, country || 'US']);
-
-            if (!zoneRes.rows[0]) {
-                // Return default rate if no zone found
-                return res.json({ success: true, rates: [] });
+            if (!cart_items || cart_items.length === 0 || !destination) {
+                return res.status(400).json({ error: 'Cart items and destination are required' });
             }
 
-            const zoneId = zoneRes.rows[0].id;
+            const { country_id, state_id, landmark_id } = destination;
 
-            // 2. Get rates for zone
-            const ratesSql = `SELECT * FROM shipping_rates WHERE zone_id = $1`;
-            const ratesRes = await query(ratesSql, [zoneId]);
-
-            // Filter by min order value
-            const applicableRates = ratesRes.rows.filter(rate => {
-                if (rate.min_order_value && subtotal < parseFloat(rate.min_order_value)) {
-                    return false;
+            // Group items by vendor
+            const vendorGroups = {};
+            for (const item of cart_items) {
+                if (!vendorGroups[item.vendor_id]) {
+                    vendorGroups[item.vendor_id] = [];
                 }
-                return true;
-            });
+                vendorGroups[item.vendor_id].push(item);
+            }
 
-            res.json({ success: true, rates: applicableRates });
+            const results = {};
+            let total_fee = 0;
+
+            for (const [vendorId, items] of Object.entries(vendorGroups)) {
+                // 1. Fetch Vendor Config
+                const vConfRes = await query(`SELECT * FROM vendor_shipping_configs WHERE tenant_id = $1 AND vendor_id = $2`, [tenantId, vendorId]);
+                const vConfig = vConfRes.rows[0] || { global_base_fee: 0, global_processing_min: 1, global_processing_max: 2 };
+
+                // 2. Fetch Zonal Rules matching the destination
+                const vZonesRes = await query(`
+                    SELECT * FROM vendor_shipping_zones WHERE tenant_id = $1 AND vendor_id = $2 
+                    AND (
+                        (location_type = 'country' AND location_id = $3) OR
+                        (location_type = 'state' AND location_id = $4) OR
+                        (location_type = 'landmark' AND location_id = $5)
+                    )
+                `, [tenantId, vendorId, country_id || 0, state_id || 0, landmark_id || 0]);
+
+                const zones = vZonesRes.rows;
+                const landmarkZone = zones.find(z => z.location_type === 'landmark');
+                const stateZone = zones.find(z => z.location_type === 'state');
+                const countryZone = zones.find(z => z.location_type === 'country');
+
+                // If destination has a state/landmark but vendor has NO rules for it AND NO country wildcard, they might not cover it.
+                // However, in our system, if NO matching zone is found, it means no coverage unless we fallback.
+                if (!countryZone && !stateZone && !landmarkZone) {
+                    return res.status(400).json({ error: `Vendor ${vendorId} does not deliver to this location.`, vendor_id: vendorId });
+                }
+
+                const fallbackMultiplier = landmarkZone?.multiplier ?? stateZone?.multiplier ?? countryZone?.multiplier ?? 1;
+                const fallbackTransitMin = landmarkZone?.transit_min ?? stateZone?.transit_min ?? countryZone?.transit_min ?? 1;
+                const fallbackTransitMax = landmarkZone?.transit_max ?? stateZone?.transit_max ?? countryZone?.transit_max ?? 3;
+
+                let highestFee = 0;
+                let highestDaysMin = 0;
+                let highestDaysMax = 0;
+
+                // 3. Process each item
+                for (const item of items) {
+                    // Fetch product overrides if item doesn't already have them populated
+                    let pData = item.product;
+                    if (!pData || pData.shipping_base_fee_override === undefined) {
+                        const pRes = await query(`
+                            SELECT shipping_base_fee_override, disable_shipping_multiplier,
+                        processing_min_override, processing_max_override,
+                        transit_min_override, transit_max_override
+                            FROM products WHERE id = $1 AND tenant_id = $2
+                        `, [item.product_id, tenantId]);
+                        pData = pRes.rows[0];
+                    }
+
+                    if (!pData) continue; // Item doesn't exist
+
+                    // Calculate Fee
+                    const itemBaseFee = parseFloat(pData.shipping_base_fee_override ?? vConfig.global_base_fee ?? 0);
+                    const activeMultiplier = pData.disable_shipping_multiplier ? 1 : fallbackMultiplier;
+                    const itemShippingFee = itemBaseFee * parseFloat(activeMultiplier);
+
+                    // Calculate Logistics
+                    const processMin = pData.processing_min_override ?? vConfig.global_processing_min ?? 1;
+                    const processMax = pData.processing_max_override ?? vConfig.global_processing_max ?? 2;
+                    const transitMin = pData.transit_min_override ?? fallbackTransitMin;
+                    const transitMax = pData.transit_max_override ?? fallbackTransitMax;
+
+                    const itemDaysMin = processMin + transitMin;
+                    const itemDaysMax = processMax + transitMax;
+
+                    // Aggregate
+                    if (itemShippingFee > highestFee) highestFee = itemShippingFee;
+                    if (itemDaysMin > highestDaysMin) highestDaysMin = itemDaysMin;
+                    if (itemDaysMax > highestDaysMax) highestDaysMax = itemDaysMax;
+                }
+
+                results[vendorId] = {
+                    fee: highestFee,
+                    delivery_days_min: highestDaysMin,
+                    delivery_days_max: highestDaysMax,
+                    currency: 'NGN' // Will adapt to multi-currency later
+                };
+                total_fee += highestFee;
+            }
+
+            res.json({ success: true, total_fee, breakdowns: results });
+        }));
+
+        // ==========================================
+        // Vendor Zonal Shipping Rules & Topology
+        // ==========================================
+
+        router.get('/topology/countries', asyncHandler(async (req, res) => {
+            const { vendor_id } = req.query;
+            let sql = `SELECT id, name, code FROM countries WHERE tenant_id = $1 ORDER BY name ASC`;
+            let params = [req.tenantId];
+            let unconfigured = false;
+
+            if (vendor_id) {
+                const check = await query(`SELECT id FROM vendor_shipping_zones WHERE tenant_id=$1 AND vendor_id=$2 LIMIT 1`, [req.tenantId, vendor_id]);
+                if (check.rows.length === 0) {
+                    unconfigured = true;
+                } else {
+                    sql = `
+                        SELECT DISTINCT c.id, c.name, c.code FROM countries c
+                        LEFT JOIN states s ON s.country_id = c.id
+                        LEFT JOIN landmarks l ON l.state_id = s.id
+                        JOIN vendor_shipping_zones z ON 
+                            (z.location_type = 'country' AND z.location_id = c.id) OR 
+                            (z.location_type = 'state' AND z.location_id = s.id) OR 
+                            (z.location_type = 'landmark' AND z.location_id = l.id)
+                        WHERE c.tenant_id = $1 AND z.vendor_id = $2
+                        ORDER BY c.name ASC
+                    `;
+                    params.push(vendor_id);
+                }
+            }
+            const result = await query(sql, params);
+            res.json({ success: true, countries: result.rows, unconfigured });
+        }));
+
+        router.post('/topology/countries', authenticate, asyncHandler(async (req, res) => {
+            const { name, code } = req.body;
+            if (!name || !code) return res.status(400).json({ error: 'name and code required' });
+            const result = await query(`INSERT INTO countries (tenant_id, name, code) VALUES ($1, $2, $3) RETURNING id, name, code`, [req.tenantId, name, code]);
+            res.json({ success: true, country: result.rows[0] });
+        }));
+
+        router.delete('/topology/countries/:id', authenticate, asyncHandler(async (req, res) => {
+            await query(`DELETE FROM countries WHERE tenant_id = $1 AND id = $2`, [req.tenantId, req.params.id]);
+            res.json({ success: true });
+        }));
+
+        router.get('/topology/states', asyncHandler(async (req, res) => {
+            const countryId = req.query.country_id;
+            const { vendor_id } = req.query;
+
+            let sql = `SELECT id, name, code, country_id FROM states WHERE tenant_id = $1`;
+            let params = [req.tenantId];
+
+            if (vendor_id) {
+                const check = await query(`SELECT id FROM vendor_shipping_zones WHERE tenant_id=$1 AND vendor_id=$2 LIMIT 1`, [req.tenantId, vendor_id]);
+                if (check.rows.length > 0) {
+                    sql = `
+                        SELECT DISTINCT s.id, s.name, s.code, s.country_id FROM states s
+                        LEFT JOIN landmarks l ON l.state_id = s.id
+                        JOIN vendor_shipping_zones z ON 
+                            (z.location_type = 'country' AND z.location_id = s.country_id) OR 
+                            (z.location_type = 'state' AND z.location_id = s.id) OR 
+                            (z.location_type = 'landmark' AND z.location_id = l.id)
+                        WHERE s.tenant_id = $1 AND z.vendor_id = $2
+                    `;
+                    params = [req.tenantId, vendor_id];
+                    if (countryId) {
+                        sql += ` AND s.country_id = $3`;
+                        params.push(countryId);
+                    }
+                } else if (countryId) {
+                    sql += ` AND country_id = $2`;
+                    params.push(countryId);
+                }
+            } else if (countryId) {
+                sql += ` AND country_id = $2`;
+                params.push(countryId);
+            }
+            sql += ` ORDER BY name ASC`;
+
+            const result = await query(sql, params);
+            res.json({ success: true, states: result.rows });
+        }));
+
+        router.post('/topology/states', authenticate, asyncHandler(async (req, res) => {
+            const { country_id, name, code } = req.body;
+            if (!country_id || !name) return res.status(400).json({ error: 'country_id and name required' });
+            const result = await query(`INSERT INTO states (tenant_id, country_id, name, code) VALUES ($1, $2, $3, $4) RETURNING id, name, code, country_id`, [req.tenantId, country_id, name, code || null]);
+            res.json({ success: true, state: result.rows[0] });
+        }));
+
+        router.delete('/topology/states/:id', authenticate, asyncHandler(async (req, res) => {
+            await query(`DELETE FROM states WHERE tenant_id = $1 AND id = $2`, [req.tenantId, req.params.id]);
+            res.json({ success: true });
+        }));
+
+        router.get('/topology/landmarks', asyncHandler(async (req, res) => {
+            const stateId = req.query.state_id;
+            const { vendor_id } = req.query;
+            if (!stateId) return res.status(400).json({ error: 'state_id is required' });
+
+            let sql = `SELECT id, name, state_id FROM landmarks WHERE tenant_id = $1 AND state_id = $2`;
+            let params = [req.tenantId, stateId];
+
+            if (vendor_id) {
+                const check = await query(`SELECT id FROM vendor_shipping_zones WHERE tenant_id=$1 AND vendor_id=$2 LIMIT 1`, [req.tenantId, vendor_id]);
+                if (check.rows.length > 0) {
+                    sql = `
+                        SELECT DISTINCT l.id, l.name, l.state_id FROM landmarks l
+                        JOIN states s ON l.state_id = s.id
+                        JOIN vendor_shipping_zones z ON 
+                            (z.location_type = 'country' AND z.location_id = s.country_id) OR 
+                            (z.location_type = 'state' AND z.location_id = s.id) OR 
+                            (z.location_type = 'landmark' AND z.location_id = l.id)
+                        WHERE l.tenant_id = $1 AND l.state_id = $2 AND z.vendor_id = $3
+                    `;
+                    params.push(vendor_id);
+                }
+            }
+            sql += ` ORDER BY name ASC`;
+
+            const result = await query(sql, params);
+            res.json({ success: true, landmarks: result.rows });
+        }));
+
+        router.post('/topology/landmarks', authenticate, asyncHandler(async (req, res) => {
+            const { state_id, name } = req.body;
+            // Removed validation constraints to allow flexibility, but ensure parent exists natively by CASCADE/FKEY
+            if (!state_id || !name) return res.status(400).json({ error: 'state_id and name required' });
+            const result = await query(`INSERT INTO landmarks (tenant_id, state_id, name) VALUES ($1, $2, $3) RETURNING id, name, state_id`, [req.tenantId, state_id, name]);
+            res.json({ success: true, landmark: result.rows[0] });
+        }));
+
+        router.delete('/topology/landmarks/:id', authenticate, asyncHandler(async (req, res) => {
+            await query(`DELETE FROM landmarks WHERE tenant_id = $1 AND id = $2`, [req.tenantId, req.params.id]);
+            res.json({ success: true });
+        }));
+
+        // Get Current Vendor's Shipping Config
+        router.get('/vendor-config', authenticate, asyncHandler(async (req, res) => {
+            const PermissionService = require('../../platform/core/roles/services/PermissionService');
+            const { isVendor, permissions } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+            if (!isVendor && !permissions.includes('*')) return res.status(403).json({ error: 'Only vendors can have a shipping config' });
+
+            const vendorId = req.user.id;
+
+            // 1. Get global config
+            const configReq = await query(`SELECT * FROM vendor_shipping_configs WHERE tenant_id = $1 AND vendor_id = $2`, [req.tenantId, vendorId]);
+            const config = configReq.rows[0] || { global_base_fee: 1500, global_processing_min: 1, global_processing_max: 2 };
+
+            // 2. Get zones
+            const zonesReq = await query(`
+                SELECT z.*,
+                        c.name as country_name,
+                        s.name as state_name,
+                        l.name as landmark_name
+                FROM vendor_shipping_zones z
+                LEFT JOIN countries c ON z.location_type = 'country' AND z.location_id = c.id
+                LEFT JOIN states s ON z.location_type = 'state' AND z.location_id = s.id
+                LEFT JOIN landmarks l ON z.location_type = 'landmark' AND z.location_id = l.id
+                WHERE z.tenant_id = $1 AND z.vendor_id = $2
+                        `, [req.tenantId, vendorId]);
+
+            res.json({ success: true, config, zones: zonesReq.rows });
+        }));
+
+        // Upsert Vendor's Shipping Config
+        router.put('/vendor-config', authenticate, asyncHandler(async (req, res) => {
+            const PermissionService = require('../../platform/core/roles/services/PermissionService');
+            const { isVendor, permissions } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+            if (!isVendor && !permissions.includes('*')) return res.status(403).json({ error: 'Only vendors can have a shipping config' });
+
+            const vendorId = req.user.id;
+            const { global_base_fee, global_processing_min, global_processing_max } = req.body;
+            // Note: base_fee comes from frontend as base_fee sometimes instead of global_base_fee
+            const parsedBaseFee = req.body.base_fee !== undefined ? req.body.base_fee : global_base_fee;
+
+            const client = await require('../../config/database').pool.connect();
+            try {
+                await client.query('BEGIN');
+
+                // Upsert Config
+                await client.query(`
+                    INSERT INTO vendor_shipping_configs(tenant_id, vendor_id, global_base_fee, global_processing_min, global_processing_max, updated_at)
+                    VALUES($1, $2, $3, $4, $5, NOW())
+                    ON CONFLICT(tenant_id, vendor_id) DO UPDATE SET
+                        global_base_fee = EXCLUDED.global_base_fee,
+                        global_processing_min = EXCLUDED.global_processing_min,
+                        global_processing_max = EXCLUDED.global_processing_max,
+                        updated_at = NOW()
+                            `, [req.tenantId, vendorId, parsedBaseFee || 1500, global_processing_min || 1, global_processing_max || 2]);
+
+                await client.query('COMMIT');
+                res.json({ success: true, message: 'Vendor Shipping configuration updated successfully' });
+            } catch (err) {
+                await client.query('ROLLBACK');
+                throw err;
+            } finally {
+                client.release();
+            }
+        }));
+
+        // Add a singular Zone to Vendor Config
+        router.post('/vendor-config/zones', authenticate, asyncHandler(async (req, res) => {
+            const PermissionService = require('../../platform/core/roles/services/PermissionService');
+            const { isVendor, permissions } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+            if (!isVendor && !permissions.includes('*')) return res.status(403).json({ error: 'Only vendors can have a shipping config' });
+
+            const vendorId = req.user.id;
+            const { location_type, location_id, multiplier, transit_min, transit_max } = req.body;
+
+            if (!location_type || !location_id) return res.status(400).json({ error: 'location_type and location_id required' });
+
+            // Check if constraint exists, if so update it, else insert
+            const result = await query(`
+                INSERT INTO vendor_shipping_zones(tenant_id, vendor_id, location_type, location_id, multiplier, transit_min, transit_max)
+                VALUES($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT(tenant_id, vendor_id, location_type, location_id) DO UPDATE SET
+                    multiplier = EXCLUDED.multiplier,
+                    transit_min = EXCLUDED.transit_min,
+                    transit_max = EXCLUDED.transit_max
+                RETURNING id
+            `, [req.tenantId, vendorId, location_type, location_id, multiplier, transit_min, transit_max]);
+
+            res.json({ success: true, zone_id: result.rows[0].id });
+        }));
+
+        // Delete a singular Zone from Vendor Config
+        router.delete('/vendor-config/zones/:id', authenticate, asyncHandler(async (req, res) => {
+            const PermissionService = require('../../platform/core/roles/services/PermissionService');
+            const { isVendor, permissions } = await PermissionService.getUserPermissionContext(req.tenantId, req.user.id);
+            if (!isVendor && !permissions.includes('*')) return res.status(403).json({ error: 'Only vendors can have a shipping config' });
+
+            const vendorId = req.user.id;
+            const zoneId = req.params.id;
+
+            await query(`DELETE FROM vendor_shipping_zones WHERE tenant_id = $1 AND vendor_id = $2 AND id = $3`, [req.tenantId, vendorId, zoneId]);
+            res.json({ success: true });
         }));
 
         // ==========================================
