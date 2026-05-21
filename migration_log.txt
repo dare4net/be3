@@ -1,0 +1,42 @@
+⏭ Already ran: migrations/022_create_layouts_system.sql
+⏭ Already ran: migrations/027_search_module.sql
+⏭ Already ran: migrations/028_tenant_rate_limit_exempt.sql
+⏭ Already ran: migrations/029_user_category_permissions.sql
+⏭ Already ran: migrations/051_enable_pgvector.js
+⏭ Already ran: migrations/052_register_missing_modules.js
+⏭ Already ran: migrations/053_add_session_id_to_orders.js
+⏭ Already ran: migrations/060_add_range_and_custom_attributes.sql
+⏭ Already ran: migrations/061_add_product_variants_support.sql
+⏭ Already ran: migrations/062_add_image_embedding_column.js
+⏭ Already ran: migrations/063_add_theme_overrides_to_pages.sql
+⏭ Already ran: migrations/064_normalize_theme_variables.js
+⏭ Already ran: migrations/065_register_storefront_templates.js
+⏭ Already ran: migrations/066_vendor_category_ledger.js
+⏭ Already ran: migrations/067_enhance_vendor_category_ledger_with_id.js
+⏭ Already ran: migrations/068_add_business_description_to_users.js
+⏭ Already ran: migrations/069_add_whats_included_to_products.sql
+⏭ Already ran: migrations/070_create_reviews_module.sql
+⏭ Already ran: migrations/071_add_oauth_to_users.js
+✓ Running: migrations/071_create_user_addresses.sql
+⏭ Already ran: migrations/022_create_layouts_system.sql
+⏭ Already ran: migrations/027_search_module.sql
+⏭ Already ran: migrations/028_tenant_rate_limit_exempt.sql
+⏭ Already ran: migrations/029_user_category_permissions.sql
+⏭ Already ran: migrations/051_enable_pgvector.js
+⏭ Already ran: migrations/052_register_missing_modules.js
+⏭ Already ran: migrations/053_add_session_id_to_orders.js
+⏭ Already ran: migrations/060_add_range_and_custom_attributes.sql
+⏭ Already ran: migrations/061_add_product_variants_support.sql
+⏭ Already ran: migrations/062_add_image_embedding_column.js
+⏭ Already ran: migrations/063_add_theme_overrides_to_pages.sql
+⏭ Already ran: migrations/064_normalize_theme_variables.js
+⏭ Already ran: migrations/065_register_storefront_templates.js
+⏭ Already ran: migrations/066_vendor_category_ledger.js
+⏭ Already ran: migrations/067_enhance_vendor_category_ledger_with_id.js
+⏭ Already ran: migrations/068_add_business_description_to_users.js
+⏭ Already ran: migrations/069_add_whats_included_to_products.sql
+⏭ Already ran: migrations/070_create_reviews_module.sql
+⏭ Already ran: migrations/071_add_oauth_to_users.js
+✓ Running: migrations/071_create_user_addresses.sql
+
+❌ Migration crashed: relation "countries" does not exist

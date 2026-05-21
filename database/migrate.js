@@ -60,7 +60,6 @@ async function runMigrations() {
         'migrations/069_add_whats_included_to_products.sql',
         'migrations/070_create_reviews_module.sql',
         'migrations/071_add_oauth_to_users.js',
-        'migrations/071_create_user_addresses.sql',
         'migrations/072_add_user_profile_fields.js',
         'migrations/073_add_email_verification_expiry.js',
         'migrations/074_paystack_payments.js',
@@ -73,6 +72,7 @@ async function runMigrations() {
         'migrations/081_standardize_order_payment_status.js',
         'migrations/082_fix_schema_defects.js',
         'migrations/084_advanced_shipping_module.js',
+        'migrations/071_create_user_addresses.sql',
     ];
 
     const client = await pool.connect();
@@ -106,14 +106,18 @@ async function runMigrations() {
         }
 
         console.log('\n✅ All migrations completed!');
+    } catch (err) {
+        fs.appendFileSync('migration_log.txt', `\n❌ Migration crashed: ${err.message}\n`);
+        throw err;
     } finally {
         client.release();
         await pool.end();
-        process.exit(0);
     }
 }
 
-runMigrations().catch(err => {
+runMigrations().then(() => {
+    process.exit(0);
+}).catch(err => {
     console.error('❌ Migration failed:', err);
     process.exit(1);
 });
