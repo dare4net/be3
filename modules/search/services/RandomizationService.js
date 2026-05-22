@@ -28,14 +28,16 @@ class RandomizationService {
         try {
             // With vendor context, skip cache — vendor pages are unique slugs already
             // but their pools change with the ledger. Always resolve fresh if context provided.
+            let stalePlan = null; // declared here so it's accessible outside the if (!context) block
+
             if (!context) {
                 // 1. Current Bucket (Redis)
                 const redisPlan = await getRandomizationSnapshot(tenantId, pageHandle, bucketKey);
                 if (redisPlan) {
                     console.log(`[RandomizationService] Redis HIT for ${tenantId}/${pageHandle}`);
-                    return { 
-                        results: redisPlan, 
-                        cacheId: bucketKey, 
+                    return {
+                        results: redisPlan,
+                        cacheId: bucketKey,
                         expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
                     };
                 }
@@ -50,8 +52,8 @@ class RandomizationService {
                     console.log(`[RandomizationService] SQL HIT for ${tenantId}/${pageHandle}. Warm-loading Redis...`);
                     const planData = this.parsePlanData(existing.rows[0].plan_data);
                     setRandomizationSnapshot(tenantId, pageHandle, bucketKey, planData);
-                    return { 
-                        results: planData, 
+                    return {
+                        results: planData,
                         cacheId: bucketKey,
                         expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
                     };
@@ -61,7 +63,7 @@ class RandomizationService {
                 console.log(`[RandomizationService] Current snapshot MISS. Searching for stale snapshot (${prevBucketKey})...`);
 
                 const staleRedisPlan = await getRandomizationSnapshot(tenantId, pageHandle, prevBucketKey);
-                let stalePlan = staleRedisPlan;
+                stalePlan = staleRedisPlan;
 
                 if (!stalePlan) {
                     const prevExisting = await query(
@@ -78,10 +80,10 @@ class RandomizationService {
                     this.revalidateSnapshotInBackground(tenantId, pageHandle, bucketKey, widgets, stalePlan).catch(e => {
                         console.error('[RandomizationService] Background revalidation fail', e);
                     });
-                    return { 
-                        results: stalePlan, 
+                    return {
+                        results: stalePlan,
                         cacheId: prevBucketKey,
-                        expiresIn: 0 
+                        expiresIn: 0
                     };
                 }
             }
@@ -97,8 +99,8 @@ class RandomizationService {
                 await this.persistSnapshot(tenantId, pageHandle, bucketKey, plan);
             }
 
-            return { 
-                results: plan, 
+            return {
+                results: plan,
                 cacheId: bucketKey,
                 expiresIn: (minuteWindow * 60) - (Math.floor(Date.now() / 1000) % (minuteWindow * 60))
             };
@@ -480,7 +482,7 @@ class RandomizationService {
             // Pick a type (Weighted Random / Raffle logic)
             // This prevents higher weights (like clauses) from completely dominating the page
             const weights = { 'clause': 2, 'category': 1.5, 'collection': 1 };
-            
+
             // Calculate total weight for viable types
             const totalViableWeight = viableTypes.reduce((sum, type) => sum + (weights[type] || 0), 0);
             let random = Math.random() * totalViableWeight;
@@ -650,7 +652,7 @@ class RandomizationService {
         const isCategoryExcluded = (catId, excludedIds) => {
             if (!excludedIds?.length) return false;
             const forbidden = new Set(excludedIds.map(String));
-            
+
             let currentId = String(catId);
             while (currentId) {
                 if (forbidden.has(currentId)) return true;
