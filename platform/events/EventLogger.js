@@ -29,6 +29,11 @@ class EventLogger {
      * Log event to database
      */
     async logEvent(event) {
+        // Prevent frontend analytics from contaminating the backend system audit trail
+        if (event.name && event.name.startsWith('analytics.')) {
+            return;
+        }
+
         try {
             const sql = `
         INSERT INTO event_logs (
