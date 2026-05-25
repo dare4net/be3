@@ -163,6 +163,7 @@ async function bootstrap(context) {
             res.json(result);
         }));
 
+
         app.use('/wa-auth', router);
 
         // Clean up expired rows every 15 minutes

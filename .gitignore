@@ -3,7 +3,6 @@ storefront-web/
 admin-dashboard-web/
 be3-WA/
 be3_translator/
-be3_ai/
 be3-ai-telementary/
 .env.example
 node_modules/
@@ -25,6 +24,6 @@ build/
 *.swo
 *~
 
-# Firebase Service Account Key — never commit this
+# Firebase Service Account Key ï¿½ never commit this
 *service-account*.json
 modules/notifications/fcm/*.json
