@@ -22,6 +22,9 @@ async function tenantIdentifier(req, res, next) {
             '/products/admin', // Super admin product management
             '/auth/signup', // Public signup (creates tenant + user)
             '/payments/webhooks', // Payment gateway webhooks (server-to-server, no tenant header)
+            '/wa-auth/verify',   // Internal: be3-WA → backend (protected by x-internal-secret)
+            '/wa-auth/resolve',  // Internal: be3-WA → backend (protected by x-internal-secret)
+            '/wa-auth/magic',    // Public: storefront magic link consumption
         ];
 
         // Check if this is a public route

@@ -72,6 +72,8 @@ async function runMigrations() {
         'migrations/081_standardize_order_payment_status.js',
         'migrations/082_fix_schema_defects.js',
         'migrations/084_advanced_shipping_module.js',
+        'migrations/085_wa_auth_tables.js',
+        'migrations/086_add_sender_jid_to_wa_sessions.js',
         'migrations/071_create_user_addresses.sql',
     ];
 

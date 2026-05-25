@@ -127,8 +127,9 @@ class ModuleBootstrapper {
             { name: 'seo', path: path.join(__dirname, '../modules/seo'), envVar: 'MODULE_SEO_ENABLED' },
             { name: 'mail', path: path.join(__dirname, '../modules/mail'), envVar: 'MODULE_MAIL_ENABLED' },
             { name: 'notifications', path: path.join(__dirname, '../modules/notifications'), envVar: 'MODULE_NOTIFICATIONS_ENABLED' },
-            { name: 'discount',       path: path.join(__dirname, '../modules/discount'),       envVar: 'MODULE_DISCOUNT_ENABLED' },
-            { name: 'invoices',       path: path.join(__dirname, '../modules/invoices'),       envVar: 'MODULE_INVOICES_ENABLED' },
+            { name: 'discount', path: path.join(__dirname, '../modules/discount'), envVar: 'MODULE_DISCOUNT_ENABLED' },
+            { name: 'invoices', path: path.join(__dirname, '../modules/invoices'), envVar: 'MODULE_INVOICES_ENABLED' },
+            { name: 'wa_auth', path: path.join(__dirname, '../modules/wa_auth'), envVar: 'MODULE_WA_AUTH_ENABLED' },
         ];
 
         console.log('\n=== Loading Feature Modules ===');
