@@ -58,7 +58,23 @@ async function bootstrap(context) {
                     [userId, tenant_id]
                 );
 
-                res.json({ success: true, user: userRes.rows[0] || null });
+                const user = userRes.rows[0];
+                if (!user) {
+                    return res.json({ success: true, user: null });
+                }
+
+                // 3. Resolve RBAC roles for vendor status
+                try {
+                    const Role = require('../../platform/core/roles/models/Role');
+                    const roles = await Role.getUserRoles(tenant_id, userId);
+                    const isVendor = roles.some(r => r.name.toLowerCase() === 'vendor' || r.name.toLowerCase() === 'admin');
+                    user.role = isVendor ? 'VENDOR' : 'USER';
+                } catch (e) {
+                    console.error('[be3_ai] Failed to resolve roles:', e.message);
+                    user.role = 'USER';
+                }
+
+                res.json({ success: true, user });
             } catch (err) {
                 console.error('[be3_ai] Profile fetch error:', err.message);
                 res.status(500).json({ error: 'Database query failed' });

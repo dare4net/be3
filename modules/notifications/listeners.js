@@ -3,7 +3,7 @@
 const NotificationService = require('./NotificationService');
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3003';
-const ADMIN_URL    = process.env.ADMIN_URL    || 'http://localhost:3001';
+const ADMIN_URL = process.env.ADMIN_URL || 'http://localhost:3001';
 
 /**
  * All eventBus listeners that trigger notifications.
@@ -11,9 +11,65 @@ const ADMIN_URL    = process.env.ADMIN_URL    || 'http://localhost:3001';
  */
 function register(eventBus, app) {
 
-    // ── order.created (WhatsApp) ─────────────────────────────
+    // ── order.created (WhatsApp & Vendor Tools) ─────────────────────────────
     eventBus.registerListener('order.created', async ({ data }) => {
-        const { tenantId, orderId, orderNumber, userId, vendorId, isWhatsapp } = data;
+        const { tenantId, orderId, orderNumber, userId, vendorId, isWhatsapp, metadata } = data;
+        console.log('\n[Listeners] Caught order.created. Metadata:', metadata);
+
+        // 1. Check for automated vendor PDF dispatch via wa_tools
+        if (metadata && metadata.source === 'wa_tools') {
+            try {
+                const resolvedUserId = vendorId || metadata.created_by;
+                if (!resolvedUserId) {
+                    console.warn('[Listeners] wa_tools: No user ID to look up WA session — skipping invoice.');
+                } else {
+                    // Look up the authenticated user's linked WhatsApp JID directly from wa_sessions
+                    const { query: dbQuery } = require('../../config/database');
+                    const sessionRes = await dbQuery(
+                        `SELECT sender_jid FROM wa_sessions WHERE user_id = $1 AND tenant_id = $2 LIMIT 1`,
+                        [resolvedUserId, tenantId]
+                    );
+                    const jid = sessionRes.rows[0]?.sender_jid;
+                    console.log('[Listeners] wa_tools: resolved JID from wa_sessions:', jid);
+
+                    if (jid) {
+                        const axios = require('axios');
+                        const BE3_WA_URL = process.env.BE3_WA_URL || 'http://localhost:3040';
+                        const INTERNAL_SECRET = process.env.WA_AUTH_INTERNAL_SECRET || 'damilare';
+                        const INVOICE_URL = `${process.env.API_URL || 'http://localhost:3000'}/invoices/orders/${orderId}`;
+
+                        try {
+                            // 1. Fetch PDF locally on the backend using the X-Tenant-ID header
+                            console.log('[Listeners] Fetching PDF locally:', INVOICE_URL);
+                            const pdfRes = await axios.get(INVOICE_URL, {
+                                responseType: 'arraybuffer',
+                                headers: { 'X-Tenant-ID': tenantId }
+                            });
+                            const pdfBase64 = Buffer.from(pdfRes.data).toString('base64');
+
+                            // 2. Transmit the base64 string to be3-WA
+                            await axios.post(`${BE3_WA_URL}/api/send-invoice-buffer`, {
+                                wa_phone: jid,
+                                pdf_base64: pdfBase64,
+                                order_number: orderNumber
+                            }, {
+                                headers: { 'x-internal-secret': INTERNAL_SECRET },
+                                maxBodyLength: Infinity,
+                                maxContentLength: Infinity
+                            });
+                            console.log('[Listeners] Invoice buffer dispatched to:', jid);
+                        } catch (pdfErr) {
+                            console.error('[Listeners] Local PDF generation failed:', pdfErr.message);
+                        }
+                    } else {
+                        console.warn('[Listeners] wa_tools: No WA session found for user:', resolvedUserId);
+                    }
+                }
+            } catch (err) {
+                console.error('[Notifications] Failed to send automated wa_tools invoice PDF:', err.message);
+            }
+        }
+
         if (!isWhatsapp) return; // Platform orders emit via payment.success instead
 
         // Customer notification
@@ -84,8 +140,8 @@ function register(eventBus, app) {
         if (!userId) return;
 
         const statusMap = {
-            shipped:   { type: 'order.shipped',    title: `Order ${orderNumber} has shipped 🚚`,   message: 'Your order is on its way.' },
-            delivered: { type: 'order.delivered',   title: `Order ${orderNumber} delivered ✓`,      message: 'Your order has been delivered.' },
+            shipped: { type: 'order.shipped', title: `Order ${orderNumber} has shipped 🚚`, message: 'Your order is on its way.' },
+            delivered: { type: 'order.delivered', title: `Order ${orderNumber} delivered ✓`, message: 'Your order has been delivered.' },
         };
 
         const event = statusMap[newStatus];

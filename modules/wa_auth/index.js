@@ -82,12 +82,15 @@ async function bootstrap(context) {
                 return res.status(400).json({ success: false, reason: result.reason });
             }
 
+            console.log('[WA Auth] /magic/consume success. Metadata being returned:', result.metadata);
+
             res.json({
                 success: true,
                 jwt: result.jwt,
                 user: result.user,
                 destination: result.destination,
-                user_id: result.user_id
+                user_id: result.user_id,
+                metadata: result.metadata || {}  // ← was missing, frontend needs this
             });
         }));
 
@@ -144,7 +147,7 @@ async function bootstrap(context) {
         router.post('/magic/generate', asyncHandler(async (req, res) => {
             // Accept either internal service call or logged-in user
             const isInternal = req.headers['x-internal-secret'] === INTERNAL_SECRET;
-            const { user_id, wa_phone, tenant_id, destination } = req.body;
+            const { user_id, wa_phone, tenant_id, destination, target_app, metadata } = req.body;
 
             if (!isInternal) {
                 // Require user auth
@@ -159,8 +162,15 @@ async function bootstrap(context) {
                 return res.status(400).json({ error: 'user_id, wa_phone, and tenant_id are required' });
             }
 
-            const result = await waAuthService.generateMagicToken(uid, wp, tid, destination);
-            res.json(result);
+            const result = await waAuthService.generateMagicToken(uid, wp, tid, destination, target_app, metadata);
+
+            // Build absolute link based on target app
+            const adminUrl = process.env.ADMIN_URL || process.env.ADMIN_DASHBOARD_URL || 'http://localhost:3001';
+            const storefrontUrl = process.env.STOREFRONT_URL || process.env.FRONTEND_URL || 'http://localhost:3003';
+            const baseUrl = target_app === 'admin' ? adminUrl : storefrontUrl;
+            const link = `${baseUrl}/auth/magic?token=${result.token}`;
+
+            res.json({ success: true, ...result, link });
         }));
 
 

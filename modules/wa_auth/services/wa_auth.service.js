@@ -159,14 +159,16 @@ async function disconnectNumber(userId, waPhone, tenantId) {
 /**
  * Generate a single-use magic link token for authenticated CTA links.
  */
-async function generateMagicToken(userId, waPhone, tenantId, destination = '/') {
+async function generateMagicToken(userId, waPhone, tenantId, destination = '/', target_app = 'storefront', metadata = {}) {
     const token = crypto.randomBytes(24).toString('base64url');
     const expiresAt = new Date(Date.now() + MAGIC_TOKEN_TTL_MINUTES * 60 * 1000);
 
+    const safeMetadata = metadata ? JSON.stringify(metadata) : '{}';
+
     await query(
-        `INSERT INTO magic_tokens (token, tenant_id, user_id, wa_phone, destination, expires_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [token, tenantId, userId, normalisePhone(waPhone), destination, expiresAt]
+        `INSERT INTO magic_tokens (token, tenant_id, user_id, wa_phone, destination, target_app, metadata, expires_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [token, tenantId, userId, normalisePhone(waPhone), destination, target_app, safeMetadata, expiresAt]
     );
 
     return { token, expires_in_minutes: MAGIC_TOKEN_TTL_MINUTES };
@@ -203,7 +205,8 @@ async function consumeMagicToken(token) {
         jwt: jwt_token,
         user: user || null,
         destination: row.destination || '/',
-        user_id: row.user_id
+        user_id: row.user_id,
+        metadata: row.metadata || {}
     };
 }
 

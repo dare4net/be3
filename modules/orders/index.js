@@ -69,8 +69,11 @@ async function bootstrap(context) {
                 shipping_address,
                 notes,
                 discount_amount,
-                coupon_code
+                coupon_code,
+                metadata: reqMetadata // Allow frontend injected properties (e.g., wa_tools tracking)
             } = req.body;
+
+            console.log('\n[Orders POST] Incoming request metadata:', reqMetadata);
 
             if (!items || !Array.isArray(items) || items.length === 0) {
                 return res.status(400).json({ error: 'items array is required' });
@@ -145,11 +148,12 @@ async function bootstrap(context) {
                 coupon_code: coupon_code || null,
                 notes: notes || null,
                 metadata: {
+                    ...reqMetadata,
                     customer_name,
                     customer_email,
                     customer_phone,
                     shipping_address,
-                    source: 'vendor_created',
+                    source: reqMetadata?.source ? reqMetadata.source : 'vendor_created',
                     payment_method: payment_method || 'manual',
                     created_by: user.id
                 }
@@ -169,15 +173,19 @@ async function bootstrap(context) {
                 });
             }
 
+            console.log('\n[Orders POST] Emitting order.created with metadata:', order.metadata);
+
             // Fire events — triggers existing notification listeners
             eventBus.emitEvent('order.created', {
                 tenantId,
                 orderId: order.id,
                 orderNumber: order.order_number,
+                vendorId: order.vendor_id,
                 userId: null,
                 email: customer_email,
                 total,
                 source: 'vendor_created',
+                metadata: order.metadata
             });
             eventBus.emitEvent('admin.order.new', {
                 tenantId,
