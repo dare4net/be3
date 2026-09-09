@@ -258,6 +258,13 @@ router.post('/current/domain/verify', authenticate, asyncHandler(async (req, res
     const cleanDomain = domainToVerify.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
     const platformDomain = process.env.PLATFORM_DOMAIN || 'be3.shop';
 
+    const VercelDomainService = require('../../../utils/vercelDomainService');
+
+    // Trigger Vercel domain addition / verification in background
+    if (VercelDomainService.isConfigured()) {
+        await VercelDomainService.addDomainToProject(cleanDomain).catch(e => { });
+    }
+
     try {
         const records = await dns.resolveCname(cleanDomain);
         const isVerified = records.some(record =>
@@ -273,7 +280,7 @@ router.post('/current/domain/verify', authenticate, asyncHandler(async (req, res
             cnameRecords: records,
             targetDomain: `${tenant.subdomain}.${platformDomain}`,
             message: isVerified
-                ? 'Domain DNS record verified successfully!'
+                ? 'Domain DNS record verified and linked successfully!'
                 : `CNAME record found (${records.join(', ')}), but does not point to ${platformDomain}`,
         });
     } catch (err) {

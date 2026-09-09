@@ -110,6 +110,25 @@ class TenantService {
             await MediaInterceptor.interceptSettings(updates.settings);
         }
 
+        // If custom domain changed, sync with Vercel API
+        if (updates.domain !== undefined && updates.domain !== oldTenant.domain) {
+            const VercelDomainService = require('../../../utils/vercelDomainService');
+
+            // Remove old domain from Vercel if existed
+            if (oldTenant.domain) {
+                await VercelDomainService.removeDomainFromProject(oldTenant.domain).catch(err => {
+                    console.warn('[TenantService] Failed to remove old domain from Vercel:', err.message);
+                });
+            }
+
+            // Add new domain to Vercel if provided
+            if (updates.domain && updates.domain.trim() !== '') {
+                await VercelDomainService.addDomainToProject(updates.domain).catch(err => {
+                    console.warn('[TenantService] Failed to add new domain to Vercel:', err.message);
+                });
+            }
+        }
+
         // Update tenant
         const updatedTenant = await Tenant.update(tenantId, updates);
 
