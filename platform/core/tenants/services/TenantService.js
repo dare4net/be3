@@ -85,6 +85,17 @@ class TenantService {
     }
 
     /**
+     * Get tenant by custom domain
+     */
+    static async getTenantByDomain(domain) {
+        const tenant = await Tenant.findByDomain(domain);
+        if (!tenant) {
+            throw new Error('Tenant not found');
+        }
+        return tenant;
+    }
+
+    /**
      * Update tenant
      */
     static async updateTenant(tenantId, updates) {

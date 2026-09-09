@@ -41,24 +41,28 @@ async function tenantIdentifier(req, res, next) {
             tenantId = req.headers['x-tenant-id'];
         }
 
-        // Method 2: Extract from subdomain (e.g., acme.platform.com -> acme)
+        // Method 2: Extract from custom domain or subdomain (e.g., custom.com or acme.platform.com -> acme)
         else if (req.headers.host) {
-            const hostname = req.headers.host.split(':')[0]; // Remove port
+            const hostname = req.headers.host.split(':')[0].toLowerCase(); // Remove port
             const parts = hostname.split('.');
 
-            // If subdomain exists and isn't 'www' or 'api'
-            if (parts.length > 2 && !['www', 'api'].includes(parts[0])) {
-                const subdomain = parts[0];
+            // 2a. Check custom domain match
+            let result = await query(
+                "SELECT id FROM tenants WHERE domain = $1 AND status IN ('active', 'trial')",
+                [hostname]
+            );
 
-                // Look up tenant by subdomain (allow active and trial)
-                const result = await query(
+            // 2b. If no custom domain match, check subdomain match
+            if (result.rows.length === 0 && parts.length > 2 && !['www', 'api'].includes(parts[0])) {
+                const subdomain = parts[0];
+                result = await query(
                     "SELECT id FROM tenants WHERE subdomain = $1 AND status IN ('active', 'trial')",
                     [subdomain]
                 );
+            }
 
-                if (result.rows.length > 0) {
-                    tenantId = result.rows[0].id;
-                }
+            if (result.rows.length > 0) {
+                tenantId = result.rows[0].id;
             }
         }
 

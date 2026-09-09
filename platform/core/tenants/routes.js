@@ -28,7 +28,7 @@ const createTenantSchema = Joi.object({
 
 const updateTenantSchema = Joi.object({
     name: Joi.string().optional(),
-    domain: Joi.string().optional(),
+    domain: Joi.string().allow('', null).optional(),
     status: Joi.string().valid('active', 'suspended', 'trial', 'cancelled').optional(),
     settings: Joi.object().optional(),
     logo_url: Joi.string().uri().optional(),
@@ -87,16 +87,31 @@ router.get('/current', authenticate, asyncHandler(async (req, res) => {
 
 /**
  * GET /tenants/lookup
- * Resolve subdomain to tenant (public)
+ * Resolve subdomain or custom domain to tenant (public)
  */
 router.get('/lookup', asyncHandler(async (req, res) => {
-    const { subdomain } = req.query;
+    const { subdomain, domain } = req.query;
 
-    if (!subdomain) {
-        return res.status(400).json({ error: 'ValidationError', message: 'Subdomain is required' });
+    if (!subdomain && !domain) {
+        return res.status(400).json({ error: 'ValidationError', message: 'Subdomain or domain parameter is required' });
     }
 
-    const tenant = await TenantService.getTenantBySubdomain(subdomain);
+    let tenant = null;
+    if (domain) {
+        try {
+            tenant = await TenantService.getTenantByDomain(domain);
+        } catch (e) {
+            // fallback to subdomain if domain lookup failed
+        }
+    }
+
+    if (!tenant && subdomain) {
+        try {
+            tenant = await TenantService.getTenantBySubdomain(subdomain);
+        } catch (e) {
+            // fallback
+        }
+    }
 
     if (!tenant) {
         return res.status(404).json({ error: 'NotFound', message: 'Tenant not found' });
@@ -219,6 +234,67 @@ router.delete('/current', authenticate, asyncHandler(async (req, res) => {
             error: 'DeleteFailed',
             message: err.message,
         });
+    }
+}));
+
+/**
+ * POST /tenants/current/domain/verify
+ * Verify custom domain DNS CNAME configuration
+ */
+router.post('/current/domain/verify', authenticate, asyncHandler(async (req, res) => {
+    const { tenantId } = req;
+    const dns = require('dns').promises;
+
+    const tenant = await TenantService.getTenant(tenantId);
+    const domainToVerify = req.body.domain || tenant.domain;
+
+    if (!domainToVerify) {
+        return res.status(400).json({
+            error: 'ValidationError',
+            message: 'No domain provided or configured to verify',
+        });
+    }
+
+    const cleanDomain = domainToVerify.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    const platformDomain = process.env.PLATFORM_DOMAIN || 'be3.shop';
+
+    try {
+        const records = await dns.resolveCname(cleanDomain);
+        const isVerified = records.some(record =>
+            record.toLowerCase().includes(platformDomain.toLowerCase()) ||
+            record.toLowerCase().includes('vercel') ||
+            record.toLowerCase().includes(tenant.subdomain)
+        );
+
+        return res.json({
+            success: true,
+            verified: isVerified,
+            domain: cleanDomain,
+            cnameRecords: records,
+            targetDomain: `${tenant.subdomain}.${platformDomain}`,
+            message: isVerified
+                ? 'Domain DNS record verified successfully!'
+                : `CNAME record found (${records.join(', ')}), but does not point to ${platformDomain}`,
+        });
+    } catch (err) {
+        try {
+            const aRecords = await dns.resolve4(cleanDomain);
+            return res.json({
+                success: true,
+                verified: true,
+                domain: cleanDomain,
+                aRecords,
+                message: 'A record detected for domain.',
+            });
+        } catch (aErr) {
+            return res.status(400).json({
+                success: false,
+                verified: false,
+                domain: cleanDomain,
+                error: 'DNSLookupFailed',
+                message: `DNS lookup failed for ${cleanDomain}. Please make sure your DNS record has propagated.`,
+            });
+        }
     }
 }));
 

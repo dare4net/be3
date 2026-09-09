@@ -34,19 +34,27 @@ app.set('trust proxy', 1);
 
 const io = socketIo(server, {
     cors: {
-        origin: (origin, callback) => {
+        origin: async (origin, callback) => {
             if (!origin) return callback(null, true);
-            const isLocalIp = /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+            const isLocalIp = /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
             const isAllowedDomain = origin === 'https://be3.shop' || origin === 'http://be3.shop' || origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
-            
+
             if (isLocalIp || isAllowedDomain) {
-                callback(null, true);
-            } else {
-                callback(null, [
-                    process.env.FRONTEND_URL || 'http://localhost:3000',
-                    process.env.ADMIN_URL || 'http://localhost:3001'
-                ]);
+                return callback(null, true);
             }
+
+            try {
+                const hostname = origin.replace(/^https?:\/\//, '').split(':')[0].toLowerCase();
+                const customTenant = await Tenant.findByDomain(hostname);
+                if (customTenant) {
+                    return callback(null, true);
+                }
+            } catch (e) { }
+
+            callback(null, [
+                process.env.FRONTEND_URL || 'http://localhost:3000',
+                process.env.ADMIN_URL || 'http://localhost:3001'
+            ]);
         },
         methods: ["GET", "POST"],
         credentials: true
@@ -104,18 +112,31 @@ async function initializeApp() {
         'http://localhost:3002',
         'http://localhost:3003'
     ];
+    const Tenant = require('./platform/core/tenants/models/Tenant');
+
     app.use(cors({
-        origin: function (origin, callback) {
+        origin: async function (origin, callback) {
             if (!origin) return callback(null, true);
-            
-            const isLocalIp = /^http:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+
+            const isLocalIp = /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
             const isAllowedDomain = origin === 'https://be3.shop' || origin === 'http://be3.shop' || origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
 
             if (isLocalIp || isAllowedDomain || allowedOrigins.includes(origin)) {
-                callback(null, true);
-            } else {
-                callback(new Error('Not allowed by CORS'));
+                return callback(null, true);
             }
+
+            // Check if origin matches a registered custom domain in DB
+            try {
+                const hostname = origin.replace(/^https?:\/\//, '').split(':')[0].toLowerCase();
+                const customTenant = await Tenant.findByDomain(hostname);
+                if (customTenant) {
+                    return callback(null, true);
+                }
+            } catch (err) {
+                // fall through
+            }
+
+            callback(new Error('Not allowed by CORS'));
         },
         credentials: true
     }));

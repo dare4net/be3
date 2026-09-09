@@ -70,6 +70,18 @@ class Tenant {
     }
 
     /**
+     * Find tenant by custom domain
+     */
+    static async findByDomain(domain) {
+        const sql = `
+      SELECT * FROM tenants 
+      WHERE domain = $1 AND deleted_at IS NULL
+    `;
+        const result = await query(sql, [domain.toLowerCase()]);
+        return result.rows[0] || null;
+    }
+
+    /**
      * Update tenant
      */
     static async update(tenantId, updates) {
