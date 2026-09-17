@@ -112,7 +112,7 @@ class TenantService {
 
         // If custom domain changed, sync with Vercel API
         if (updates.domain !== undefined && updates.domain !== oldTenant.domain) {
-            const VercelDomainService = require('../../../utils/vercelDomainService');
+            const VercelDomainService = require('../../../../utils/vercelDomainService');
 
             // Remove old domain from Vercel if existed
             if (oldTenant.domain) {
