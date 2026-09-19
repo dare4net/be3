@@ -22,18 +22,19 @@ class SeoService {
 
         // 2. Generate XML
         let xml = `<?xml version="1.0" encoding="UTF-8"?>\n`;
-        xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`;
+        xml += `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"\n`;
+        xml += `        xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n`;
 
         // Add Home Page
         xml += this._createUrlNode(baseUrl, new Date().toISOString(), '1.0', 'daily');
 
-        // Products
+        // Products — include image:image blocks for Google Images indexing
         const products = await pool.query(`
-            SELECT handle, updated_at FROM products 
+            SELECT handle, name, image_url, updated_at FROM products 
             WHERE tenant_id = $1 AND status = 'active'
         `, [tenantId]);
         products.rows.forEach(p => {
-            xml += this._createUrlNode(`${baseUrl}/products/${p.handle}`, p.updated_at, '0.9', 'weekly');
+            xml += this._createProductUrlNode(`${baseUrl}/products/${p.handle}`, p.updated_at, p.name, p.image_url);
         });
 
         // Categories
@@ -54,14 +55,13 @@ class SeoService {
             xml += this._createUrlNode(`${baseUrl}/collections/${c.slug}`, c.updated_at, '0.8', 'weekly');
         });
 
-        // Pages
+        // Pages — URL is /:slug (not /pages/:slug) to match storefront routing
         const pages = await pool.query(`
             SELECT slug, updated_at FROM pages 
             WHERE tenant_id = $1 AND is_published = true
         `, [tenantId]);
         pages.rows.forEach(p => {
-            // Adjust based on your frontend routing for pages
-            xml += this._createUrlNode(`${baseUrl}/pages/${p.slug}`, p.updated_at, '0.6', 'monthly');
+            xml += this._createUrlNode(`${baseUrl}/${p.slug}`, p.updated_at, '0.7', 'monthly');
         });
 
         // Branded Search Pages (Clauses)
@@ -199,6 +199,29 @@ class SeoService {
         <lastmod>${date}</lastmod>
         <changefreq>${changefreq}</changefreq>
         <priority>${priority}</priority>
+    </url>`;
+    }
+
+    /**
+     * Create a sitemap URL node for a product with Google Image extension tags.
+     * This enables Google Images to index product photos from the sitemap.
+     */
+    static _createProductUrlNode(loc, lastmod, name, imageUrl) {
+        const date = lastmod ? new Date(lastmod).toISOString() : new Date().toISOString();
+        const escapedName = (name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const imageBlock = imageUrl
+            ? `
+        <image:image>
+            <image:loc>${imageUrl}</image:loc>
+            <image:title>${escapedName}</image:title>
+        </image:image>`
+            : '';
+        return `
+    <url>
+        <loc>${loc}</loc>
+        <lastmod>${date}</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.9</priority>${imageBlock}
     </url>`;
     }
 
