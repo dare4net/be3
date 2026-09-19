@@ -22,8 +22,10 @@ class Tenant {
         logo_url,
         timezone,
         trial_ends_at,
-        setup_status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        setup_status,
+        currency,
+        currency_symbol
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       RETURNING *
     `;
 
@@ -39,7 +41,9 @@ class Tenant {
             tenantData.logo_url || null,
             tenantData.timezone || 'UTC',
             tenantData.trial_ends_at || trialEndsAt,
-            tenantData.setup_status || 'NEW'
+            tenantData.setup_status || 'NEW',
+            tenantData.currency || 'USD',
+            tenantData.currency_symbol || '$'
         ]);
 
         return result.rows[0];
@@ -85,7 +89,7 @@ class Tenant {
      * Update tenant
      */
     static async update(tenantId, updates) {
-        const allowedFields = ['name', 'domain', 'status', 'settings', 'logo_url', 'timezone', 'setup_status'];
+        const allowedFields = ['name', 'domain', 'status', 'settings', 'logo_url', 'timezone', 'setup_status', 'currency', 'currency_symbol'];
         const fields = [];
         const values = [];
         let paramCount = 1;

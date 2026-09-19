@@ -75,6 +75,7 @@ async function runMigrations() {
         'migrations/085_wa_auth_tables.js',
         'migrations/086_add_sender_jid_to_wa_sessions.js',
         'migrations/071_create_user_addresses.sql',
+        'migrations/087_add_currency_and_menus.js',
     ];
 
     const client = await pool.connect();

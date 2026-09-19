@@ -49,6 +49,8 @@ class TenantService {
             settings: tenantData.settings || {},
             logo_url: tenantData.logo_url,
             timezone: tenantData.timezone || 'UTC',
+            currency: tenantData.currency || 'USD',
+            currency_symbol: tenantData.currency_symbol || '$',
         });
 
         // PRINCIPLE: All inter-module communication is event-based

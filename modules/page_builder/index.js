@@ -11,12 +11,18 @@ const Layout = require('./models/Layout');
 const Tenant = require('../../platform/core/tenants/models/Tenant');
 const eventBus = require('../../platform/events/EventBus');
 const ProvisioningService = require('./services/ProvisioningService');
+const HeaderFooterSyncService = require('./services/HeaderFooterSyncService');
 const { authenticate } = require('../../platform/core/auth/middleware/authenticate');
 const authorize = require('../../platform/core/roles/middleware/authorize');
 const { asyncHandler } = require('../../middleware/errorHandler');
 
 async function bootstrap(context) {
     const { app } = context;
+
+    // Run Header/Footer color reconciliation repair asynchronously on boot
+    HeaderFooterSyncService.repairAll().catch(err => {
+        console.warn('[PageBuilder] HeaderFooterSync initial repair warning:', err.message);
+    });
 
     // Register listener for new tenant creation
     eventBus.on('tenant.created', async (data) => {
@@ -58,6 +64,35 @@ async function bootstrap(context) {
             targetLayoutId,
             includeInactive === 'true'
         );
+
+        // Fetch page details (theme overrides, SEO, etc.)
+        let pageData = null;
+        try {
+            const rawPage = await Page.findBySlug(req.tenantId, page);
+            if (rawPage) {
+                pageData = {
+                    ...rawPage,
+                    theme_overrides: typeof rawPage.theme_overrides === 'string'
+                        ? JSON.parse(rawPage.theme_overrides || '{}')
+                        : (rawPage.theme_overrides || {})
+                };
+            }
+            if ((page === 'header' || page === 'footer') && (!pageData || !pageData.theme_overrides?.background)) {
+                const activeTheme = await Theme.findActive(req.tenantId);
+                const vars = typeof activeTheme?.variables === 'string'
+                    ? JSON.parse(activeTheme.variables || '{}')
+                    : (activeTheme?.variables || {});
+                const themeBg = vars[page]?.backgroundColor;
+                if (themeBg) {
+                    pageData = {
+                        ...(pageData || { slug: page, title: page === 'header' ? 'Global Header' : 'Global Footer' }),
+                        theme_overrides: { ...(pageData?.theme_overrides || {}), background: themeBg }
+                    };
+                }
+            }
+        } catch (pErr) {
+            console.warn(`[PageBuilder] Could not fetch page data for slug ${page}:`, pErr.message);
+        }
 
         // Waterfall Killer: Server-Side Master Plan Injection
         let randomizationPlan = null;
@@ -102,6 +137,7 @@ async function bootstrap(context) {
         res.json({
             success: true,
             widgets,
+            page: pageData,
             layoutId: targetLayoutId,
             randomizationPlan
         });
@@ -228,6 +264,12 @@ async function bootstrap(context) {
     // Create new page
     router.post('/pages', authenticate, authorize('pages.create'), asyncHandler(async (req, res) => {
         const page = await Page.create(req.tenantId, req.body);
+        if (page && (page.slug === 'header' || page.slug === 'footer')) {
+            const rawOverrides = typeof page.theme_overrides === 'string'
+                ? JSON.parse(page.theme_overrides || '{}')
+                : (page.theme_overrides || {});
+            await HeaderFooterSyncService.syncPageToTheme(req.tenantId, page.slug, rawOverrides);
+        }
         res.status(201).json({ success: true, page });
     }));
 
@@ -245,6 +287,12 @@ async function bootstrap(context) {
         const page = await Page.update(req.tenantId, req.params.id, req.body);
         if (!page) {
             return res.status(404).json({ error: 'Page not found' });
+        }
+        if (page && (page.slug === 'header' || page.slug === 'footer')) {
+            const rawOverrides = typeof page.theme_overrides === 'string'
+                ? JSON.parse(page.theme_overrides || '{}')
+                : (page.theme_overrides || {});
+            await HeaderFooterSyncService.syncPageToTheme(req.tenantId, page.slug, rawOverrides);
         }
         res.json({ success: true, page });
     }));
@@ -358,6 +406,9 @@ async function bootstrap(context) {
     // Create theme (Admin)
     router.post('/themes', authenticate, authorize('themes.create'), asyncHandler(async (req, res) => {
         const theme = await Theme.create(req.tenantId, req.body);
+        if (theme && req.body.variables) {
+            await HeaderFooterSyncService.syncThemeToPage(req.tenantId, req.body.variables);
+        }
         res.status(201).json({ success: true, theme });
     }));
 
@@ -365,6 +416,9 @@ async function bootstrap(context) {
     router.put('/themes/:id', authenticate, authorize('themes.edit'), asyncHandler(async (req, res) => {
         const theme = await Theme.update(req.tenantId, req.params.id, req.body);
         if (!theme) return res.status(404).json({ error: 'Theme not found' });
+        if (req.body.variables) {
+            await HeaderFooterSyncService.syncThemeToPage(req.tenantId, req.body.variables);
+        }
         res.json({ success: true, theme });
     }));
 
@@ -372,6 +426,9 @@ async function bootstrap(context) {
     router.post('/themes/:id/activate', authenticate, authorize('themes.activate'), asyncHandler(async (req, res) => {
         const theme = await Theme.activate(req.tenantId, req.params.id);
         if (!theme) return res.status(404).json({ error: 'Theme not found' });
+        if (theme.variables) {
+            await HeaderFooterSyncService.syncThemeToPage(req.tenantId, theme.variables);
+        }
         res.json({ success: true, theme });
     }));
 

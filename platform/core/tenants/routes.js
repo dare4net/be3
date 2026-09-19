@@ -24,6 +24,8 @@ const createTenantSchema = Joi.object({
     logo_url: Joi.string().uri().optional(),
     timezone: Joi.string().optional(),
     setup_status: Joi.string().valid('NEW', 'COMPLETED', 'RESET').optional(),
+    currency: Joi.string().max(10).optional(),
+    currency_symbol: Joi.string().max(10).optional(),
 });
 
 const updateTenantSchema = Joi.object({
@@ -34,6 +36,8 @@ const updateTenantSchema = Joi.object({
     logo_url: Joi.string().uri().optional(),
     timezone: Joi.string().optional(),
     setup_status: Joi.string().valid('NEW', 'COMPLETED', 'RESET').optional(),
+    currency: Joi.string().max(10).optional(),
+    currency_symbol: Joi.string().max(10).optional(),
 });
 
 const checkSubdomainSchema = Joi.object({
