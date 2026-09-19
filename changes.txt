@@ -1,0 +1,542 @@
+PS C:\Users\chatz\Downloads\eCommerce\be3_backend> git -C "C:\Users\chatz\Downloads\eCommerce\be3_backend" diff 8b6c84f6192d56ccadc57705bf0eabe3d96e685c..62048006d1f05608e7b792279632977b25df37a6
+diff --git a/modules/search/core/filters/FilterSQLBuilder.js b/modules/search/core/filters/FilterSQLBuilder.js
+index 85c4045..5315588 100644
+--- a/modules/search/core/filters/FilterSQLBuilder.js
++++ b/modules/search/core/filters/FilterSQLBuilder.js
+@@ -334,6 +334,67 @@ class FilterSQLBuilder {
+
+         return { sql, nextIndex: index };
+     }
++
++    /**
++     * Build filter SQL for the 'products' table (aliased as 'p')
++     * Used by Vector Search and Similarity Search
++     */
++    async buildProductFilterSQL(tenantId, filters, queryParams, startIndex) {
++        let sql = '';
++        let index = startIndex;
++
++        // Price range
++        if (filters.price_min !== undefined && filters.price_min !== null) {
++            sql += ` AND p.price >= $${index}`;
++            queryParams.push(parseFloat(filters.price_min));
++            index++;
++        }
++
++        if (filters.price_max !== undefined && filters.price_max !== null) {
++            sql += ` AND p.price <= $${index}`;
++            queryParams.push(parseFloat(filters.price_max));
++            index++;
++        }
++
++        // Category filter (primary)
++        if (filters.category_id) {
++            sql += ` AND p.category_id = $${index}`;
++            queryParams.push(filters.category_id);
++            index++;
++        }
++
++        // Category filters (resolved descendants)
++        if (filters.category_ids && Array.isArray(filters.category_ids)) {
++            // Note: If the products table only has one category_id, we use = ANY
++            // If it uses many-to-many, we'd need a join which is better handled in SearchService
++            sql += ` AND p.category_id = ANY($${index})`;
++            queryParams.push(filters.category_ids);
++            index++;
++        }
++
++        // Custom attribute filters
++        const attributeKeys = Object.keys(filters).filter(k => k.startsWith('attribute.'));
++        for (const key of attributeKeys) {
++            const parts = key.replace('attribute.', '').split(':');
++            const attrCode = parts[0];
++            const filterValue = filters[key];
++
++            // For speed in vector search, we only support direct equality or basic numeric comparisons
++            // Complex clauses are ignored for now to keep performance high
++            const isArray = Array.isArray(filterValue) || (typeof filterValue === 'string' && filterValue.includes(','));
++            const val = Array.isArray(filterValue) ? filterValue : (typeof filterValue === 'string' && filterValue.includes(',') ? filterValue.split(',').map(v => v.trim()) : filterValue);
++
++            if (isArray) {
++                sql += ` AND p.attributes->>$${index} = ANY($${index + 1})`;
++            } else {
++                sql += ` AND p.attributes->>$${index} = $${index + 1}`;
++            }
++            queryParams.push(attrCode, val);
++            index += 2;
++        }
++
++        return { sql, nextIndex: index };
++    }
+ }
+
+ module.exports = FilterSQLBuilder;
+diff --git a/modules/search/routes/search.routes.js b/modules/search/routes/search.routes.js
+index 3f0f8b6..c07c4b0 100644
+--- a/modules/search/routes/search.routes.js
++++ b/modules/search/routes/search.routes.js
+@@ -35,7 +35,9 @@ function registerSearchRoutes(router) {
+             is_featured,
+             id,
+             tag,
+-            tags
++            tags,
++            mode,
++            similar_to: similarTo
+         } = req.query;
+
+         // Parse content types
+@@ -80,7 +82,9 @@ function registerSearchRoutes(router) {
+             filters,
+             sort,
+             page: parseInt(page),
+-            perPage: parseInt(per_page)
++            perPage: parseInt(per_page),
++            mode,
++            similar_to: similarTo
+         });
+
+         // Track search analytics
+@@ -139,7 +143,9 @@ function registerSearchRoutes(router) {
+             price_max,
+             vendor,
+             tag,
+-            tags
++            tags,
++            mode,
++            similar_to: similarTo
+         } = req.query;
+
+         const filters = {};
+@@ -159,7 +165,9 @@ function registerSearchRoutes(router) {
+             filters,
+             sort,
+             page: parseInt(page),
+-            perPage: parseInt(per_page)
++            perPage: parseInt(per_page),
++            mode,
++            similar_to: similarTo
+         });
+
+         res.json({
+diff --git a/modules/search/services/SearchService.js b/modules/search/services/SearchService.js
+index 6f64ecf..4901623 100644
+--- a/modules/search/services/SearchService.js
++++ b/modules/search/services/SearchService.js
+@@ -127,16 +127,30 @@ class SearchService {
+             let vectorResults = [];
+             let total = 0;
+
++            // NEW: Build dynamic filters for vector/similarity search
++            const vectorFilters = { ...filters };
++            const vectorQueryParams = [];
++            const { sql: vectorFilterSql, nextIndex: vectorNextIndex } = await this.filterSQLBuilder.buildProductFilterSQL(
++                tenantId,
++                vectorFilters,
++                vectorQueryParams,
++                searchMode === 'similar' ? 4 : 4 // In semanticSearch it's 4, in findSimilar it's also 4 now
++            );
++
+             if (searchMode === 'similar' && similarTo) {
+-                console.log(`[Search] 🧠 Similarity search for ${similarTo}`);
+-                const simRes = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, { limit: perPage });
++                console.log(`[Search] 🧠 Similarity search for ${similarTo} with ${vectorQueryParams.length} filters`);
++                const simRes = await this.vectorEngine.findSimilarProducts(tenantId, similarTo, {
++                    limit: perPage,
++                    filter: { sql: vectorFilterSql, params: vectorQueryParams }
++                });
+                 vectorResults = simRes;
+-                total = simRes.length; // Approximate
++                total = simRes.length;
+             } else if (finalQuery) {
+-                console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}"`);
++                console.log(`[Search] 🧠 Pure vector search for: "${finalQuery}" with ${vectorQueryParams.length} filters`);
+                 const vecRes = await this.vectorEngine.semanticSearch(tenantId, finalQuery, {
+                     limit: perPage,
+-                    categoryId: originalCategoryId
++                    categoryId: originalCategoryId,
++                    filter: { sql: vectorFilterSql, params: vectorQueryParams }
+                 });
+                 vectorResults = vecRes;
+                 total = vecRes.length; // Approximate
+diff --git a/modules/vector/scripts/product-analyzer.js b/modules/vector/scripts/product-analyzer.js
+new file mode 100644
+index 0000000..d7b5a4b
+--- /dev/null
++++ b/modules/vector/scripts/product-analyzer.js
+@@ -0,0 +1,317 @@
++/**
++ * Product Embedding Analyzer & Pruner
++ *
++ * Standalone REPL for analyzing product semantic overlaps.
++ *
++ * Usage:
++ *   node modules/vector/scripts/product-analyzer.js
++ */
++
++require('dotenv').config();
++const readline = require('readline');
++const { query } = require('../../../config/database');
++const VectorEngine = require('../services/VectorEngine');
++
++const C = {
++    reset: '\x1b[0m',
++    bold: '\x1b[1m',
++    green: '\x1b[32m',
++    yellow: '\x1b[33m',
++    cyan: '\x1b[36m',
++    red: '\x1b[31m',
++    dim: '\x1b[2m',
++    magenta: '\x1b[35m',
++    white: '\x1b[37m'
++};
++
++const rl = readline.createInterface({
++    input: process.stdin,
++    output: process.stdout
++});
++
++const question = (query) => new Promise((resolve) => rl.question(query, resolve));
++
++/**
++ * Spherical K-Means (Cosine-based)
++ */
++class KMeans {
++    constructor(k, data, maxIterations = 50) {
++        this.k = k;
++        this.data = data; // Array of embeddings
++        this.maxIterations = maxIterations;
++        this.centroids = [];
++        this.assignments = [];
++        this.inertia = 0;
++    }
++
++    initCentroids() {
++        const indices = new Set();
++        while (indices.size < Math.min(this.k, this.data.length)) {
++            indices.add(Math.floor(Math.random() * this.data.length));
++        }
++        this.centroids = Array.from(indices).map(i => [...this.data[i]]);
++    }
++
++    cosineDistance(a, b) {
++        let dot = 0;
++        for (let i = 0; i < a.length; i++) {
++            dot += a[i] * b[i];
++        }
++        return 1 - dot;
++    }
++
++    fit(n_init = 5) {
++        let bestInertia = Infinity;
++        let bestCentroids = [];
++        let bestAssignments = [];
++
++        for (let i = 0; i < n_init; i++) {
++            this.runOnce();
++            if (this.inertia < bestInertia) {
++                bestInertia = this.inertia;
++                bestCentroids = [...this.centroids.map(c => [...c])];
++                bestAssignments = [...this.assignments];
++            }
++        }
++
++        this.inertia = bestInertia;
++        this.centroids = bestCentroids;
++        this.assignments = bestAssignments;
++    }
++
++    runOnce() {
++        this.initCentroids();
++        let changed = true;
++        let iter = 0;
++        this.assignments = [];
++
++        while (changed && iter < this.maxIterations) {
++            changed = false;
++            iter++;
++
++            const newAssignments = [];
++            for (let i = 0; i < this.data.length; i++) {
++                let minDist = Infinity;
++                let clusterIndex = 0;
++                for (let j = 0; j < this.centroids.length; j++) {
++                    const dist = this.cosineDistance(this.data[i], this.centroids[j]);
++                    if (dist < minDist) {
++                        minDist = dist;
++                        clusterIndex = j;
++                    }
++                }
++                newAssignments.push(clusterIndex);
++            }
++
++            if (JSON.stringify(newAssignments) !== JSON.stringify(this.assignments)) {
++                changed = true;
++                this.assignments = newAssignments;
++            } else {
++                changed = false;
++            }
++
++            const newCentroids = Array.from({ length: this.centroids.length }, () => new Array(this.data[0].length).fill(0));
++            const counts = new Array(this.centroids.length).fill(0);
++
++            for (let i = 0; i < this.data.length; i++) {
++                const c = this.assignments[i];
++                counts[c]++;
++                for (let j = 0; j < this.data[0].length; j++) {
++                    newCentroids[c][j] += this.data[i][j];
++                }
++            }
++
++            for (let i = 0; i < this.centroids.length; i++) {
++                if (counts[i] > 0) {
++                    let magnitude = 0;
++                    for (let j = 0; j < this.data[0].length; j++) {
++                        newCentroids[i][j] /= counts[i];
++                        magnitude += newCentroids[i][j] * newCentroids[i][j];
++                    }
++                    magnitude = Math.sqrt(magnitude);
++                    if (magnitude > 0) {
++                        for (let j = 0; j < this.data[0].length; j++) {
++                            newCentroids[i][j] /= magnitude;
++                        }
++                    }
++                    this.centroids[i] = newCentroids[i];
++                }
++            }
++        }
++
++        this.inertia = 0;
++        for (let i = 0; i < this.data.length; i++) {
++            this.inertia += this.cosineDistance(this.data[i], this.centroids[this.assignments[i]]);
++        }
++    }
++}
++
++function cosineDistance(a, b) {
++    let dot = 0;
++    for (let i = 0; i < a.length; i++) {
++        dot += a[i] * b[i];
++    }
++    return 1 - dot;
++}
++
++async function suggestOptimalK(data) {
++    console.log(`${C.dim}Finding optimal clusters (Elbow Method)...${C.reset}`);
++    const maxK = Math.min(15, Math.floor(data.length / 3) + 1);
++    const inertias = [];
++    for (let k = 1; k <= maxK; k++) {
++        const km = new KMeans(k, data);
++        km.fit(5);
++        inertias.push(km.inertia);
++    }
++    let bestK = 1;
++    let maxDrop = 0;
++    for (let i = 1; i < inertias.length - 1; i++) {
++        const drop = (inertias[i-1] - inertias[i]) / (inertias[i] - inertias[i+1] || 1);
++        if (drop > maxDrop) {
++            maxDrop = drop;
++            bestK = i + 1;
++        }
++    }
++    return bestK;
++}
++
++async function main() {
++    const TENANT_ID = process.env.TENANT_ID;
++    if (!TENANT_ID) {
++        console.error('❌ TENANT_ID not set in .env');
++        process.exit(1);
++    }
++
++    console.log(`\n${C.bold}${C.blue}╔══════════════════════════════════════════════╗
++║        Product Semantic Analyzer             ║
++╚══════════════════════════════════════════════╝${C.reset}`);
++
++    while (true) {
++        // 1. Fetch Categories
++        const catRes = await query(
++            `SELECT id, name FROM categories WHERE tenant_id = $1 ORDER BY name`,
++            [TENANT_ID]
++        );
++        const categories = catRes.rows;
++
++        console.log(`\n${C.bold}Select Scope:${C.reset}`);
++        console.log(`  ${C.cyan}0. All Products${C.reset}`);
++        categories.forEach((c, i) => console.log(`  ${C.cyan}${i + 1}. ${c.name}${C.reset}`));
++
++        const choice = await question(`\nSelect ID (or ':q' to quit): `);
++        if (choice === ':q' || choice === 'exit') break;
++
++        let sql = `SELECT id, name, embedding::text FROM products WHERE tenant_id = $1 AND status = 'active' AND embedding IS NOT NULL`;
++        const params = [TENANT_ID];
++        let label = 'All Products';
++
++        if (choice !== '0') {
++            const catIndex = parseInt(choice) - 1;
++            if (categories[catIndex]) {
++                sql += ` AND id IN (SELECT product_id FROM product_categories WHERE category_id = $2)`;
++                params.push(categories[catIndex].id);
++                label = `Category: ${categories[catIndex].name}`;
++            } else {
++                console.log(`${C.red}Invalid selection.${C.reset}`);
++                continue;
++            }
++        }
++
++        console.log(`${C.dim}Fetching data...${C.reset}`);
++        const prodRes = await query(sql, params);
++        const rawProducts = prodRes.rows.map(r => ({
++            id: r.id,
++            name: r.name,
++            embedding: JSON.parse(r.embedding)
++        }));
++
++        if (rawProducts.length === 0) {
++            console.log(`${C.yellow}No products with embeddings found in this scope.${C.reset}`);
++            continue;
++        }
++
++        // Shuffle
++        for (let i = rawProducts.length - 1; i > 0; i--) {
++            const j = Math.floor(Math.random() * (i + 1));
++            [rawProducts[i], rawProducts[j]] = [rawProducts[j], rawProducts[i]];
++        }
++
++        console.log(`\nAnalyzing ${C.bold}${label}${C.reset} (${rawProducts.length} products)...`);
++        console.log(`\n${C.bold}Select Mode:${C.reset}`);
++        console.log(`  ${C.cyan}1. Clustering${C.reset} (Group items together)`);
++        console.log(`  ${C.cyan}2. Pruning${C.reset} (Identify redundant products)`);
++
++        const mode = await question(`Choice (1/2): `);
++        const embeddings = rawProducts.map(p => p.embedding);
++
++        if (mode === '2') {
++            const thresholdStr = await question(`Enter cosine distance threshold (default 0.1): `);
++            const threshold = parseFloat(thresholdStr) || 0.1;
++
++            const kept = [];
++            const pruned = [];
++
++            for (let i = 0; i < rawProducts.length; i++) {
++                let minDistance = Infinity;
++                let closest = null;
++
++                for (const k of kept) {
++                    const d = cosineDistance(embeddings[i], k.embedding);
++                    if (d < minDistance) {
++                        minDistance = d;
++                        closest = k.name;
++                    }
++                }
++
++                if (minDistance < threshold) {
++                    pruned.push({ name: rawProducts[i].name, distance: minDistance, closest });
++                } else {
++                    kept.push({ name: rawProducts[i].name, embedding: embeddings[i] });
++                }
++            }
++
++            console.log(`\n${C.bold}${C.red}--- REDUNDANT PRODUCTS (${pruned.length}) ---${C.reset}`);
++            pruned.forEach(p => {
++                console.log(`  ${C.red}✗${C.reset} ${p.name} ${C.dim}(similar to: "${p.closest}", dist: ${p.distance.toFixed(4)})${C.reset}`);
++            });
++
++            console.log(`\n${C.bold}${C.magenta}═══ Summary ═══${C.reset}`);
++            console.log(`  Total:     ${rawProducts.length}`);
++            console.log(`  Unique:    ${kept.length}`);
++            console.log(`  Redundant: ${pruned.length} (${((pruned.length/rawProducts.length)*100).toFixed(1)}%)`);
++
++        } else {
++            const suggestedK = await suggestOptimalK(embeddings);
++            const kStr = await question(`Number of clusters (Enter for suggested ${suggestedK}): `);
++            const k = parseInt(kStr) || suggestedK;
++
++            const kmeans = new KMeans(k, embeddings);
++            kmeans.fit(8);
++
++            const clusters = Array.from({ length: k }, () => []);
++            kmeans.assignments.forEach((assignment, i) => {
++                clusters[assignment].push({
++                    name: rawProducts[i].name,
++                    dist: cosineDistance(embeddings[i], kmeans.centroids[assignment])
++                });
++            });
++
++            clusters.forEach((cluster, i) => {
++                cluster.sort((a, b) => a.dist - b.dist);
++                console.log(`\n${C.bold}${C.yellow}Cluster #${i+1}${C.reset} (${cluster.length} items)`);
++                console.log(`${C.dim}Center: ${C.reset}${C.bold}${cluster[0].name}${C.reset}`);
++                cluster.forEach((item, j) => {
++                    const color = j === 0 ? C.green : (item.dist < 0.1 ? C.dim : C.white);
++                    console.log(`  ${color}• ${item.name}${C.reset} ${C.dim}(dist: ${item.dist.toFixed(4)})${C.reset}`);
++                });
++            });
++        }
++        await question(`\nPress Enter to continue...`);
++    }
++    process.exit(0);
++}
++
++main().catch(err => {
++    console.error(err);
++    process.exit(1);
++});
+diff --git a/modules/vector/services/VectorEngine.js b/modules/vector/services/VectorEngine.js
+index 5edfe5c..c74cd76 100644
+--- a/modules/vector/services/VectorEngine.js
++++ b/modules/vector/services/VectorEngine.js
+@@ -416,6 +416,15 @@ class VectorEngine {
+             paramIndex++;
+         }
+
++        // Apply external filters (from FilterSQLBuilder)
++        if (options.filter && options.filter.sql) {
++            sql += options.filter.sql;
++            if (options.filter.params && options.filter.params.length > 0) {
++                params.push(...options.filter.params);
++                paramIndex += options.filter.params.length;
++            }
++        }
++
+         sql += ` ORDER BY p.embedding <=> $1::vector ASC LIMIT $${paramIndex}`;
+         params.push(limit);
+
+@@ -450,7 +459,7 @@ class VectorEngine {
+     async findSimilarProducts(tenantId, productId, options = {}) {
+         const { limit = 5, threshold = 0.5 } = options;
+
+-        const sql = `
++        let sql = `
+             SELECT
+                 p.id,
+                 p.name,
+@@ -464,11 +473,24 @@ class VectorEngine {
+               AND p.embedding IS NOT NULL
+               AND p.id != $1
+               AND 1 - (p.embedding <=> source.embedding) >= $3
+-            ORDER BY p.embedding <=> source.embedding ASC
+-            LIMIT $4
+         `;
+
+-        const result = await query(sql, [productId, tenantId, threshold, limit], tenantId);
++        const params = [productId, tenantId, threshold];
++        let paramIndex = 4;
++
++        // Apply external filters (from FilterSQLBuilder)
++        if (options.filter && options.filter.sql) {
++            sql += options.filter.sql;
++            if (options.filter.params && options.filter.params.length > 0) {
++                params.push(...options.filter.params);
++                paramIndex += options.filter.params.length;
++            }
++        }
++
++        sql += ` ORDER BY p.embedding <=> source.embedding ASC LIMIT $${paramIndex}`;
++        params.push(limit);
++
++        const result = await query(sql, params, tenantId);
+
+         return result.rows.map(row => ({
+             id: row.id,
+(END)

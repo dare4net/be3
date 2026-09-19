@@ -8,6 +8,7 @@
 const Tenant = require('../models/Tenant');
 const eventBus = require('../../../events/EventBus');
 const { clearTenantCache } = require('../../../../config/redis');
+const MediaInterceptor = require('../../../../modules/media/services/MediaInterceptor');
 
 class TenantService {
     /**
@@ -32,6 +33,14 @@ class TenantService {
             throw new Error('Subdomain is already taken');
         }
 
+        // Mirror logo if provided
+        if (tenantData.logo_url) {
+            await MediaInterceptor.intercept(tenantData, 'branding', 'logo_url');
+        }
+        if (tenantData.settings) {
+            await MediaInterceptor.interceptSettings(tenantData.settings);
+        }
+
         // Create tenant
         const tenant = await Tenant.create({
             name: tenantData.name,
@@ -40,6 +49,8 @@ class TenantService {
             settings: tenantData.settings || {},
             logo_url: tenantData.logo_url,
             timezone: tenantData.timezone || 'UTC',
+            currency: tenantData.currency || 'USD',
+            currency_symbol: tenantData.currency_symbol || '$',
         });
 
         // PRINCIPLE: All inter-module communication is event-based
@@ -76,11 +87,49 @@ class TenantService {
     }
 
     /**
+     * Get tenant by custom domain
+     */
+    static async getTenantByDomain(domain) {
+        const tenant = await Tenant.findByDomain(domain);
+        if (!tenant) {
+            throw new Error('Tenant not found');
+        }
+        return tenant;
+    }
+
+    /**
      * Update tenant
      */
     static async updateTenant(tenantId, updates) {
         // Validate tenant exists
-        await this.getTenant(tenantId);
+        const oldTenant = await this.getTenant(tenantId);
+
+        // Mirror assets
+        if (updates.logo_url) {
+            await MediaInterceptor.intercept(updates, 'branding', 'logo_url', oldTenant.logo_url);
+        }
+        if (updates.settings) {
+            await MediaInterceptor.interceptSettings(updates.settings);
+        }
+
+        // If custom domain changed, sync with Vercel API
+        if (updates.domain !== undefined && updates.domain !== oldTenant.domain) {
+            const VercelDomainService = require('../../../../utils/vercelDomainService');
+
+            // Remove old domain from Vercel if existed
+            if (oldTenant.domain) {
+                await VercelDomainService.removeDomainFromProject(oldTenant.domain).catch(err => {
+                    console.warn('[TenantService] Failed to remove old domain from Vercel:', err.message);
+                });
+            }
+
+            // Add new domain to Vercel if provided
+            if (updates.domain && updates.domain.trim() !== '') {
+                await VercelDomainService.addDomainToProject(updates.domain).catch(err => {
+                    console.warn('[TenantService] Failed to add new domain to Vercel:', err.message);
+                });
+            }
+        }
 
         // Update tenant
         const updatedTenant = await Tenant.update(tenantId, updates);
@@ -102,6 +151,9 @@ class TenantService {
      */
     static async updateSettings(tenantId, settings) {
         await this.getTenant(tenantId);
+
+        // Mirror images within settings
+        await MediaInterceptor.interceptSettings(settings);
 
         const updatedTenant = await Tenant.updateSettings(tenantId, settings);
 

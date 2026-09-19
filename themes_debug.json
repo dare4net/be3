@@ -1,0 +1,32 @@
+[
+  {
+    "name": "DareyTheme",
+    "variables": {
+      "text": "#111827",
+      "accent": "#f59e0b",
+      "radius": "0.5rem",
+      "primary": "#3b82f6",
+      "fontBody": "Open Sans",
+      "secondary": "#1e40af",
+      "background": "#ffffff",
+      "fontHeading": "Roboto",
+      "primaryHover": "#3b82f6"
+    }
+  },
+  {
+    "name": "Default Theme",
+    "variables": {
+      "logo": "https://res.cloudinary.com/dqyjgssod/image/upload/q_auto/f_auto/v1775461921/Be3-blue_wp6zzi.png",
+      "social": {
+        "twitter": "",
+        "facebook": "",
+        "linkedin": "",
+        "instagram": ""
+      },
+      "primary": "#000000",
+      "copyright": "",
+      "secondary": "#ffffff",
+      "primaryHover": "#000000"
+    }
+  }
+]

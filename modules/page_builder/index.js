@@ -9,12 +9,31 @@ const Page = require('./models/Page');
 const Theme = require('./models/Theme');
 const Layout = require('./models/Layout');
 const Tenant = require('../../platform/core/tenants/models/Tenant');
+const eventBus = require('../../platform/events/EventBus');
+const ProvisioningService = require('./services/ProvisioningService');
+const HeaderFooterSyncService = require('./services/HeaderFooterSyncService');
 const { authenticate } = require('../../platform/core/auth/middleware/authenticate');
 const authorize = require('../../platform/core/roles/middleware/authorize');
 const { asyncHandler } = require('../../middleware/errorHandler');
 
 async function bootstrap(context) {
     const { app } = context;
+
+    // Run Header/Footer color reconciliation repair asynchronously on boot
+    HeaderFooterSyncService.repairAll().catch(err => {
+        console.warn('[PageBuilder] HeaderFooterSync initial repair warning:', err.message);
+    });
+
+    // Register listener for new tenant creation
+    eventBus.on('tenant.created', async (data) => {
+        try {
+            console.log(`[PageBuilder] Received tenant.created event for: ${data.tenantId}`);
+            await ProvisioningService.provisionDefaults(data.tenantId);
+        } catch (err) {
+            console.error(`[PageBuilder] Automatic provisioning failed for tenant ${data.tenantId}:`, err);
+        }
+    });
+
     const router = express.Router();
 
     // Get all widgets for a specific page (PUBLIC - for storefront display)
@@ -29,7 +48,6 @@ async function bootstrap(context) {
             if (activeLayout) {
                 targetLayoutId = activeLayout.id;
             } else {
-                // Fallback to 'Default' if no active layout found
                 const defaultLayout = await Layout.findDefault(req.tenantId);
                 targetLayoutId = defaultLayout ? defaultLayout.id : null;
             }
@@ -46,7 +64,83 @@ async function bootstrap(context) {
             targetLayoutId,
             includeInactive === 'true'
         );
-        res.json({ success: true, widgets, layoutId: targetLayoutId });
+
+        // Fetch page details (theme overrides, SEO, etc.)
+        let pageData = null;
+        try {
+            const rawPage = await Page.findBySlug(req.tenantId, page);
+            if (rawPage) {
+                pageData = {
+                    ...rawPage,
+                    theme_overrides: typeof rawPage.theme_overrides === 'string'
+                        ? JSON.parse(rawPage.theme_overrides || '{}')
+                        : (rawPage.theme_overrides || {})
+                };
+            }
+            if ((page === 'header' || page === 'footer') && (!pageData || !pageData.theme_overrides?.background)) {
+                const activeTheme = await Theme.findActive(req.tenantId);
+                const vars = typeof activeTheme?.variables === 'string'
+                    ? JSON.parse(activeTheme.variables || '{}')
+                    : (activeTheme?.variables || {});
+                const themeBg = vars[page]?.backgroundColor;
+                if (themeBg) {
+                    pageData = {
+                        ...(pageData || { slug: page, title: page === 'header' ? 'Global Header' : 'Global Footer' }),
+                        theme_overrides: { ...(pageData?.theme_overrides || {}), background: themeBg }
+                    };
+                }
+            }
+        } catch (pErr) {
+            console.warn(`[PageBuilder] Could not fetch page data for slug ${page}:`, pErr.message);
+        }
+
+        // Waterfall Killer: Server-Side Master Plan Injection
+        let randomizationPlan = null;
+        const randomizedWidgets = widgets
+            .filter(w => w.config?.randomize?.enabled)
+            .map(w => ({
+                id: w.id,
+                intent: {
+                    allowedTypes: w.config.randomize.allowedTypes || (w.widget_type.includes('category') ? ['category'] : ['category', 'collection', 'clause']),
+                    count: w.config.randomize.count || (w.widget_type.includes('category') ? (w.config.maxCategories || w.config.randomCount || 6) : 1),
+                    sourceType: w.config.sourceType,
+                    parentCategoryId: w.config.parentCategoryId,
+                    manualCategoryIds: w.config.manualCategoryIds
+                },
+                config: w.config
+            }));
+
+        if (randomizedWidgets.length > 0) {
+            try {
+                const RandomizationService = require('../search/services/RandomizationService');
+                const data = await RandomizationService.getSnapshotPlan(req.tenantId, page, randomizedWidgets);
+                const results = data?.results || (Array.isArray(data) ? data : []);
+
+                // Convert to map for easy frontend consumption
+                randomizationPlan = {};
+                results.forEach(res => {
+                    const sourceWidget = randomizedWidgets.find(w => w.id === res.widgetId);
+                    const rawFreq = sourceWidget?.config?.randomize?.frequency || sourceWidget?.config?.randomize?.interval;
+                    const frequency = rawFreq === 'page_load' ? 'always' : (rawFreq || 'always');
+
+                    randomizationPlan[res.widgetId] = {
+                        ...res,
+                        frequency,
+                        _timestamp: Date.now()
+                    };
+                });
+            } catch (err) {
+                console.error('[PageBuilder] Failed to inject randomization plan:', err);
+            }
+        }
+
+        res.json({
+            success: true,
+            widgets,
+            page: pageData,
+            layoutId: targetLayoutId,
+            randomizationPlan
+        });
     }));
 
     // Get single widget (PUBLIC - for storefront display)
@@ -170,6 +264,12 @@ async function bootstrap(context) {
     // Create new page
     router.post('/pages', authenticate, authorize('pages.create'), asyncHandler(async (req, res) => {
         const page = await Page.create(req.tenantId, req.body);
+        if (page && (page.slug === 'header' || page.slug === 'footer')) {
+            const rawOverrides = typeof page.theme_overrides === 'string'
+                ? JSON.parse(page.theme_overrides || '{}')
+                : (page.theme_overrides || {});
+            await HeaderFooterSyncService.syncPageToTheme(req.tenantId, page.slug, rawOverrides);
+        }
         res.status(201).json({ success: true, page });
     }));
 
@@ -187,6 +287,12 @@ async function bootstrap(context) {
         const page = await Page.update(req.tenantId, req.params.id, req.body);
         if (!page) {
             return res.status(404).json({ error: 'Page not found' });
+        }
+        if (page && (page.slug === 'header' || page.slug === 'footer')) {
+            const rawOverrides = typeof page.theme_overrides === 'string'
+                ? JSON.parse(page.theme_overrides || '{}')
+                : (page.theme_overrides || {});
+            await HeaderFooterSyncService.syncPageToTheme(req.tenantId, page.slug, rawOverrides);
         }
         res.json({ success: true, page });
     }));
@@ -300,6 +406,9 @@ async function bootstrap(context) {
     // Create theme (Admin)
     router.post('/themes', authenticate, authorize('themes.create'), asyncHandler(async (req, res) => {
         const theme = await Theme.create(req.tenantId, req.body);
+        if (theme && req.body.variables) {
+            await HeaderFooterSyncService.syncThemeToPage(req.tenantId, req.body.variables);
+        }
         res.status(201).json({ success: true, theme });
     }));
 
@@ -307,6 +416,9 @@ async function bootstrap(context) {
     router.put('/themes/:id', authenticate, authorize('themes.edit'), asyncHandler(async (req, res) => {
         const theme = await Theme.update(req.tenantId, req.params.id, req.body);
         if (!theme) return res.status(404).json({ error: 'Theme not found' });
+        if (req.body.variables) {
+            await HeaderFooterSyncService.syncThemeToPage(req.tenantId, req.body.variables);
+        }
         res.json({ success: true, theme });
     }));
 
@@ -314,6 +426,9 @@ async function bootstrap(context) {
     router.post('/themes/:id/activate', authenticate, authorize('themes.activate'), asyncHandler(async (req, res) => {
         const theme = await Theme.activate(req.tenantId, req.params.id);
         if (!theme) return res.status(404).json({ error: 'Theme not found' });
+        if (theme.variables) {
+            await HeaderFooterSyncService.syncThemeToPage(req.tenantId, theme.variables);
+        }
         res.json({ success: true, theme });
     }));
 

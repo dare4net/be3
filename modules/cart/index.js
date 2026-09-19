@@ -44,13 +44,47 @@ async function bootstrap(context) {
                 return res.json({ success: true, cart: null, items: [] });
             }
 
-            // Get cart items
+            // Get cart items with product and vendor details
             const itemsResult = await query(
-                `SELECT * FROM cart_items WHERE cart_id = $1`,
-                [cart.id]
+                `SELECT 
+                    ci.*, 
+                    p.name as product_name, 
+                    p.image_url,
+                    p.created_by as vendor_id,
+                    u.business_name,
+                    u.checkout_style,
+                    u.whatsapp_phone
+                 FROM cart_items ci
+                 JOIN products p ON ci.product_id = p.id
+                 LEFT JOIN users u ON p.created_by = u.id
+                 WHERE ci.cart_id = $1 AND ci.tenant_id = $2`,
+                [cart.id, tenantId]
             );
 
-            res.json({ success: true, cart, items: itemsResult.rows });
+            // Group items by vendor
+            const vendorGroupsMap = new Map();
+            itemsResult.rows.forEach(item => {
+                const vendorId = item.vendor_id || 'platform';
+                if (!vendorGroupsMap.has(vendorId)) {
+                    vendorGroupsMap.set(vendorId, {
+                        vendorId,
+                        businessName: item.business_name || 'Generic',
+                        checkoutStyle: item.checkout_style || 'inhouse',
+                        whatsappPhone: item.whatsapp_phone || null,
+                        items: []
+                    });
+                }
+                vendorGroupsMap.get(vendorId).items.push(item);
+            });
+
+            const vendorGroups = Array.from(vendorGroupsMap.values());
+
+            res.json({
+                success: true,
+                cart,
+                items: itemsResult.rows,
+                vendorGroups
+            });
         }));
 
         // Add item to cart
@@ -84,19 +118,41 @@ async function bootstrap(context) {
                 return res.status(400).json({ error: 'Session ID required for guest cart' });
             }
 
-            // Add item
-            const item = await tenantInsert('cart_items', tenantId, {
-                cart_id: cart.id,
-                product_id,
-                variant_id,
-                quantity,
-                price,
-            });
+            // Check if item already exists in cart
+            const existingItemResult = await query(
+                `SELECT id, quantity FROM cart_items 
+                 WHERE cart_id = $1 AND product_id = $2 AND (variant_id = $3 OR (variant_id IS NULL AND $3 IS NULL)) AND tenant_id = $4`,
+                [cart.id, product_id, variant_id, tenantId]
+            );
+
+            let item;
+            if (existingItemResult.rows.length > 0) {
+                // Update existing item
+                const existingItem = existingItemResult.rows[0];
+                const newQuantity = (existingItem.quantity || 0) + (quantity || 1);
+                const updateResult = await query(
+                    `UPDATE cart_items SET quantity = $1, updated_at = NOW() 
+                     WHERE id = $2 RETURNING *`,
+                    [newQuantity, existingItem.id]
+                );
+                item = updateResult.rows[0];
+            } else {
+                // Add new item
+                item = await tenantInsert('cart_items', tenantId, {
+                    cart_id: cart.id,
+                    product_id,
+                    variant_id,
+                    quantity,
+                    price,
+                });
+            }
 
             eventBus.emitEvent('cart.item_added', {
                 tenantId,
                 cartId: cart.id,
                 productId: product_id,
+                quantity: quantity || 1,
+                is_increment: existingItemResult.rows.length > 0
             });
 
             res.status(201).json({ success: true, item });
@@ -162,6 +218,47 @@ async function bootstrap(context) {
             });
 
             res.json({ success: true, message: 'Item removed' });
+        }));
+
+        // Clear entire cart
+        router.delete('/', optionalAuth, asyncHandler(async (req, res) => {
+            const { tenantId, user } = req;
+            const { session_id } = req.query;
+
+            if (!user && !session_id) {
+                return res.status(400).json({ error: 'Session ID required' });
+            }
+
+            let result;
+            if (user) {
+                result = await query(
+                    `DELETE FROM carts WHERE tenant_id = $1 AND user_id = $2 RETURNING id`,
+                    [tenantId, user.id]
+                );
+            } else {
+                result = await query(
+                    `DELETE FROM carts WHERE tenant_id = $1 AND session_id = $2 RETURNING id`,
+                    [tenantId, session_id]
+                );
+            }
+
+            if (result.rows.length > 0) {
+                const cartId = result.rows[0].id;
+                // Items cascade delete usually, but if not, we should rely on database constraints or add manual deletion here if foreign keys aren't set to CASCADE.
+                // Assuming CASCADE for now or that we just want to invalidate the cart.
+
+                // Manually delete items just in case CASCADE isn't set (safety)
+                await query('DELETE FROM cart_items WHERE cart_id = $1', [cartId]);
+
+                eventBus.emitEvent('cart.cleared', {
+                    tenantId,
+                    cartId,
+                    userId: user ? user.id : null,
+                    sessionId: session_id
+                });
+            }
+
+            res.json({ success: true, message: 'Cart cleared' });
         }));
 
         app.use('/cart', router);

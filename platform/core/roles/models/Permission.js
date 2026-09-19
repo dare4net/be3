@@ -52,6 +52,65 @@ class Permission {
         const result = await query(sql, [tenantId, userId]);
         return result.rows.map(r => r.name);
     }
+
+    /**
+     * Get user's allowed categories
+     * Returns empty array if user has unrestricted access (no category restrictions)
+     * Returns array of category IDs if user has category restrictions
+     */
+    static async getUserAllowedCategories(tenantId, userId) {
+        const sql = `
+            SELECT category_id 
+            FROM user_category_permissions 
+            WHERE tenant_id = $1 AND user_id = $2
+        `;
+        const result = await query(sql, [tenantId, userId]);
+        return result.rows.map(r => r.category_id);
+    }
+
+    /**
+     * Check if user has unrestricted category access
+     * Returns true if user can access ALL categories (no restrictions)
+     * Returns false if user has category restrictions
+     */
+    static async hasUnrestrictedCategoryAccess(tenantId, userId) {
+        const sql = `
+            SELECT COUNT(*) as count 
+            FROM user_category_permissions 
+            WHERE tenant_id = $1 AND user_id = $2
+        `;
+        const result = await query(sql, [tenantId, userId]);
+        return parseInt(result.rows[0].count) === 0;
+    }
+
+    /**
+     * Assign category permissions to a user
+     */
+    static async assignCategoriesToUser(tenantId, userId, categoryIds) {
+        // First, remove existing category permissions
+        await query('DELETE FROM user_category_permissions WHERE tenant_id = $1 AND user_id = $2', [tenantId, userId]);
+
+        // Then add new ones
+        if (categoryIds && categoryIds.length > 0) {
+            const values = categoryIds.map((catId, idx) =>
+                `($1, $2, $${idx + 3})`
+            ).join(', ');
+
+            const sql = `
+                INSERT INTO user_category_permissions (tenant_id, user_id, category_id) 
+                VALUES ${values}
+            `;
+
+            await query(sql, [tenantId, userId, ...categoryIds]);
+        }
+    }
+
+    /**
+     * Remove all category restrictions for a user (grant full access)
+     */
+    static async removeUserCategoryPermissions(tenantId, userId) {
+        await query('DELETE FROM user_category_permissions WHERE tenant_id = $1 AND user_id = $2', [tenantId, userId]);
+    }
 }
 
 module.exports = Permission;

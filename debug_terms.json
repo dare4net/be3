@@ -1,0 +1,20 @@
+[
+  {
+    "id": "av_1770733650493_pb3xw",
+    "text": "midrange",
+    "type": "attribute value",
+    "attribute_code": "p",
+    "attribute_name": "price tier",
+    "value": "midrange",
+    "intent": "search"
+  },
+  {
+    "id": "av_1770733650494_vyb0j",
+    "text": "flagship",
+    "type": "attribute value",
+    "attribute_code": "p",
+    "attribute_name": "price tier",
+    "value": "flagship",
+    "intent": "search"
+  }
+]

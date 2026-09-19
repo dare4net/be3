@@ -20,7 +20,13 @@ async function bootstrap(context) {
     try {
         // Register routes
         app.use('/auth', routes);
+
+        // Register Users API
+        const usersRouter = require('./routes/users.routes');
+        app.use('/users', usersRouter);
+
         console.log('[Auth] Routes registered at /auth');
+        console.log('[Auth] Users API registered at /users');
 
         // Register event listeners
         registerListeners();

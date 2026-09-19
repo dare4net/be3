@@ -1,0 +1,691 @@
+🔌 Redis: Using TCP Client (node-redis)
+
+========================================
+  Multi-Tenant SaaS eCommerce Platform
+========================================
+
+✓ Redis Client Ready
+✓ Database connected
+✓ Database connection established
+✓ Event Logger initialized
+✓ Events module initialized
+
+--- Loading Core Modules ---
+
+=== Loading Core Modules ===
+[Auth] Routes registered at /auth
+[Auth] Users API registered at /users
+[EventBus] auth registered listener for 'tenant.created'
+[Auth] Event listeners registered
+✓ Module loaded: auth
+[Tenants] Routes registered at /tenants
+[Tenants] Event listeners registered
+✓ Module loaded: tenants
+[Roles] Permission management routes registered at /api/permissions
+[Roles] Roles routes registered at /roles
+✓ Module loaded: roles
+[Subscriptions] Routes registered at /subscriptions
+✓ Module loaded: subscriptions
+[ModuleRegistry] Routes registered at /modules
+✓ Module loaded: module_registry
+✓ Super Admin panel initialized at /admin
+✓ Module loaded: super_admin
+
+--- Loading Feature Modules ---
+
+=== Loading Feature Modules ===
+[ModuleBootstrapper] Module storefront is disabled via MODULE_STOREFRONT_ENABLED
+[Products] Module initialized 
+✓ Module loaded: products
+[Cart] Module initialized
+✓ Module loaded: cart
+[Checkout] Module initialized
+✓ Module loaded: checkout
+[EventBus] orders registered listener for 'payment.success'
+[Orders] Module initialized
+✓ Module loaded: orders
+[Page Builder] Routes registered at /page-builder
+✓ Module loaded: page_builder
+[Payments] Module initialized
+✓ Module loaded: payments
+[EventBus] shipping registered listener for 'order.created'
+[Shipping] Module initialized
+✓ Module loaded: shipping
+[Marketing] Module initialized
+✓ Module loaded: marketing
+[EventBus] analytics registered listener for 'order.created'
+[EventBus] analytics registered listener for 'user.registered'
+[Analytics] Module initialized
+✓ Module loaded: analytics
+[EventBus] search registered listener for 'product.created'
+[EventBus] search registered listener for 'product.updated'
+[EventBus] search registered listener for 'product.deleted'
+[EventBus] search registered listener for 'category.created'
+[EventBus] search registered listener for 'category.updated'
+[EventBus] search registered listener for 'category.deleted'
+[EventBus] search registered listener for 'collection.created'
+[EventBus] search registered listener for 'collection.updated'
+[EventBus] search registered listener for 'collection.deleted'
+[Search] Event listeners initialized
+[Search] Module initialized
+✓ Module loaded: search
+[ModuleBootstrapper] Module menus not found at C:\Users\chatz\Downloads\eCommerce\modules\menus, skipping...
+✓ Module loaded: banner
+[Vendor] Module initialized
+✓ Module loaded: vendor
+
+✓ Application initialized successfully
+✓ Loaded modules: auth, tenants, roles, subscriptions, module_registry, super_admin, products, cart, checkout, orders, page_builder, payments, shipping, marketing, analytics, search, banner, vendor
+
+========================================
+  Server running on port 3000
+  Environment: development
+========================================
+
+[REQUEST] POST /auth/signup
+[Signup] Starting signup for: vendor_a@example.com subdomain: vendor-1770425483295-90
+[Signup] Step 1: Creating tenant...
+[TenantInit] Initializing tenant e7fea26f-49da-4dc4-af1f-d4b0e86f7678...
+[Signup] Tenant created: e7fea26f-49da-4dc4-af1f-d4b0e86f7678
+[Signup] Step 2: Seeding Roles...
+[RoleService] Seeding default roles for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678
+✓ Database connected
+✓ Database connected
+[TenantInit] Successfully initialized tenant e7fea26f-49da-4dc4-af1f-d4b0e86f7678
+✓ Database connected
+[Auth] Created default admin user for tenant e7fea26f-49da-4dc4-af1f-d4b0e86f7678
+[RoleService] Seeded role: Admin
+[RoleService] Seeded role: Store Manager
+[RoleService] Seeded role: Content Editor
+[RoleService] Seeded role: Order Manager
+[RoleService] Seeded role: Auditor
+[RoleService] Seeded role: Vendor
+[RoleService] Seeded role: Customer
+[Signup] Step 3: Ensuring Functional Admin (admin@vendor-1770425483295-90.com)...
+✓ Functional Admin found (already existed)
+[RoleService] Assigned role ID '63b4458b-c735-43f9-b3cb-6368518b4227' (Admin) to user 56936205-e3fa-4e91-81da-991a0308b31e
+✓ Functional Admin assigned Admin role
+[Signup] Step 4: Creating Personal User...
+[Signup] User created: 85ec6f1e-395c-4631-ab56-72337f822fcb vendor_a@example.com
+[RoleService] Assigned role ID 'e01980b1-5d88-4383-9f68-c3a33e015d54' (Store Manager) to user 85ec6f1e-395c-4631-ab56-72337f822fcb
+✓ Personal User assigned Store Manager role
+[Signup] Step 6: Generating tokens...
+[Signup] Signup complete, user logged in
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /auth/signup HTTP/1.1" 201 - "-" "axios/1.13.2"
+[REQUEST] POST /auth/signup
+[Signup] Starting signup for: vendor_b@example.com subdomain: vendor-1770425484183-87
+[Signup] Step 1: Creating tenant...
+[TenantInit] Initializing tenant cef73974-7e47-4f68-a375-07ad5cc54f98...
+[Signup] Tenant created: cef73974-7e47-4f68-a375-07ad5cc54f98
+[Signup] Step 2: Seeding Roles...
+[RoleService] Seeding default roles for tenant: cef73974-7e47-4f68-a375-07ad5cc54f98
+[TenantInit] Successfully initialized tenant cef73974-7e47-4f68-a375-07ad5cc54f98
+[Auth] Created default admin user for tenant cef73974-7e47-4f68-a375-07ad5cc54f98
+[RoleService] Seeded role: Admin
+[RoleService] Seeded role: Store Manager
+[RoleService] Seeded role: Content Editor
+[RoleService] Seeded role: Order Manager
+[RoleService] Seeded role: Auditor
+[RoleService] Seeded role: Vendor
+[RoleService] Seeded role: Customer
+[Signup] Step 3: Ensuring Functional Admin (admin@vendor-1770425484183-87.com)...
+✓ Functional Admin found (already existed)
+[RoleService] Assigned role ID 'bf9de2b9-0dc7-41d7-b73e-5d1a4ed9aa90' (Admin) to user 54485500-a52e-4bc6-b822-2f76f5600069
+✓ Functional Admin assigned Admin role
+[Signup] Step 4: Creating Personal User...
+[Signup] User created: 0d7fb28a-1150-43cb-a7bf-b66990fdfe4e vendor_b@example.com
+[RoleService] Assigned role ID '81f36354-4dcb-4343-afcd-b2e2c11a1736' (Store Manager) to user 0d7fb28a-1150-43cb-a7bf-b66990fdfe4e
+✓ Personal User assigned Store Manager role
+[Signup] Step 6: Generating tokens...
+[Signup] Signup complete, user logged in
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /auth/signup HTTP/1.1" 201 - "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+[SubscriptionGuard] Found tenant override: { is_enabled: true }
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:24 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] POST /analytics/collect
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "POST /analytics/collect HTTP/1.1" 200 30 "-" "axios/1.13.2"
+[REQUEST] GET /analytics/stats
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "GET /analytics/stats HTTP/1.1" 200 436 "-" "axios/1.13.2"
+[REQUEST] GET /analytics/surfaces
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "GET /analytics/surfaces HTTP/1.1" 200 178 "-" "axios/1.13.2"
+[REQUEST] GET /analytics/details/product/p-a1
+[SubscriptionGuard] Checking access for tenant: e7fea26f-49da-4dc4-af1f-d4b0e86f7678, module: analytics
+127.0.0.1 - - [07/Feb/2026:00:51:25 +0000] "GET /analytics/details/product/p-a1 HTTP/1.1" 200 93 "-" "axios/1.13.2"

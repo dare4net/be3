@@ -1,6 +1,9 @@
 super-admin-web/
 storefront-web/
 admin-dashboard-web/
+be3-WA/
+be3_translator/
+be3-ai-telementary/
 .env.example
 node_modules/
 .env
@@ -20,3 +23,7 @@ build/
 *.swp
 *.swo
 *~
+
+# Firebase Service Account Key � never commit this
+*service-account*.json
+modules/notifications/fcm/*.json

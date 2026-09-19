@@ -10,6 +10,7 @@ require('dotenv').config();
 const express = require('express');
 const helmet = require('helmet');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const morgan = require('morgan');
 const compression = require('compression');
 
@@ -21,7 +22,64 @@ const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { createTenantRateLimiter } = require('./middleware/rateLimiter');
 const moduleBootstrapper = require('./utils/moduleBootstrapper');
 
+const http = require('http');
+const socketIo = require('socket.io');
+
 const app = express();
+const server = http.createServer(app);
+
+// Trust the first proxy hop (Render / nginx) so req.ip, req.protocol,
+// and secure cookies work correctly behind a reverse proxy.
+app.set('trust proxy', 1);
+
+const io = socketIo(server, {
+    cors: {
+        origin: async (origin, callback) => {
+            if (!origin) return callback(null, true);
+            const isLocalIp = /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+            const isAllowedDomain = origin === 'https://be3.shop' || origin === 'http://be3.shop' || origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
+
+            if (isLocalIp || isAllowedDomain) {
+                return callback(null, true);
+            }
+
+            try {
+                const hostname = origin.replace(/^https?:\/\//, '').split(':')[0].toLowerCase();
+                const customTenant = await Tenant.findByDomain(hostname);
+                if (customTenant) {
+                    return callback(null, true);
+                }
+            } catch (e) { }
+
+            callback(null, [
+                process.env.FRONTEND_URL || 'http://localhost:3000',
+                process.env.ADMIN_URL || 'http://localhost:3001'
+            ]);
+        },
+        methods: ["GET", "POST"],
+        credentials: true
+    }
+});
+
+// Attach io to app for access in modules
+app.set('io', io);
+
+// Payment rooms — clients join to receive real-time payment confirmation
+io.on('connection', (socket) => {
+    socket.on('join:payment', (reference) => {
+        if (reference && typeof reference === 'string') {
+            socket.join(`payment:${reference}`);
+        }
+    });
+
+    // User notification rooms — clients join after auth to receive real-time notifications
+    socket.on('join:user', (userId) => {
+        if (userId && typeof userId === 'string') {
+            socket.join(`user:${userId}`);
+        }
+    });
+});
+
 const PORT = process.env.PORT || 3000;
 
 /**
@@ -46,11 +104,60 @@ async function initializeApp() {
 
     // Global middleware
     app.use(helmet()); // Security headers
-    app.use(cors()); // CORS
+
+    // Dynamic CORS for multi-tenant and local development
+    const allowedOrigins = [
+        process.env.FRONTEND_URL || 'http://localhost:3000',
+        process.env.ADMIN_URL || 'http://localhost:3001',
+        'http://localhost:3002',
+        'http://localhost:3003'
+    ];
+    const Tenant = require('./platform/core/tenants/models/Tenant');
+
+    app.use(cors({
+        origin: async function (origin, callback) {
+            if (!origin) return callback(null, true);
+
+            const isLocalIp = /^https?:\/\/(192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+|localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+            const isAllowedDomain = origin === 'https://be3.shop' || origin === 'http://be3.shop' || origin.endsWith('.be3.shop') || origin.endsWith('.onrender.com');
+
+            if (isLocalIp || isAllowedDomain || allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+
+            // Check if origin matches a registered custom domain in DB
+            try {
+                const hostname = origin.replace(/^https?:\/\//, '').split(':')[0].toLowerCase();
+                const customTenant = await Tenant.findByDomain(hostname);
+                if (customTenant) {
+                    return callback(null, true);
+                }
+            } catch (err) {
+                // fall through
+            }
+
+            callback(new Error('Not allowed by CORS'));
+        },
+        credentials: true
+    }));
+    app.use(cookieParser()); // Read HTTP-Only cookies
     app.use(compression()); // Response compression
     app.use(morgan('combined')); // Logging
-    app.use(express.json()); // JSON body parser
+
+    // CRITICAL: The Paystack webhook MUST use raw body for HMAC-SHA512 signature verification.
+    // This route is registered BEFORE express.json() so the body buffer is preserved.
+    // Any route registered after express.json() will receive a parsed object, not a Buffer.
+    app.use('/payments/webhooks/paystack', express.raw({ type: 'application/json' }));
+
+    app.use(express.json({ limit: '50mb' })); // JSON body parser (all other routes)
+    app.use(express.urlencoded({ limit: '50mb', extended: true }));
     app.use(express.urlencoded({ extended: true })); // URL-encoded body parser
+
+    // DEBUG: Request Logger
+    app.use((req, res, next) => {
+        console.log(`[REQUEST] ${req.method} ${req.url}`);
+        next();
+    });
 
     // Tenant identification first (so rate limiter can use req.tenantId for per-tenant keys and exempt check)
     // PRINCIPLE: Multi-tenant by default
@@ -61,11 +168,7 @@ async function initializeApp() {
 
     // Health check endpoint (no tenant required)
     app.get('/health', (req, res) => {
-        res.json({
-            status: 'healthy',
-            timestamp: new Date().toISOString(),
-            loadedModules: moduleBootstrapper.getLoadedModules(),
-        });
+        res.status(200).send('OK');
     });
 
     // Root endpoint
@@ -108,9 +211,10 @@ async function startServer() {
     try {
         await initializeApp();
 
-        app.listen(PORT, '0.0.0.0', () => {
+        server.listen(PORT, '0.0.0.0', () => {
             console.log(`\n========================================`);
             console.log(`  Server running on port ${PORT}`);
+            console.log(`  Realtime (Socket.io) initialized`);
             console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
             console.log(`========================================\n`);
         });
@@ -121,14 +225,23 @@ async function startServer() {
 }
 
 // Handle uncaught errors
+let lastRejection = null;
 process.on('unhandledRejection', (error) => {
-    console.error('Unhandled Rejection:', error);
-    process.exit(1);
+    // ANTI-SPAM: Don't flood the console with the same rejection (e.g. from Redis loop)
+    const msg = error.message || String(error);
+    if (msg === lastRejection) return;
+
+    console.error('🕒 Unhandled Rejection (Recovering):', msg);
+    lastRejection = msg;
+    // Reset after 10 seconds to allow showing if it happens again later
+    setTimeout(() => { if (lastRejection === msg) lastRejection = null; }, 10000);
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-    process.exit(1);
+    console.error('💥 Uncaught Exception:', error.message || error);
+    // Uncaught exceptions are usually more severe code issues, so we exit but with a slight delay 
+    // to allow logging to flush. In a production cluster (PM2/Kubernetes), it will restart.
+    setTimeout(() => process.exit(1), 500);
 });
 
 // Graceful shutdown
@@ -139,8 +252,9 @@ process.on('SIGTERM', async () => {
 });
 
 // Start the server
+// initializeApp().then(() => { ... }) is not used here as startServer calls it.
 startServer();
 
-module.exports = app;
 
-// Server file touched to trigger reload (FINAL fix for import paths)
+// Force restart for env reload and module update
+module.exports = app;

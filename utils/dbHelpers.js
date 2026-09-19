@@ -65,6 +65,10 @@ async function tenantInsert(tableName, tenantId, data) {
     RETURNING *
   `;
 
+    if (tableName === 'products') {
+        // Standard product insertion
+    }
+
     const result = await query(sql, values);
     return result.rows[0];
 }
@@ -73,8 +77,20 @@ async function tenantInsert(tableName, tenantId, data) {
  * Execute tenant-scoped UPDATE
  */
 async function tenantUpdate(tableName, tenantId, id, data) {
-    const keys = Object.keys(data);
-    const values = Object.values(data);
+    // Filter out undefined values to prevent accidental NULL updates for omitted fields
+    const filteredData = Object.keys(data).reduce((acc, key) => {
+        if (data[key] !== undefined) acc[key] = data[key];
+        return acc;
+    }, {});
+
+    const keys = Object.keys(filteredData);
+    const values = Object.values(filteredData);
+
+    if (keys.length === 0) {
+        // If nothing to update, just return the existing record
+        const res = await query(`SELECT * FROM ${tableName} WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+        return res.rows[0];
+    }
 
     const setClause = keys.map((key, i) => `${key} = $${i + 1}`).join(', ');
 
@@ -84,7 +100,7 @@ async function tenantUpdate(tableName, tenantId, id, data) {
     WHERE id = $${keys.length + 1} 
     AND tenant_id = $${keys.length + 2}
     RETURNING *
-  `;
+    `;
 
     const result = await query(sql, [...values, id, tenantId]);
     return result.rows[0];
@@ -132,7 +148,7 @@ async function findByIdTenant(tableName, tenantId, id) {
  * Paginated tenant query
  * Handles filtering (status, search), pagination, and ordering
  */
-async function paginatedTenantQuery(tableName, tenantId, options = {}) {
+async function paginatedTenantQuery(tableName, tenantId, options = {}, extraWhere = '') {
     const {
         page = 1,
         perPage = 20,
@@ -146,8 +162,11 @@ async function paginatedTenantQuery(tableName, tenantId, options = {}) {
     let params = [];
     const whereConditions = [];
 
-    // 1. Base Tenant Condition
+    // 1. Base Tenant Condition (including soft-delete check)
     whereConditions.push(`tenant_id = $${params.length + 1}`);
+    if (['products', 'users', 'tenants'].includes(tableName)) {
+        whereConditions.push(`deleted_at IS NULL`);
+    }
     params.push(tenantId);
 
     // 2. Additional Conditions
@@ -188,7 +207,12 @@ async function paginatedTenantQuery(tableName, tenantId, options = {}) {
     }
 
     // Construct SQL
-    const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+    let whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+
+    // Append any extra WHERE conditions (raw SQL, no params)
+    if (extraWhere) {
+        whereClause += ` ${extraWhere}`;
+    }
 
     // Debug logging
     console.log(`[DB Helper] ${tableName} Query: ${whereClause}`);

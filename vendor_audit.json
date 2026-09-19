@@ -1,0 +1,1249 @@
+{
+  "users": [
+    {
+      "id": "08ddeba5-e418-44a9-a8cc-4ad116693477",
+      "email": "admin@demo1768492486141.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "455c08b7-b6e8-47ba-b27f-86a9d2588b83",
+      "email": "john@demo.com",
+      "first_name": "John",
+      "last_name": "Doe",
+      "business_name": null
+    },
+    {
+      "id": "b4a9a0e2-6705-42a2-a755-3410b6f99fc7",
+      "email": "admin@demo1768492647403.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "2d28dfbc-490c-4ccb-ba88-031d7fd32f0c",
+      "email": "kare@gmail.com",
+      "first_name": "kare dam",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "c2cea72e-4370-46d1-a579-b521ecf351eb",
+      "email": "admin@cat1768497928882.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "f37d1249-e3da-4170-945a-2426a6c90ee6",
+      "email": "admin@cat1768497998519.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "b44cd08c-ad64-45e3-87aa-66df6ed41672",
+      "email": "admin@cat1768498033921.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "8032c70a-51a1-4411-a7f5-0eb02c0c5b0a",
+      "email": "admin@cat1768498080526.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "e5ef7683-e931-4de7-a27f-e886753eb64c",
+      "email": "admin@cat1768498103546.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "86dd2921-f1a7-4f01-84d3-2b3dc69d50d7",
+      "email": "sotibanks@soti.com",
+      "first_name": "Sotiba Tongzum",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "8b2d69e8-1b18-4305-8c4e-1773061dd4d9",
+      "email": "admin@dola.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "41f424ba-2ff2-40b6-a418-71e312155f5f",
+      "email": "june@gmail.com",
+      "first_name": "June Drey",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "179e72ec-aa62-4b2d-a96b-ffb16f9985c2",
+      "email": "admin@dreyq.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "c97edb11-da01-45e6-9d87-36b5161ec773",
+      "email": "admin@searchtest1768804799373.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "a54e4a71-6716-4347-b3bc-0c3314cd80d0",
+      "email": "admin@dtech.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "d7b4cc99-e037-4f42-93bb-35aa207681ab",
+      "email": "admin@dreyt.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "e5bf6cff-9f0c-4792-baa5-4a60d320fec0",
+      "email": "drey@gmail.com",
+      "first_name": "Dami",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "988ebe9e-8c7b-40dc-ae0f-8ed10017c5f2",
+      "email": "admin@tarcie.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "d365f3e7-dbd8-4a4a-8646-bc87c84373e7",
+      "email": "tracy@gmail.com",
+      "first_name": "dare Trae",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "451492ad-cd63-489c-9211-5eadc83be049",
+      "email": "dola@gmail.com",
+      "first_name": "dola titi",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "f17b9ec5-293d-4f64-afb4-0b93698d470e",
+      "email": "dare@gmail.com",
+      "first_name": "Mr Aliyu",
+      "last_name": null,
+      "business_name": "Logo Corp"
+    },
+    {
+      "id": "39fc26f3-34a6-4faf-8fe7-a2de61d85108",
+      "email": "admin@soti.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "5b34eb23-9555-4c54-b1bb-8581d834c890",
+      "email": "admin@testco.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": "Super Vendor 1770363213038"
+    },
+    {
+      "id": "f862beda-3887-40f6-a152-bc4ced0d15af",
+      "email": "dreyq@gmail.com",
+      "first_name": "Damilare Adeyemi",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "cd825f57-e3e8-4126-a818-5125b6f469da",
+      "email": "admin@kare.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "7a6604fa-691c-41c2-bb79-4eaeb5ac3cbd",
+      "email": "admin@daw.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "d7741942-1577-4b65-9a45-5fff5a4b7a09",
+      "email": "admin@tongz.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "06f74474-694b-41f4-b275-6d633b1f4f36",
+      "email": "daw@gmail.com",
+      "first_name": "daw ew",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "d1d8e645-559d-4f9d-af14-3d4ffa9882ce",
+      "email": "tongz@gmail.com",
+      "first_name": "Tongzum Sotiba",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "f1395879-603a-4143-9603-c62c874cafa1",
+      "email": "john@demo.com",
+      "first_name": "John",
+      "last_name": "Doe",
+      "business_name": null
+    },
+    {
+      "id": "fcfc5e54-953a-4c64-bab5-3b6f8017a764",
+      "email": "admin@june.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "86ab67a3-b525-4ada-9663-78d25b6333d1",
+      "email": "admin@searchtest1768804882905.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "4f773d79-9da9-403a-871d-c7bcdfc74093",
+      "email": "admin@paul.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "791a5722-f450-4fb8-a763-44d398024c28",
+      "email": "great@gmail.com",
+      "first_name": "Henry Great",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "fa70e4df-8931-40fe-a3ba-3dcc18c4d3e3",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "9e3befd5-2aa5-4cb3-966a-1bdfa7eaf08c",
+      "email": "admin@great.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "9d57f270-47d5-48eb-9284-11baaa456701",
+      "email": "admin@stats-test-1770422452035.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "6c01db55-13bf-4449-89ea-65fd1a4bbc0f",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "0decf4a1-6d4d-48ba-b468-705a5df498d3",
+      "email": "admin@stats-test-1770422578939.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "90585dce-5626-4064-aecd-5072f4593a14",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "397b6118-2a98-4144-aa18-88ef225f69bb",
+      "email": "admin@demo.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": "Dareymi"
+    },
+    {
+      "id": "127ed584-e730-4c1e-bb98-2780226e9b01",
+      "email": "vendor_test_1770359977477@example.com",
+      "first_name": "Test",
+      "last_name": "Vendor",
+      "business_name": "Test Vendor 1770359977478"
+    },
+    {
+      "id": "16d99ed0-c7ba-4887-a185-0fed9dc6f507",
+      "email": "admin@stats-test-1770422189580.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "ab09f14b-a6fa-4b3d-9eaf-148aa06a7895",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "8a63f9d9-698b-4fd6-9ff0-11e7c64f6849",
+      "email": "admin@david.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "5b708d12-e1db-49b0-98e1-4c0a4c9a7750",
+      "email": "dare@gmail.com",
+      "first_name": "Damilare Adeyemi Adepoju",
+      "last_name": null,
+      "business_name": "Drey Tech"
+    },
+    {
+      "id": "eb4dfbe3-2dbf-49aa-a4e6-4944b4093505",
+      "email": "dave@gmail.com",
+      "first_name": "dave",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "d91755f5-22e4-4555-be31-880b4a109869",
+      "email": "admin@dave.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "c11a83ea-9054-46f9-9ae0-270b3572a386",
+      "email": "admin@stats-test-1770422235824.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "f7692bde-f1db-4f22-b555-168ff12372a0",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "bb039752-7b82-45ab-a512-5872f2fcda38",
+      "email": "bola@gmail.com",
+      "first_name": "Bola",
+      "last_name": null,
+      "business_name": "Bola Foods"
+    },
+    {
+      "id": "68ec7d7d-580d-4655-a4dd-f5befe77ec2c",
+      "email": "admin@creek.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "3a413dd1-ba0a-44ff-b7ad-4874834326b2",
+      "email": "admin@stats-test-1770422636698.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "c060771d-e203-4e22-b6ad-f76aeff89342",
+      "email": "creek@gmail.com",
+      "first_name": "creek man",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "40ac837d-e1cd-4863-8873-eaf209cda702",
+      "email": "admin@stats-test-1770422346351.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "748a6ed0-6e00-48e2-b6de-575734c32546",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "0a4a08e8-d483-4f3a-92fe-018f5c6bf898",
+      "email": "admin@stats-test-1770422717796.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "63a6f839-ebc0-497c-b393-e02d9b555f23",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "87367d6a-0746-41d7-b107-2b910e1608ae",
+      "email": "admin@stats-test-1770422785391.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "2662eb52-32b1-4d6f-9e67-e9c9e6556986",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "ed5a09f1-3fdf-4dba-afda-cd434820275e",
+      "email": "admin@stats-test-1770422891909.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "d64b52b0-76f8-46c2-93b4-8391e31bcdb8",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "6fb6ecac-f169-4753-ac40-3893c98a6f70",
+      "email": "admin@stats-test-1770423031745.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "de6a7041-51fe-4d19-a9c2-b083a6d150f9",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "a540ff59-c2a7-4c6e-95a5-c04c023d7146",
+      "email": "admin@stats-test-1770423187367.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "d4cebc32-818b-4ef2-aa26-bee958cae3b5",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "f097082f-ecf2-4fad-8a1a-499ac79ae344",
+      "email": "admin@stats-test-1770423556876.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "dffa2266-ade1-4411-b856-68deba3b2b94",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "818f6c9f-a359-472e-a9fa-5c7f21c669a0",
+      "email": "admin@stats-test-1770424171519.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "c8ca235b-b404-4ff9-aa40-3af60cb0622a",
+      "email": "test_tenant_stats@example.com",
+      "first_name": "Test Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "836c5b84-fd50-49d5-92ea-cce9ba5ab63e",
+      "email": "admin@vendor-1770424767757-49.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "93e035dd-09d6-48f2-a5d8-a8182d3d78ba",
+      "email": "vendor_a@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "232c6f2d-f75d-4959-a416-febb0f2b9e42",
+      "email": "admin@vendor-1770424768748-39.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "51b43973-df7f-4403-ae29-ebc7c2384d17",
+      "email": "vendor_b@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "f7fd4c28-253c-44f5-9724-509c40ee6525",
+      "email": "admin@vendor-1770424787807-86.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "aa44ea61-2522-4cde-bac7-16e3acfc7df0",
+      "email": "vendor_a@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "0cca8762-39b9-4a78-87ee-8fe421af2590",
+      "email": "admin@vendor-1770424788481-45.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "c49244c6-de40-478b-8af2-10063ff2f67a",
+      "email": "vendor_b@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "d4ae28ce-bf0c-482b-a6a8-3a375d573c29",
+      "email": "admin@vendor-1770425002480-73.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "ac6a2959-f6ec-4a0a-944e-6fc6ccd8c327",
+      "email": "vendor_a@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "3d15d5eb-9306-4f8e-bf00-e765cdec349c",
+      "email": "admin@vendor-1770425003817-73.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "351fa7e2-1c3f-4d4f-b13d-595e5ae3a01e",
+      "email": "vendor_b@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "a6269ace-60e6-4d08-8d29-285a0dc1c868",
+      "email": "admin@vendor-1770425223678-44.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "ca150401-4dd2-4465-9986-e2551f9b3eea",
+      "email": "vendor_a@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "b9f4e200-89e9-495d-80c6-d7e490320d84",
+      "email": "admin@vendor-1770425224475-96.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "778f2a37-d51f-4687-a273-cbb21705072f",
+      "email": "vendor_b@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "17e9706f-3879-4ae1-bd28-83f88f304bd9",
+      "email": "admin@vendor-1770425268273-45.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "247cac09-5f6b-48ac-aaca-e422e3ab2dd6",
+      "email": "vendor_a@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "6bf3b162-5f9c-4eb7-88e5-a438b5f29354",
+      "email": "admin@vendor-1770425269204-47.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "01c38078-253f-476e-8ffe-e22d49870666",
+      "email": "vendor_b@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "56936205-e3fa-4e91-81da-991a0308b31e",
+      "email": "admin@vendor-1770425483295-90.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "85ec6f1e-395c-4631-ab56-72337f822fcb",
+      "email": "vendor_a@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "54485500-a52e-4bc6-b822-2f76f5600069",
+      "email": "admin@vendor-1770425484183-87.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "0d7fb28a-1150-43cb-a7bf-b66990fdfe4e",
+      "email": "vendor_b@example.com",
+      "first_name": "Vendor Case",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "0fbbde82-7809-4345-8230-7ecf7d7000a0",
+      "email": "admin@market-1770426907735.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "bf976037-c8f7-4814-b97a-ea908393aa94",
+      "email": "admin_market@example.com",
+      "first_name": "Main Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "47de0b87-c31a-406e-8c73-be778b1b3f7b",
+      "email": "vendor_a_market@example.com",
+      "first_name": "Vendor A",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "ea127958-4c0e-4828-a5cc-a2573ab68d4e",
+      "email": "vendor_b_market@example.com",
+      "first_name": "Vendor B",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "9ebcaaae-ccef-4138-bdf3-5f4ac945bc6a",
+      "email": "admin@market-1770426975468.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "bcd8e75d-7530-4904-8e28-69f8f5c5d3ea",
+      "email": "admin_market@example.com",
+      "first_name": "Main Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "c06351ca-e831-4d27-8fb4-82cb9aa36bd6",
+      "email": "vendor_a_market@example.com",
+      "first_name": "Vendor A",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "4198e345-4b18-4aee-bce0-ad2340f00fba",
+      "email": "vendor_b_market@example.com",
+      "first_name": "Vendor B",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "64dbb782-1e94-4974-9fca-f69b6ee3b1e8",
+      "email": "admin@market-1770427010700.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "51039088-5620-4540-8fe7-10530a481e0c",
+      "email": "admin_market@example.com",
+      "first_name": "Main Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "c29407db-94c3-4496-bb5d-2ab5a865d90d",
+      "email": "vendor_a_market@example.com",
+      "first_name": "Vendor A",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "193bb376-b8a8-4f2c-a52b-9530e6bfd77b",
+      "email": "vendor_b_market@example.com",
+      "first_name": "Vendor B",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "ce7ec299-32ee-4967-81b8-e568144b7135",
+      "email": "admin@market-1770427034453.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "d95f9990-9334-4fbc-99d6-8072824c4f7c",
+      "email": "admin_market@example.com",
+      "first_name": "Main Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "e0c74686-cb60-43fd-95f8-50c3c1f0b623",
+      "email": "vendor_a_market@example.com",
+      "first_name": "Vendor A",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "265dd4bf-fbcb-4f82-84c4-0d9acbb65980",
+      "email": "vendor_b_market@example.com",
+      "first_name": "Vendor B",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "30bf3675-0a23-4f50-bf53-3c90ffc2675c",
+      "email": "admin@market-1770427104148.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "b89bf07f-4f70-41d2-be6e-1aea392636a4",
+      "email": "admin_market@example.com",
+      "first_name": "Main Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "7090b6af-14c8-4081-8b6f-195fed5f4d91",
+      "email": "vendor_a_market@example.com",
+      "first_name": "Vendor A",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "7ae95e3e-05b8-439a-b3f7-723daadfd861",
+      "email": "vendor_b_market@example.com",
+      "first_name": "Vendor B",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "563faa21-37b0-4906-af6f-30353316cf82",
+      "email": "admin@market-1770427152390.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "a6c841f1-27c7-4c43-b904-8ee139a7235e",
+      "email": "admin_market@example.com",
+      "first_name": "Main Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "1d1fc610-6cee-410d-ab63-4f98a7cc9455",
+      "email": "vendor_a_market@example.com",
+      "first_name": "Vendor A",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "dfedc3a5-88fa-4f74-a258-6c42bfd92002",
+      "email": "vendor_b_market@example.com",
+      "first_name": "Vendor B",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "5c634b8f-21db-447a-b62e-dd0a8108ff6b",
+      "email": "admin@market-1770427259538.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "e594a194-24c4-4f1e-a8e4-91da84b9bac7",
+      "email": "admin_market@example.com",
+      "first_name": "Main Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "8c4976c8-5509-484d-b3eb-a5e3e5e74e87",
+      "email": "vendor_a_market@example.com",
+      "first_name": "Vendor A",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "b86c9aa2-b348-448d-92e9-f075cba71518",
+      "email": "vendor_b_market@example.com",
+      "first_name": "Vendor B",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "f89daa50-69d0-466c-9ff1-3fcaf0a7b242",
+      "email": "admin@market-1770427359367.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "8bde2d23-58fb-4db2-b9bb-a3ff0297137e",
+      "email": "admin_market@example.com",
+      "first_name": "Main Admin",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "8c5cff9e-5cb5-4ae7-b3c0-b2cd5bd5662f",
+      "email": "vendor_a_market@example.com",
+      "first_name": "Vendor A",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "38352352-f271-40ca-9b43-bae34ddbe514",
+      "email": "vendor_b_market@example.com",
+      "first_name": "Vendor B",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "d5e1253d-0975-4e29-afef-5187849e8c67",
+      "email": "admin@dedup-test-464885.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "df1379c2-4ef4-401e-99c8-c025dd397f5d",
+      "email": "owner-464885@test.com",
+      "first_name": "Dedup Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "d341e24e-308a-4be3-bb9f-59355b522f19",
+      "email": "admin@dedup-test-523355.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "4efad441-1252-4e87-8a5e-2a3f0ab54a6e",
+      "email": "owner-523355@test.com",
+      "first_name": "Dedup Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "22cdad7c-028a-4e9c-b1c3-8a201c850de8",
+      "email": "admin@dedup-test-653478.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "35ee67fc-2fd9-48d5-89a7-e065362c74a5",
+      "email": "owner-129207@example.com",
+      "first_name": "Group Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "e484100e-106b-472d-bcce-5dceabdf79a8",
+      "email": "owner-653478@test.com",
+      "first_name": "Dedup Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "b193dd53-9cda-4e31-8020-96705dee7771",
+      "email": "admin@dedup-test-945559.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "c0b46ec7-fa1e-4042-a4d8-4e5c6e65fb1c",
+      "email": "owner-945559@example.com",
+      "first_name": "Dedup Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "7f66e976-55ce-4136-b951-8f6d95ac2c65",
+      "email": "admin@dedup-test-93835.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "d401ef03-4daa-4f17-b757-78be7544568d",
+      "email": "owner-93835@example.com",
+      "first_name": "Dedup Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "9e137835-1b70-44c7-9b96-1bfaee0adccf",
+      "email": "admin@dedup-test-218781.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "e8f985db-f797-4b67-a7cc-ca659945c6e2",
+      "email": "owner-218781@example.com",
+      "first_name": "Dedup Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "a7c1111d-6725-4ca2-a3ca-d08de257dad5",
+      "email": "admin@dedup-test-767776.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "1d0dbdd3-51c7-4308-aa12-0c648dc07639",
+      "email": "owner-767776@example.com",
+      "first_name": "Dedup Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "8b0909bb-d45a-4f63-bee4-97e8107d7764",
+      "email": "admin@group-test-211695.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "61123a52-c116-45eb-8812-ea09cc8c5944",
+      "email": "owner-211695@example.com",
+      "first_name": "Group Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "9919c10a-f228-4c6b-a8d9-acf9a67cf9a2",
+      "email": "admin@group-test-92727.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "0f3a17c0-8913-42cb-a5fc-b6ab2bd1a2bc",
+      "email": "owner-92727@example.com",
+      "first_name": "Group Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "98fd0a2f-2049-4005-813f-4a77a5deb54c",
+      "email": "admin@group-test-606798.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "ecb9955e-a0fb-4e5b-9580-9ad4647899db",
+      "email": "owner-606798@example.com",
+      "first_name": "Group Owner",
+      "last_name": null,
+      "business_name": null
+    },
+    {
+      "id": "3ba068c5-5a8b-45d8-af6d-6c49fe8d26a3",
+      "email": "admin@group-test-129207.com",
+      "first_name": "Admin",
+      "last_name": "User",
+      "business_name": null
+    },
+    {
+      "id": "afe03e4b-2a3c-4d40-b25b-b2e299174116",
+      "email": "taye@gmail.com",
+      "first_name": "Taye",
+      "last_name": null,
+      "business_name": "Taye's Home Decor"
+    },
+    {
+      "id": "284a6311-a791-47b5-bbef-689eb6c505f6",
+      "email": "pressy@gmail.com",
+      "first_name": "Akinlade Precious",
+      "last_name": null,
+      "business_name": "Pressy Store"
+    },
+    {
+      "id": "be114e10-2e84-443e-bb4d-6af5535368db",
+      "email": "anthy@gmail.com",
+      "first_name": "Anthony Joshua",
+      "last_name": null,
+      "business_name": "Anthy Wears Store"
+    }
+  ],
+  "collections": [
+    {
+      "id": "97b1e35f-cb9c-4790-9457-94c497ab670b",
+      "name": "Test Collection",
+      "slug": "test-collection-1769033416173",
+      "created_by": null,
+      "is_active": true
+    },
+    {
+      "id": "d8f0ca6c-a56f-4bb9-a6cd-c2aa1f296c43",
+      "name": "Darey",
+      "slug": "darey",
+      "created_by": null,
+      "is_active": true
+    },
+    {
+      "id": "ce4cbfbf-3222-40fb-9ba8-e8b578c4d729",
+      "name": "Bola Foods",
+      "slug": "bola-foods-bb039752-collection",
+      "created_by": "bb039752-7b82-45ab-a512-5872f2fcda38",
+      "is_active": true
+    },
+    {
+      "id": "d829e780-963b-404d-a5c6-6d4957dae7d1",
+      "name": "Logo Corp",
+      "slug": "logo-corp-f17b9ec5-collection",
+      "created_by": "f17b9ec5-293d-4f64-afb4-0b93698d470e",
+      "is_active": true
+    },
+    {
+      "id": "c216d176-5187-4f5c-bf46-fae1fcf0ee6f",
+      "name": "Pressy Store",
+      "slug": "pressy-store-284a6311-collection",
+      "created_by": "284a6311-a791-47b5-bbef-689eb6c505f6",
+      "is_active": true
+    },
+    {
+      "id": "51e5a21b-eaa3-4a4b-977a-898fdba414dc",
+      "name": "Taye's Home Decor",
+      "slug": "taye-s-home-decor-afe03e4b-collection",
+      "created_by": "afe03e4b-2a3c-4d40-b25b-b2e299174116",
+      "is_active": true
+    },
+    {
+      "id": "3aad4ac6-2d17-4965-a501-edc5f2ac923c",
+      "name": "New Arrivals",
+      "slug": "new-arrivals",
+      "created_by": null,
+      "is_active": true
+    },
+    {
+      "id": "ebe3221b-f412-44a2-a1e5-cf92974b0978",
+      "name": "Test Collection",
+      "slug": "coll-606798",
+      "created_by": null,
+      "is_active": true
+    },
+    {
+      "id": "b4fff0a3-636c-48f1-b42c-4d107d5c4ec9",
+      "name": "Test Collection",
+      "slug": "coll-129207",
+      "created_by": "35ee67fc-2fd9-48d5-89a7-e065362c74a5",
+      "is_active": true
+    },
+    {
+      "id": "17fcd211-7cf3-4c8f-844d-83d5189e86da",
+      "name": "Drey Tech",
+      "slug": "drey-tech-5b708d12-collection",
+      "created_by": "5b708d12-e1db-49b0-98e1-4c0a4c9a7750",
+      "is_active": true
+    },
+    {
+      "id": "1b2cdf32-e214-49ef-a5e7-1204f516d24f",
+      "name": "Test",
+      "slug": "",
+      "created_by": "397b6118-2a98-4144-aa18-88ef225f69bb",
+      "is_active": true
+    },
+    {
+      "id": "cebfe6aa-c659-471d-9c36-441865cdb276",
+      "name": "Anthy Wears Store",
+      "slug": "anthy-wears-store-be114e10-collection",
+      "created_by": "be114e10-2e84-443e-bb4d-6af5535368db",
+      "is_active": true
+    }
+  ],
+  "products_sample": [
+    {
+      "id": "96550d37-cf46-4571-9988-5c67146c98bd",
+      "name": "Tecno Cameon 40 Premier",
+      "created_by": null
+    },
+    {
+      "id": "25ca6ce5-35fd-4f80-b1f2-656838c45d21",
+      "name": "COOFENRISY Sexy Female Body Suite",
+      "created_by": "be114e10-2e84-443e-bb4d-6af5535368db"
+    },
+    {
+      "id": "c0b2aeb6-a3de-411e-852c-cd2736291198",
+      "name": "ALagzi 2024 Ladies Classic Fashion Casual Shoes - Khaki",
+      "created_by": "397b6118-2a98-4144-aa18-88ef225f69bb"
+    },
+    {
+      "id": "ebdda735-956e-454e-9891-5d19b349c9dc",
+      "name": "Sacha Buttercup Setting Powder/Finishing Powder For Every Skin",
+      "created_by": "be114e10-2e84-443e-bb4d-6af5535368db"
+    },
+    {
+      "id": "baed25da-5e17-4202-8729-b6ea9669f966",
+      "name": "Denami Pack of 3 Plain Sleeveless Hooded T Shirts",
+      "created_by": "397b6118-2a98-4144-aa18-88ef225f69bb"
+    },
+    {
+      "id": "ab6d9eaa-d3da-4fd2-964d-f5850ba5452b",
+      "name": "Test Product",
+      "created_by": null
+    },
+    {
+      "id": "3b0352d9-eca5-49bc-9a63-64c9e3a95791",
+      "name": "Yellow bi",
+      "created_by": null
+    },
+    {
+      "id": "81481ae9-e829-47f0-9d9e-7ca18d960dd7",
+      "name": "Smartphone X",
+      "created_by": null
+    },
+    {
+      "id": "ebc55602-a263-4d8c-b07b-a40299b0966e",
+      "name": "iphone 17 pro",
+      "created_by": null
+    },
+    {
+      "id": "396fb3ff-62c8-4143-a5f6-bfce696e36e5",
+      "name": "karol",
+      "created_by": null
+    },
+    {
+      "id": "8ba1250d-ece4-4e97-b8ec-38b03e368a99",
+      "name": "Infinix Hot 30 i",
+      "created_by": null
+    },
+    {
+      "id": "d4e6a70e-d4e6-4417-81fb-ab40b512df87",
+      "name": "3PCS COOKWARE POT SET",
+      "created_by": "284a6311-a791-47b5-bbef-689eb6c505f6"
+    },
+    {
+      "id": "75ae5bf9-b4fc-4bf3-bac6-4a9518717718",
+      "name": "Mini Portable Projector",
+      "created_by": null
+    },
+    {
+      "id": "a17ab47b-48b2-4831-8f1a-677b5cdc790e",
+      "name": "Mielle Moisturizing and Detangling Shampoo, Conditioner, and Leave-In Conditioner",
+      "created_by": "284a6311-a791-47b5-bbef-689eb6c505f6"
+    },
+    {
+      "id": "25910fb7-bdb2-4022-b2e4-e0405fdbbfc2",
+      "name": "Nice Watch",
+      "created_by": "397b6118-2a98-4144-aa18-88ef225f69bb"
+    },
+    {
+      "id": "204b44a3-3b7c-41ca-bc5b-2336abc1b246",
+      "name": "Mechanical Backlit Keyboard",
+      "created_by": null
+    },
+    {
+      "id": "89f05c56-8a1b-4351-92f9-5209d2cd1c6b",
+      "name": "Smart Digital Watch (Sample)",
+      "created_by": null
+    },
+    {
+      "id": "72faea4e-18ba-42af-9ad8-4ee3e22e6e6c",
+      "name": "Portable Power Bank (Sample)",
+      "created_by": null
+    },
+    {
+      "id": "d48349b9-2bb8-43cc-b792-8fd368e07296",
+      "name": "Mini Portable Projector (Sample)",
+      "created_by": null
+    },
+    {
+      "id": "d67f2591-9e9b-49c7-83f2-0598bc125cd6",
+      "name": "Organic Hass Avocado (Sample)",
+      "created_by": null
+    }
+  ]
+}

@@ -24,12 +24,12 @@ class RefreshToken {
     /**
      * Find token by token string
      */
-    static async findByToken(token) {
+    static async findByToken(token, tenantId) {
         const sql = `
       SELECT * FROM refresh_tokens 
       WHERE token = $1 AND revoked_at IS NULL
     `;
-        const result = await query(sql, [token]);
+        const result = await query(sql, [token], tenantId); // Pass tenantId for RLS
         return result.rows[0] || null;
     }
 
@@ -62,8 +62,8 @@ class RefreshToken {
     /**
      * Check if token is valid
      */
-    static async isValid(token) {
-        const refreshToken = await this.findByToken(token);
+    static async isValid(token, tenantId) {
+        const refreshToken = await this.findByToken(token, tenantId);
 
         if (!refreshToken) return false;
         if (refreshToken.revoked_at) return false;

@@ -11,9 +11,12 @@ const eventBus = require('../../../events/EventBus');
  */
 function registerListeners() {
     /**
-     * Currently no events to listen to
-     * This module primarily emits events that other modules listen to
+     * Listen for tenant.created to run high-quality onboarding
      */
+    eventBus.on('tenant.created', async (data) => {
+        const TenantInitializationService = require('../services/TenantInitializationService');
+        await TenantInitializationService.initialize(data.tenantId);
+    });
 
     console.log('[Tenants] Event listeners registered');
 }

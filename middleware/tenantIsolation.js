@@ -21,16 +21,14 @@ async function tenantIdentifier(req, res, next) {
             '/modules', // Global module registry
             '/products/admin', // Super admin product management
             '/auth/signup', // Public signup (creates tenant + user)
-            '/auth/refresh', // Token refresh (uses token for context)
+            '/payments/webhooks', // Payment gateway webhooks (server-to-server, no tenant header)
+            '/wa-auth/verify',   // Internal: be3-WA → backend (protected by x-internal-secret)
+            '/wa-auth/resolve',  // Internal: be3-WA → backend (protected by x-internal-secret)
+            '/wa-auth/magic',    // Public: storefront magic link consumption
         ];
 
         // Check if this is a public route
         const isPublicRoute = publicRoutes.some(route => req.path.startsWith(route));
-
-        // Log for debugging
-        if (req.path.includes('admin')) {
-            console.log('[TenantIsolation] Admin route check:', req.path, 'isPublic:', isPublicRoute);
-        }
 
         if (isPublicRoute) {
             return next();
@@ -43,24 +41,28 @@ async function tenantIdentifier(req, res, next) {
             tenantId = req.headers['x-tenant-id'];
         }
 
-        // Method 2: Extract from subdomain (e.g., acme.platform.com -> acme)
+        // Method 2: Extract from custom domain or subdomain (e.g., custom.com or acme.platform.com -> acme)
         else if (req.headers.host) {
-            const hostname = req.headers.host.split(':')[0]; // Remove port
+            const hostname = req.headers.host.split(':')[0].toLowerCase(); // Remove port
             const parts = hostname.split('.');
 
-            // If subdomain exists and isn't 'www' or 'api'
-            if (parts.length > 2 && !['www', 'api'].includes(parts[0])) {
+            // 2a. Check custom domain match
+            let result = await query(
+                "SELECT id FROM tenants WHERE domain = $1 AND status IN ('active', 'trial')",
+                [hostname]
+            );
+
+            // 2b. If no custom domain match, check subdomain match
+            if (result.rows.length === 0 && parts.length > 2 && !['www', 'api'].includes(parts[0])) {
                 const subdomain = parts[0];
-
-                // Look up tenant by subdomain
-                const result = await query(
-                    'SELECT id FROM tenants WHERE subdomain = $1 AND status = $2',
-                    [subdomain, 'active']
+                result = await query(
+                    "SELECT id FROM tenants WHERE subdomain = $1 AND status IN ('active', 'trial')",
+                    [subdomain]
                 );
+            }
 
-                if (result.rows.length > 0) {
-                    tenantId = result.rows[0].id;
-                }
+            if (result.rows.length > 0) {
+                tenantId = result.rows[0].id;
             }
         }
 
@@ -77,6 +79,25 @@ async function tenantIdentifier(req, res, next) {
                     }
                 } catch (err) {
                     // Invalid/expired token - let authenticate middleware handle it
+                }
+            }
+        }
+
+        // Method 4: Extract from query parameter (for OAuth redirects and public links)
+        if (!tenantId && req.query) {
+            if (req.query.tenantId) {
+                tenantId = req.query.tenantId;
+            } else if (req.query.state) {
+                // OAuth callbacks return the state parameter, which we now encode as base64 JSON {t: tenantId, r: returnUrl}
+                try {
+                    const decoded = JSON.parse(Buffer.from(req.query.state, 'base64').toString('utf8'));
+                    if (decoded && decoded.t) {
+                        tenantId = decoded.t;
+                    } else {
+                        tenantId = req.query.state;
+                    }
+                } catch (e) {
+                    tenantId = req.query.state;
                 }
             }
         }

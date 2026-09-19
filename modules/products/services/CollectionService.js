@@ -4,6 +4,7 @@
  */
 
 const { query } = require('../../../config/database');
+const { SEARCH_INDEX_SAFE_COLUMNS } = require('../../../utils/storefrontHelper');
 
 class CollectionService {
     /**
@@ -108,7 +109,7 @@ class CollectionService {
         const manualExclusions = (collection.excluded_product_ids || []).map(id => `'${id}'`).join(',');
 
         let finalSQL = `
-            SELECT si.* 
+            SELECT ${SEARCH_INDEX_SAFE_COLUMNS.split(',').map(c => 'si.' + c.trim()).join(', ')} 
             FROM search_indexes si
             WHERE si.tenant_id = $1 
             AND si.content_type = 'product'

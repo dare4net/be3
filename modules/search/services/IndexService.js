@@ -39,12 +39,52 @@ class IndexService {
             });
         }
 
+        const attrValues = [];
+        if (product.attributes && typeof product.attributes === 'object') {
+            Object.values(product.attributes).forEach(val => {
+                if (typeof val === 'string') attrValues.push(val);
+                if (Array.isArray(val)) attrValues.push(...val.map(v => v.toString()));
+            });
+        }
+
+        // Build a lookup map for user business names needed in this product
+        let ownerBusinessName = null;
+        if (product.created_by && product.tags && product.tags.some(t => t && t.includes('[BUSINESS_NAME]'))) {
+            const ownerRes = await query(
+                `SELECT business_name, first_name, last_name FROM users WHERE id = $1`,
+                [product.created_by]
+            );
+            const owner = ownerRes.rows[0];
+            if (owner) {
+                ownerBusinessName = owner.business_name
+                    || `${owner.first_name || ''} ${owner.last_name || ''}`.trim()
+                    || null;
+            }
+        }
+
+        // Resolve dynamic tags (e.g., [BUSINESS_NAME]) — direct DB, no VariableRegistry dependency
+        const resolvedTags = [];
+        if (product.tags && product.tags.length > 0) {
+            for (const tag of product.tags) {
+                if (tag && tag.includes('[BUSINESS_NAME]')) {
+                    if (ownerBusinessName) {
+                        resolvedTags.push(tag.replace(/\[BUSINESS_NAME\]/g, ownerBusinessName));
+                    }
+                    // Skip storing the unresolved placeholder or "Be3" fallback
+                } else if (tag) {
+                    resolvedTags.push(tag);
+                }
+            }
+        }
+
+
         const keywords = [
             product.name,
             product.sku || '',
-            ...(product.tags || []),
+            ...resolvedTags,
             ...Array.from(allCategoryNames),
-            ...Array.from(allCategorySlugs)
+            ...Array.from(allCategorySlugs),
+            ...attrValues
         ].filter(k => k && k.trim() !== '');
 
         const metadata = {
@@ -57,7 +97,9 @@ class IndexService {
             sku: product.sku || null,
             handle: product.handle || null,
             image_url: product.image_url || null,
-            tags: product.tags || []
+            tags: resolvedTags,
+            created_by: product.created_by || null,
+            delivery_type: product.delivery_type || 'normal'
         };
 
         // Add product attributes if they exist
@@ -69,9 +111,10 @@ class IndexService {
             content_type: 'product',
             content_id: product.id,
             title: product.name || '',
-            content: `${product.description || ''} ${product.sku || ''}`.trim(),
+            content: `${product.description || ''} ${product.sku || ''} ${Array.from(allCategoryNames).join(' ')} ${attrValues.join(' ')}`.trim(),
             keywords: keywords,
-            metadata: metadata
+            metadata: metadata,
+            is_active: product.status === 'active'
         };
 
         await this.upsertIndex(tenantId, searchDoc);
@@ -102,7 +145,8 @@ class IndexService {
             title: category.name || '',
             content: category.description || '',
             keywords: keywords,
-            metadata: metadata
+            metadata: metadata,
+            is_active: category.is_active !== false
         };
 
         await this.upsertIndex(tenantId, searchDoc);
@@ -132,7 +176,8 @@ class IndexService {
             title: collection.name || '',
             content: collection.description || '',
             keywords: keywords,
-            metadata: metadata
+            metadata: metadata,
+            is_active: collection.is_active !== false
         };
 
         await this.upsertIndex(tenantId, searchDoc);
@@ -162,7 +207,8 @@ class IndexService {
             title: page.title || '',
             content: page.content || page.meta_description || '',
             keywords: keywords,
-            metadata: metadata
+            metadata: metadata,
+            is_active: page.is_published !== false
         };
 
         await this.upsertIndex(tenantId, searchDoc);
@@ -176,8 +222,8 @@ class IndexService {
     async upsertIndex(tenantId, doc) {
         const sql = `
             INSERT INTO search_indexes 
-            (tenant_id, content_type, content_id, title, content, keywords, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            (tenant_id, content_type, content_id, title, content, keywords, metadata, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (tenant_id, content_type, content_id)
             DO UPDATE SET
                 title = EXCLUDED.title,
@@ -195,7 +241,8 @@ class IndexService {
             doc.title,
             doc.content,
             doc.keywords,
-            JSON.stringify(doc.metadata)
+            JSON.stringify(doc.metadata),
+            doc.is_active !== false
         ]);
     }
 

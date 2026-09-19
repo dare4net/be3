@@ -1,0 +1,740 @@
+{
+  "tenant_id": "cbe1df05-45ed-455a-9ce6-156b0bd45713",
+  "layout_name": "Default",
+  "exported_at": "2026-04-26T17:38:05.370Z",
+  "widgets": [
+    {
+      "page_type": "branded_search",
+      "widget_type": "product_grid",
+      "config": {
+        "limit": 8,
+        "title": "Featured",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "gridGap": "12px",
+        "showTags": true,
+        "randomize": {
+          "enabled": false,
+          "interval": "session",
+          "limitRange": {
+            "max": 12,
+            "min": 4
+          },
+          "allowedSorts": [
+            "newest",
+            "oldest",
+            "price_asc",
+            "price_desc",
+            "name_asc",
+            "name_desc",
+            "random"
+          ],
+          "randomizeSort": false,
+          "randomizeLimit": true,
+          "randomizeSource": true,
+          "allowedAttributes": [],
+          "allowedCategories": [],
+          "randomizeFeatured": false,
+          "allowedCollections": [],
+          "allowedSourceTypes": [
+            "all",
+            "category",
+            "collection",
+            "clause"
+          ],
+          "randomizeCategorySource": false,
+          "allowedCategorySourceTypes": [
+            "top-level",
+            "all-subcategories",
+            "random"
+          ]
+        },
+        "showPrice": true,
+        "showRating": false,
+        "showVendor": true,
+        "contextAware": true,
+        "titlePadding": "10px",
+        "showAddToCart": true,
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "showAttributes": true,
+        "showDescription": true,
+        "showSocialProof": true,
+        "showViewDetails": true,
+        "sectionPaddingTop": "5px",
+        "showFeaturedBadge": true,
+        "titleBottomMargin": "15px",
+        "sectionPaddingBottom": "5px"
+      },
+      "sort_order": 0,
+      "is_active": true
+    },
+    {
+      "page_type": "branded_search",
+      "widget_type": "product_carousel",
+      "config": {
+        "limit": 8,
+        "title": "Best Sellers",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "showTags": false,
+        "randomize": {
+          "enabled": false,
+          "interval": "session",
+          "limitRange": {
+            "max": 12,
+            "min": 4
+          },
+          "allowedSorts": [
+            "newest",
+            "oldest",
+            "price_asc",
+            "price_desc",
+            "name_asc",
+            "name_desc",
+            "random"
+          ],
+          "randomizeSort": false,
+          "randomizeLimit": true,
+          "randomizeSource": true,
+          "allowedAttributes": [],
+          "allowedCategories": [],
+          "randomizeFeatured": false,
+          "allowedCollections": [],
+          "allowedSourceTypes": [
+            "all",
+            "category",
+            "collection",
+            "clause"
+          ],
+          "randomizeCategorySource": false,
+          "allowedCategorySourceTypes": [
+            "top-level",
+            "all-subcategories",
+            "random"
+          ]
+        },
+        "showPrice": true,
+        "peekEffect": false,
+        "showRating": true,
+        "showVendor": true,
+        "contextAware": true,
+        "titlePadding": "10px",
+        "showAddToCart": true,
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "showAttributes": false,
+        "showDescription": true,
+        "showSocialProof": true,
+        "showViewDetails": true,
+        "sectionPaddingTop": "5px",
+        "showFeaturedBadge": true,
+        "titleBottomMargin": "15px",
+        "sectionPaddingBottom": "5px"
+      },
+      "sort_order": 1,
+      "is_active": true
+    },
+    {
+      "page_type": "branded_search",
+      "widget_type": "search_page_layout",
+      "config": {
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "showTags": false,
+        "cardScale": 0.9,
+        "showPrice": true,
+        "showRating": false,
+        "showFilters": true,
+        "showAddToCart": true,
+        "showSearchBar": true,
+        "showAttributes": false,
+        "sidebarEnabled": true,
+        "showDescription": true,
+        "showSocialProof": true,
+        "showViewDetails": true,
+        "showFeaturedBadge": true,
+        "showImageSearchBar": true,
+        "showActiveFiltersBar": true
+      },
+      "sort_order": 2,
+      "is_active": true
+    },
+    {
+      "page_type": "category_detail",
+      "widget_type": "product_grid",
+      "config": {
+        "limit": 8,
+        "title": "Test Grid",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "gridGap": "12px",
+        "showTags": true,
+        "randomize": {
+          "enabled": true,
+          "interval": "session",
+          "limitRange": {
+            "max": 12,
+            "min": 4
+          },
+          "allowedSorts": [
+            "newest",
+            "oldest",
+            "price_asc",
+            "price_desc",
+            "name_asc",
+            "name_desc",
+            "random"
+          ],
+          "randomizeSort": false,
+          "randomizeLimit": true,
+          "randomizeSource": true,
+          "allowedAttributes": [],
+          "allowedCategories": [],
+          "randomizeFeatured": false,
+          "allowedCollections": [],
+          "allowedSourceTypes": [
+            "all",
+            "category",
+            "collection",
+            "clause"
+          ],
+          "randomizeCategorySource": false,
+          "allowedCategorySourceTypes": [
+            "top-level",
+            "all-subcategories",
+            "random"
+          ]
+        },
+        "showPrice": true,
+        "showRating": false,
+        "showVendor": true,
+        "titlePadding": "10px",
+        "showAddToCart": true,
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "showAttributes": true,
+        "showDescription": true,
+        "showSocialProof": true,
+        "showViewDetails": true,
+        "sectionPaddingTop": "5px",
+        "showFeaturedBadge": true,
+        "titleBottomMargin": "15px",
+        "sectionPaddingBottom": "5px"
+      },
+      "sort_order": 0,
+      "is_active": false
+    },
+    {
+      "page_type": "category_detail",
+      "widget_type": "product_carousel",
+      "config": {
+        "limit": 8,
+        "title": "Best Sellers",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "showTags": false,
+        "randomize": {
+          "enabled": false,
+          "interval": "session",
+          "limitRange": {
+            "max": 12,
+            "min": 4
+          },
+          "allowedSorts": [
+            "newest",
+            "oldest",
+            "price_asc",
+            "price_desc",
+            "name_asc",
+            "name_desc",
+            "random"
+          ],
+          "randomizeSort": false,
+          "randomizeLimit": true,
+          "randomizeSource": true,
+          "allowedAttributes": [],
+          "allowedCategories": [],
+          "randomizeFeatured": false,
+          "allowedCollections": [],
+          "allowedSourceTypes": [
+            "all",
+            "category",
+            "collection",
+            "clause"
+          ],
+          "randomizeCategorySource": false,
+          "allowedCategorySourceTypes": [
+            "top-level",
+            "all-subcategories",
+            "random"
+          ]
+        },
+        "showPrice": true,
+        "peekEffect": false,
+        "showRating": false,
+        "showVendor": true,
+        "contextAware": true,
+        "titlePadding": "10px",
+        "showAddToCart": true,
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "showAttributes": false,
+        "showDescription": false,
+        "showSocialProof": false,
+        "showViewDetails": true,
+        "sectionPaddingTop": "5px",
+        "showFeaturedBadge": true,
+        "titleBottomMargin": "15px",
+        "sectionPaddingBottom": "5px"
+      },
+      "sort_order": 1,
+      "is_active": false
+    },
+    {
+      "page_type": "category_detail",
+      "widget_type": "unknown_widget",
+      "config": {
+        "legacy_type": "category_hero"
+      },
+      "sort_order": 2,
+      "is_active": true
+    },
+    {
+      "page_type": "category_detail",
+      "widget_type": "unknown_widget",
+      "config": {
+        "legacy_type": "category_subnav"
+      },
+      "sort_order": 3,
+      "is_active": true
+    },
+    {
+      "page_type": "category_detail",
+      "widget_type": "category_grid",
+      "config": {
+        "style": "grid",
+        "title": "Shop by Category",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "gridGap": "12px",
+        "contextAware": true,
+        "titlePadding": "10px",
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "sectionPaddingTop": "5px",
+        "titleBottomMargin": "15px",
+        "categoryTitleColor": "#ffffff",
+        "sectionPaddingBottom": "5px",
+        "categoryTitleAlignment": "center",
+        "categoryTitleFontWeight": 600,
+        "categoryTitleFontSizeMobile": 14,
+        "categoryTitleFontSizeTablet": 16,
+        "categoryTitleFontSizeDesktop": 18
+      },
+      "sort_order": 4,
+      "is_active": true
+    },
+    {
+      "page_type": "category_detail",
+      "widget_type": "product_grid",
+      "config": {
+        "limit": 8,
+        "title": "Featured",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "gridGap": "6px",
+        "showTags": true,
+        "randomize": {
+          "enabled": true,
+          "interval": "session",
+          "limitRange": {
+            "max": 12,
+            "min": 4
+          },
+          "allowedSorts": [
+            "newest",
+            "oldest",
+            "price_asc",
+            "price_desc",
+            "name_asc",
+            "name_desc",
+            "random"
+          ],
+          "randomizeSort": false,
+          "randomizeLimit": true,
+          "randomizeSource": true,
+          "allowedAttributes": [],
+          "allowedCategories": [],
+          "randomizeFeatured": false,
+          "allowedCollections": [],
+          "allowedSourceTypes": [
+            "clause"
+          ],
+          "randomizeCategorySource": false,
+          "allowedCategorySourceTypes": [
+            "top-level",
+            "all-subcategories",
+            "random"
+          ]
+        },
+        "showPrice": true,
+        "categoryId": "cec978e0-5909-4e7f-940f-b4bf66062460",
+        "showRating": false,
+        "showSeeAll": false,
+        "showVendor": true,
+        "sourceType": "category",
+        "contextAware": true,
+        "titlePadding": "10px",
+        "showAddToCart": true,
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "showAttributes": true,
+        "showDescription": true,
+        "showSocialProof": true,
+        "showViewDetails": true,
+        "autogenerateTitle": true,
+        "sectionPaddingTop": "5px",
+        "showFeaturedBadge": true,
+        "titleBottomMargin": "15px",
+        "sectionPaddingBottom": "5px"
+      },
+      "sort_order": 5,
+      "is_active": true
+    },
+    {
+      "page_type": "category_detail",
+      "widget_type": "search_page_layout",
+      "config": {
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "showTags": false,
+        "cardScale": 0.9,
+        "showPrice": true,
+        "showRating": false,
+        "showFilters": true,
+        "showAddToCart": true,
+        "showSearchBar": true,
+        "showAttributes": false,
+        "sidebarEnabled": true,
+        "showDescription": true,
+        "showSocialProof": true,
+        "showViewDetails": true,
+        "showFeaturedBadge": true,
+        "showImageSearchBar": true,
+        "showActiveFiltersBar": true
+      },
+      "sort_order": 6,
+      "is_active": true
+    },
+    {
+      "page_type": "category_detail",
+      "widget_type": "unknown_widget",
+      "config": {
+        "legacy_type": "category_suggestions"
+      },
+      "sort_order": 7,
+      "is_active": true
+    },
+    {
+      "page_type": "collection_detail",
+      "widget_type": "unknown_widget",
+      "config": {
+        "legacy_type": "collection_hero"
+      },
+      "sort_order": 0,
+      "is_active": true
+    },
+    {
+      "page_type": "collection_detail",
+      "widget_type": "category_carousel",
+      "config": {
+        "gap": "md",
+        "title": "Shop by Category",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "gridGap": "12px",
+        "autoPlay": true,
+        "badgeLabel": "Hot",
+        "peekEffect": true,
+        "showRating": false,
+        "contextAware": true,
+        "infiniteLoop": true,
+        "titlePadding": "10px",
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "showSectionTitle": true,
+        "sectionPaddingTop": "5px",
+        "titleBottomMargin": "15px",
+        "categoryTitleColor": "#ffffff",
+        "sectionPaddingBottom": "5px",
+        "categoryTitleAlignment": "center",
+        "categoryTitleFontWeight": 600,
+        "categoryTitleFontSizeMobile": 14,
+        "categoryTitleFontSizeTablet": 16,
+        "categoryTitleFontSizeDesktop": 18
+      },
+      "sort_order": 1,
+      "is_active": true
+    },
+    {
+      "page_type": "collection_detail",
+      "widget_type": "product_grid",
+      "config": {
+        "limit": 8,
+        "title": "Featured",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "gridGap": "12px",
+        "showTags": true,
+        "randomize": {
+          "enabled": true,
+          "interval": "session",
+          "limitRange": {
+            "max": 12,
+            "min": 4
+          },
+          "allowedSorts": [
+            "newest",
+            "oldest",
+            "price_asc",
+            "price_desc",
+            "name_asc",
+            "name_desc",
+            "random"
+          ],
+          "randomizeSort": false,
+          "randomizeLimit": true,
+          "randomizeSource": true,
+          "allowedAttributes": [],
+          "allowedCategories": [],
+          "randomizeFeatured": false,
+          "allowedCollections": [],
+          "allowedSourceTypes": [
+            "clause",
+            "category"
+          ],
+          "randomizeCategorySource": false,
+          "allowedCategorySourceTypes": [
+            "top-level",
+            "all-subcategories",
+            "random"
+          ]
+        },
+        "showPrice": true,
+        "categoryId": "9569c36b-343d-47b2-9aac-1f2046c82b0e",
+        "showRating": false,
+        "showVendor": true,
+        "sourceType": "category",
+        "contextAware": true,
+        "titlePadding": "10px",
+        "showAddToCart": true,
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "showAttributes": true,
+        "showDescription": true,
+        "showSocialProof": true,
+        "showViewDetails": true,
+        "sectionPaddingTop": "5px",
+        "showFeaturedBadge": true,
+        "titleBottomMargin": "15px",
+        "sectionPaddingBottom": "5px"
+      },
+      "sort_order": 2,
+      "is_active": true
+    },
+    {
+      "page_type": "collection_detail",
+      "widget_type": "search_page_layout",
+      "config": {
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 4
+        },
+        "showTags": false,
+        "cardScale": 0.9,
+        "showPrice": true,
+        "showRating": false,
+        "showFilters": true,
+        "showAddToCart": true,
+        "showSearchBar": false,
+        "showAttributes": false,
+        "sidebarEnabled": true,
+        "showDescription": true,
+        "showSocialProof": true,
+        "showViewDetails": true,
+        "showFeaturedBadge": true,
+        "showImageSearchBar": true,
+        "showActiveFiltersBar": false
+      },
+      "sort_order": 3,
+      "is_active": true
+    },
+    {
+      "page_type": "collection_detail",
+      "widget_type": "product_carousel",
+      "config": {
+        "limit": 8,
+        "title": "Best Sellers",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "showTags": false,
+        "randomize": {
+          "enabled": true,
+          "interval": "session",
+          "limitRange": {
+            "max": 12,
+            "min": 4
+          },
+          "allowedSorts": [
+            "newest",
+            "oldest",
+            "price_asc",
+            "price_desc",
+            "name_asc",
+            "name_desc",
+            "random"
+          ],
+          "randomizeSort": false,
+          "randomizeLimit": true,
+          "randomizeSource": true,
+          "allowedAttributes": [],
+          "allowedCategories": [],
+          "randomizeFeatured": false,
+          "allowedCollections": [],
+          "allowedSourceTypes": [
+            "collection",
+            "clause"
+          ],
+          "randomizeCategorySource": false,
+          "allowedCategorySourceTypes": [
+            "top-level",
+            "all-subcategories",
+            "random"
+          ]
+        },
+        "showPrice": true,
+        "categoryId": "d8aed750-6164-4065-881c-652ef888179f",
+        "peekEffect": false,
+        "showRating": false,
+        "showVendor": true,
+        "sourceType": "category",
+        "contextAware": true,
+        "titlePadding": "10px",
+        "showAddToCart": true,
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "showAttributes": false,
+        "attributeClause": "c:d",
+        "showDescription": false,
+        "showSocialProof": true,
+        "showViewDetails": true,
+        "autogenerateTitle": true,
+        "sectionPaddingTop": "5px",
+        "showFeaturedBadge": true,
+        "titleBottomMargin": "15px",
+        "sectionPaddingBottom": "5px"
+      },
+      "sort_order": 4,
+      "is_active": true
+    },
+    {
+      "page_type": "collection_detail",
+      "widget_type": "category_grid",
+      "config": {
+        "style": "grid",
+        "title": "Shop by Category",
+        "columns": {
+          "mobile": 2,
+          "tablet": 3,
+          "desktop": 5
+        },
+        "gridGap": "12px",
+        "randomize": {
+          "enabled": true,
+          "interval": "session",
+          "limitRange": {
+            "max": 12,
+            "min": 4
+          },
+          "allowedSorts": [
+            "newest",
+            "oldest",
+            "price_asc",
+            "price_desc",
+            "name_asc",
+            "name_desc",
+            "random"
+          ],
+          "randomizeSort": false,
+          "randomizeLimit": false,
+          "randomizeSource": false,
+          "allowedAttributes": [],
+          "allowedCategories": [],
+          "randomizeFeatured": false,
+          "allowedCollections": [],
+          "allowedSourceTypes": [
+            "top-level",
+            "all-subcategories",
+            "random"
+          ],
+          "randomizeCategorySource": true,
+          "allowedCategorySourceTypes": [
+            "top-level",
+            "all-subcategories",
+            "random"
+          ]
+        },
+        "contextAware": true,
+        "titlePadding": "10px",
+        "titleFontSize": "1.2rem",
+        "fullWidthTitle": true,
+        "sectionPaddingTop": "5px",
+        "titleBottomMargin": "15px",
+        "categoryTitleColor": "#ffffff",
+        "sectionPaddingBottom": "5px",
+        "categoryTitleAlignment": "center",
+        "categoryTitleFontWeight": 600,
+        "categoryTitleFontSizeMobile": 14,
+        "categoryTitleFontSizeTablet": 16,
+        "categoryTitleFontSizeDesktop": 18
+      },
+      "sort_order": 5,
+      "is_active": true
+    }
+  ]
+}

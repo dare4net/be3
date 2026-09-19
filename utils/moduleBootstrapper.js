@@ -114,6 +114,22 @@ class ModuleBootstrapper {
             { name: 'search', path: path.join(__dirname, '../modules/search'), envVar: 'MODULE_SEARCH_ENABLED' },
             { name: 'menus', path: path.join(__dirname, '../modules/menus'), envVar: 'MODULE_MENUS_ENABLED' },
             { name: 'banner', path: path.join(__dirname, '../modules/banner'), envVar: 'MODULE_BANNER_ENABLED' },
+            { name: 'variables', path: path.join(__dirname, '../modules/variables'), envVar: 'MODULE_VARIABLES_ENABLED' },
+            { name: 'vendor', path: path.join(__dirname, '../modules/vendor'), envVar: 'MODULE_VENDOR_ENABLED' },
+            { name: 'chat', path: path.join(__dirname, '../modules/chat'), envVar: 'MODULE_CHAT_ENABLED' },
+            { name: 'location', path: path.join(__dirname, '../modules/location'), envVar: 'MODULE_LOCATION_ENABLED' },
+            { name: 'wishlist', path: path.join(__dirname, '../modules/wishlist'), envVar: 'MODULE_WISHLIST_ENABLED' },
+            { name: 'vector', path: path.join(__dirname, '../modules/vector'), envVar: 'MODULE_VECTOR_ENABLED' },
+            { name: 'media', path: path.join(__dirname, '../modules/media'), envVar: 'MODULE_MEDIA_ENABLED' },
+            { name: 'reviews', path: path.join(__dirname, '../modules/reviews'), envVar: 'MODULE_REVIEWS_ENABLED' },
+            { name: 'bloom', path: path.join(__dirname, '../modules/bloom'), envVar: 'MODULE_BLOOM_ENABLED' },
+            { name: 'be3_ai', path: path.join(__dirname, '../modules/be3_ai'), envVar: 'MODULE_BE3_AI_ENABLED' },
+            { name: 'seo', path: path.join(__dirname, '../modules/seo'), envVar: 'MODULE_SEO_ENABLED' },
+            { name: 'mail', path: path.join(__dirname, '../modules/mail'), envVar: 'MODULE_MAIL_ENABLED' },
+            { name: 'notifications', path: path.join(__dirname, '../modules/notifications'), envVar: 'MODULE_NOTIFICATIONS_ENABLED' },
+            { name: 'discount', path: path.join(__dirname, '../modules/discount'), envVar: 'MODULE_DISCOUNT_ENABLED' },
+            { name: 'invoices', path: path.join(__dirname, '../modules/invoices'), envVar: 'MODULE_INVOICES_ENABLED' },
+            { name: 'wa_auth', path: path.join(__dirname, '../modules/wa_auth'), envVar: 'MODULE_WA_AUTH_ENABLED' },
         ];
 
         console.log('\n=== Loading Feature Modules ===');

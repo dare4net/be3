@@ -1,0 +1,5 @@
+[
+  {
+    "migration": "migrations/071_add_oauth_to_users.js"
+  }
+]
