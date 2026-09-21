@@ -74,8 +74,19 @@ async function bootstrap(context) {
                 subtotal += parseFloat(item.price) * item.quantity;
             });
 
-            // Mock tax/shipping logic
-            const tax = subtotal * 0.1;
+            // Compute tax using tax module
+            let tax = 0;
+            let taxBreakdown = [];
+            try {
+                const { computeTax } = require('../tax');
+                const taxResult = await computeTax(tenantId, vendorId || null, items);
+                tax = taxResult.tax_amount || 0;
+                taxBreakdown = taxResult.tax_breakdown || [];
+            } catch (taxErr) {
+                console.warn('[Checkout] Tax calculation fallback:', taxErr.message);
+                tax = 0;
+            }
+
             const shipping = 15.00;
             const total = subtotal + tax + shipping;
 
@@ -89,6 +100,8 @@ async function bootstrap(context) {
                 currency: 'USD',
                 subtotal,
                 tax,
+                tax_breakdown: taxBreakdown,
+                channel: 'storefront',
                 shipping,
                 total,
                 userId: user ? user.id : null,

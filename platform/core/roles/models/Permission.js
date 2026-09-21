@@ -31,13 +31,14 @@ class Permission {
     }
 
     static async userHasPermission(tenantId, userId, permissionName) {
+        const names = Array.isArray(permissionName) ? [...permissionName, '*'] : [permissionName, '*'];
         const sql = `
       SELECT COUNT(*) as count FROM permissions p
       JOIN role_permissions rp ON p.id = rp.permission_id
       JOIN user_roles ur ON rp.role_id = ur.role_id
-      WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND p.name = $3
+      WHERE ur.tenant_id = $1 AND ur.user_id = $2 AND p.name = ANY($3)
     `;
-        const result = await query(sql, [tenantId, userId, permissionName]);
+        const result = await query(sql, [tenantId, userId, names]);
         return parseInt(result.rows[0].count) > 0;
     }
 

@@ -140,9 +140,12 @@ async function bootstrap(context) {
                 order_number,
                 user_id: null,                        // manual order, no storefront user
                 vendor_id: vendorId,
+                channel: req.body.channel || 'manual_admin',
                 status: 'processing',
                 payment_status: reqPaymentStatus || (payment_method === 'manual' ? 'fulfilled' : 'unpaid'),
                 subtotal,
+                tax_amount: parseFloat(req.body.tax_amount || 0),
+                tax_breakdown: req.body.tax_breakdown ? JSON.stringify(req.body.tax_breakdown) : null,
                 total,
                 discount_amount: discountAmt,
                 coupon_code: coupon_code || null,
@@ -155,7 +158,19 @@ async function bootstrap(context) {
                     shipping_address,
                     source: reqMetadata?.source ? reqMetadata.source : 'vendor_created',
                     payment_method: payment_method || 'manual',
-                    created_by: user.id
+                    created_by: user.id,
+                    audit_log: [
+                        {
+                            id: require('crypto').randomUUID(),
+                            timestamp: new Date().toISOString(),
+                            action: 'order_created',
+                            from: null,
+                            to: 'processing',
+                            actor_id: user.id,
+                            actor_name: user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email,
+                            note: 'Manually created order'
+                        }
+                    ]
                 }
             });
 
@@ -206,44 +221,292 @@ async function bootstrap(context) {
             res.status(201).json({ success: true, order, items: enrichedItems });
         }));
 
-        // List orders (Admin/Manager or Bot via session_id)
-        router.get('/', optionalAuth, asyncHandler(async (req, res) => {
-
+        // ── GET /analytics — Channel metrics, status counts, revenue summary ──────
+        router.get('/analytics', authenticate, asyncHandler(async (req, res) => {
             const { tenantId, user, query: reqQuery } = req;
-            const filters = {};
-            if (reqQuery.status) filters.status = reqQuery.status;
-            if (reqQuery.user_id) filters.user_id = reqQuery.user_id;
-            if (reqQuery.search) filters.search = reqQuery.search;
 
-            // If no user but session_id, filter by session or order number (for bot tracking)
-            if (!user && reqQuery.session_id) {
-                filters.session_id = reqQuery.session_id;
+            const params = [tenantId];
+            let vendorFilter = '';
+
+            if (!user.roles) user.roles = await getUserRoles(tenantId, user.id);
+            const userIsVendor = isVendor(user.roles);
+            const userIsAdmin = isAdmin(user.roles);
+
+            if (userIsVendor && !userIsAdmin) {
+                params.push(user.id);
+                // Cover both direct vendor_id assignment AND orders containing that vendor's products
+                vendorFilter = ` AND (vendor_id = $${params.length} OR EXISTS (
+                    SELECT 1 FROM order_items oi
+                    JOIN products p ON p.id = oi.product_id
+                    WHERE oi.order_id = orders.id AND p.created_by = $${params.length}
+                ))`;
             }
 
-            const result = await paginatedTenantQuery('orders', tenantId, {
-                page: parseInt(reqQuery.page) || 1,
-                perPage: parseInt(reqQuery.limit) || parseInt(reqQuery.per_page) || 20,
-                orderBy: 'created_at DESC',
-                conditions: filters
+            let dateFilter = '';
+            if (reqQuery.date_from) {
+                params.push(new Date(reqQuery.date_from).toISOString());
+                dateFilter += ` AND created_at >= $${params.length}`;
+            }
+            if (reqQuery.date_to) {
+                let d = new Date(reqQuery.date_to);
+                if (reqQuery.date_to.length <= 10) d.setHours(23, 59, 59, 999);
+                params.push(d.toISOString());
+                dateFilter += ` AND created_at <= $${params.length}`;
+            }
+
+            const channelCaseSql = `
+                CASE 
+                    WHEN channel = 'pos' OR order_number LIKE 'POS-%' OR metadata->>'source' = 'pos' THEN 'pos'
+                    WHEN checkout_type = 'whatsapp' OR order_number LIKE 'WA-%' OR (metadata->>'is_whatsapp')::text = 'true' THEN 'whatsapp'
+                    WHEN order_number LIKE 'PRE-%' OR (metadata->>'is_bot_preorder')::text = 'true' THEN 'be3ai'
+                    WHEN channel = 'manual_admin' OR metadata->>'source' IN ('vendor_created', 'wa_tools') THEN 'manual'
+                    ELSE 'storefront'
+                END
+            `;
+
+            // 1. Channel Breakdown
+            const channelSql = `
+                SELECT 
+                    resolved_channel AS channel,
+                    COUNT(*)::int AS count,
+                    COALESCE(SUM(total), 0)::numeric(12,2) AS total_revenue,
+                    COALESCE(SUM(CASE WHEN payment_status IN ('paid', 'fulfilled') THEN total ELSE 0 END), 0)::numeric(12,2) AS paid_revenue
+                FROM (
+                    SELECT total, payment_status, ${channelCaseSql} AS resolved_channel
+                    FROM orders
+                    WHERE tenant_id = $1 ${vendorFilter} ${dateFilter}
+                ) sub
+                GROUP BY resolved_channel
+            `;
+            const channelRes = await query(channelSql, params);
+
+            // 2. Status Breakdown
+            const statusSql = `
+                SELECT 
+                    status,
+                    COUNT(*)::int AS count
+                FROM orders
+                WHERE tenant_id = $1 ${vendorFilter} ${dateFilter}
+                GROUP BY status
+            `;
+            const statusRes = await query(statusSql, params);
+
+            // 3. Overall Totals
+            const overviewSql = `
+                SELECT 
+                    COUNT(*)::int AS total_orders,
+                    COALESCE(SUM(total), 0)::numeric(12,2) AS total_revenue,
+                    COALESCE(SUM(CASE WHEN payment_status IN ('paid', 'fulfilled') THEN total ELSE 0 END), 0)::numeric(12,2) AS paid_revenue,
+                    COALESCE(AVG(total), 0)::numeric(12,2) AS avg_order_value,
+                    COUNT(CASE WHEN status IN ('pending', 'processing') THEN 1 END)::int AS pending_fulfillment_count
+                FROM orders
+                WHERE tenant_id = $1 ${vendorFilter} ${dateFilter}
+            `;
+            const overviewRes = await query(overviewSql, params);
+            const overview = overviewRes.rows[0] || {};
+
+            const defaultChannels = {
+                storefront: { label: 'Storefront', count: 0, revenue: 0, paid_revenue: 0, prefix: 'ORD' },
+                pos:        { label: 'POS Terminal', count: 0, revenue: 0, paid_revenue: 0, prefix: 'POS' },
+                whatsapp:   { label: 'WhatsApp', count: 0, revenue: 0, paid_revenue: 0, prefix: 'WA' },
+                be3ai:      { label: 'BE3 AI Bot', count: 0, revenue: 0, paid_revenue: 0, prefix: 'PRE' },
+                manual:     { label: 'Manual / Admin', count: 0, revenue: 0, paid_revenue: 0, prefix: 'ORD' }
+            };
+
+            channelRes.rows.forEach(r => {
+                if (defaultChannels[r.channel]) {
+                    defaultChannels[r.channel].count = parseInt(r.count || 0);
+                    defaultChannels[r.channel].revenue = parseFloat(r.total_revenue || 0);
+                    defaultChannels[r.channel].paid_revenue = parseFloat(r.paid_revenue || 0);
+                }
             });
 
+            const statusCounts = {};
+            statusRes.rows.forEach(r => {
+                statusCounts[r.status] = parseInt(r.count || 0);
+            });
+
+            res.json({
+                success: true,
+                analytics: {
+                    overview: {
+                        total_orders: parseInt(overview.total_orders || 0),
+                        total_revenue: parseFloat(overview.total_revenue || 0),
+                        paid_revenue: parseFloat(overview.paid_revenue || 0),
+                        avg_order_value: parseFloat(overview.avg_order_value || 0),
+                        pending_fulfillment_count: parseInt(overview.pending_fulfillment_count || 0),
+                    },
+                    channels: defaultChannels,
+                    status_counts: statusCounts
+                }
+            });
+        }));
+
+        // ── GET / — List orders with channel, status, date, search, and enrichment ────
+        router.get('/', optionalAuth, asyncHandler(async (req, res) => {
+            const { tenantId, user, query: reqQuery } = req;
+
+            const params = [tenantId];
+            const whereConditions = [`tenant_id = $1`];
+
+            // 1. Role / Vendor Scope
             if (user) {
-                // Fetch roles if not present on user object
-                if (!user.roles) {
-                    user.roles = await Role.getUserRoles(tenantId, user.id);
+                if (!user.roles) user.roles = await getUserRoles(tenantId, user.id);
+                const userIsVendor = isVendor(user.roles);
+                const userIsAdmin = isAdmin(user.roles);
+                if (userIsVendor && !userIsAdmin) {
+                    params.push(user.id);
+                    // Cover both direct vendor_id assignment AND orders containing that vendor's products
+                    whereConditions.push(`(vendor_id = $${params.length} OR EXISTS (
+                        SELECT 1 FROM order_items oi
+                        JOIN products p ON p.id = oi.product_id
+                        WHERE oi.order_id = orders.id AND p.created_by = $${params.length}
+                    ))`);
                 }
-
-                // Filter by vendor if user has Vendor role and is NOT an Admin/Super Admin
-                const isVendor = user.roles.some(r => r.name === 'Vendor' || r === 'Vendor');
-                const isAdmin = user.roles.some(r => r.name === 'Admin' || r === 'Admin' || r.name === 'Super Admin' || r === 'Super Admin');
-
-                if (isVendor && !isAdmin) {
-                    result.data = result.data.filter(o => o.vendor_id === user.id);
-                    result.total = result.data.length;
-                }
+            } else if (reqQuery.session_id) {
+                params.push(reqQuery.session_id);
+                whereConditions.push(`session_id = $${params.length}`);
+            } else {
+                // Security: unauthenticated requests without a session_id cannot list all orders
+                return res.status(401).json({ error: 'Unauthorized', message: 'Authentication required to list orders' });
             }
 
-            res.json({ success: true, ...result });
+            if (reqQuery.user_id) {
+                params.push(reqQuery.user_id);
+                whereConditions.push(`user_id = $${params.length}`);
+            }
+
+            // 2. Channel Filter
+            const channelCaseSql = `
+                CASE 
+                    WHEN channel = 'pos' OR order_number LIKE 'POS-%' OR metadata->>'source' = 'pos' THEN 'pos'
+                    WHEN checkout_type = 'whatsapp' OR order_number LIKE 'WA-%' OR (metadata->>'is_whatsapp')::text = 'true' THEN 'whatsapp'
+                    WHEN order_number LIKE 'PRE-%' OR (metadata->>'is_bot_preorder')::text = 'true' THEN 'be3ai'
+                    WHEN channel = 'manual_admin' OR metadata->>'source' IN ('vendor_created', 'wa_tools') THEN 'manual'
+                    ELSE 'storefront'
+                END
+            `;
+
+            if (reqQuery.channel && reqQuery.channel !== 'all') {
+                params.push(reqQuery.channel);
+                whereConditions.push(`(${channelCaseSql}) = $${params.length}`);
+            }
+
+            // 3. Status Filter
+            if (reqQuery.status && reqQuery.status !== 'all') {
+                params.push(reqQuery.status);
+                whereConditions.push(`status = $${params.length}`);
+            }
+
+            // 4. Payment Status Filter
+            if (reqQuery.payment_status && reqQuery.payment_status !== 'all') {
+                params.push(reqQuery.payment_status);
+                whereConditions.push(`payment_status = $${params.length}`);
+            }
+
+            // 5. Date Range Filter
+            if (reqQuery.date_from) {
+                params.push(new Date(reqQuery.date_from).toISOString());
+                whereConditions.push(`created_at >= $${params.length}`);
+            }
+            if (reqQuery.date_to) {
+                let d = new Date(reqQuery.date_to);
+                if (reqQuery.date_to.length <= 10) d.setHours(23, 59, 59, 999);
+                params.push(d.toISOString());
+                whereConditions.push(`created_at <= $${params.length}`);
+            }
+
+            // 6. Search
+            if (reqQuery.search && reqQuery.search.trim()) {
+                const s = `%${reqQuery.search.trim()}%`;
+                params.push(s);
+                whereConditions.push(`(
+                    order_number ILIKE $${params.length} OR 
+                    customer_email ILIKE $${params.length} OR 
+                    customer_name ILIKE $${params.length} OR 
+                    metadata->>'customer_name' ILIKE $${params.length} OR 
+                    metadata->>'customer_phone' ILIKE $${params.length}
+                )`);
+            }
+
+            // 7. Sorting
+            const allowedSortCols = {
+                created_at: 'created_at',
+                total: 'total',
+                order_number: 'order_number',
+                status: 'status',
+                payment_status: 'payment_status'
+            };
+            const sortCol = allowedSortCols[reqQuery.sort_by] || 'created_at';
+            const sortDir = (reqQuery.sort_dir || 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+
+            // 8. Pagination
+            const page = Math.max(1, parseInt(reqQuery.page) || 1);
+            const perPage = Math.min(100, Math.max(1, parseInt(reqQuery.limit) || parseInt(reqQuery.per_page) || 20));
+            const offset = (page - 1) * perPage;
+
+            const whereClause = `WHERE ${whereConditions.join(' AND ')}`;
+
+            // Count
+            const countSql = `SELECT COUNT(*)::int AS total FROM orders ${whereClause}`;
+            const countRes = await query(countSql, params);
+            const total = countRes.rows[0]?.total || 0;
+
+            // Fetch
+            const dataSql = `
+                SELECT *, ${channelCaseSql} AS resolved_channel
+                FROM orders 
+                ${whereClause}
+                ORDER BY ${sortCol} ${sortDir}
+                LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+            `;
+            const dataRes = await query(dataSql, [...params, perPage, offset]);
+
+            // Enrich items and customer details
+            if (dataRes.rows.length > 0) {
+                const orderIds = dataRes.rows.map(o => o.id);
+                const itemsRes = await query(`
+                    SELECT 
+                        order_id,
+                        COUNT(*)::int AS item_count,
+                        json_agg(json_build_object(
+                            'product_name', product_name,
+                            'quantity', quantity,
+                            'price', price,
+                            'image_url', image_url
+                        )) AS items_summary
+                    FROM order_items
+                    WHERE order_id = ANY($1) AND tenant_id = $2
+                    GROUP BY order_id
+                `, [orderIds, tenantId]);
+
+                const itemsMap = {};
+                itemsRes.rows.forEach(r => {
+                    itemsMap[r.order_id] = {
+                        item_count: r.item_count,
+                        items_summary: r.items_summary
+                    };
+                });
+
+                dataRes.rows = dataRes.rows.map(order => ({
+                    ...order,
+                    item_count: itemsMap[order.id]?.item_count || 0,
+                    items_summary: itemsMap[order.id]?.items_summary || [],
+                    customer_display_name: order.customer_name || order.metadata?.customer_name || (order.customer_email ? order.customer_email.split('@')[0] : 'Guest'),
+                    customer_phone: order.metadata?.customer_phone || ''
+                }));
+            }
+
+            res.json({
+                success: true,
+                data: dataRes.rows,
+                pagination: {
+                    page,
+                    perPage,
+                    total,
+                    totalPages: Math.ceil(total / perPage)
+                }
+            });
         }));
 
         // Get orders for the current authenticated user
@@ -330,12 +593,102 @@ async function bootstrap(context) {
             });
         }));
 
+        // ── POST /bulk-status — Bulk order status update with audit logging ────────
+        router.post('/bulk-status', authenticate, authorize('orders.manage'), asyncHandler(async (req, res) => {
+            const { tenantId, user } = req;
+            const { orderIds, status: newStatus, note } = req.body;
+
+            if (!Array.isArray(orderIds) || orderIds.length === 0) {
+                return res.status(400).json({ error: 'ValidationError', message: 'orderIds array is required' });
+            }
+            if (!newStatus) {
+                return res.status(400).json({ error: 'ValidationError', message: 'status is required' });
+            }
+
+            if (!user.roles) user.roles = await getUserRoles(tenantId, user.id);
+            const userIsVendor = isVendor(user.roles);
+            const userIsAdmin = isAdmin(user.roles);
+
+            let whereVendor = '';
+            const fetchParams = [orderIds, tenantId];
+            if (userIsVendor && !userIsAdmin) {
+                fetchParams.push(user.id);
+                whereVendor = ' AND vendor_id = $3';
+            }
+
+            const ordersRes = await query(
+                `SELECT * FROM orders WHERE id = ANY($1) AND tenant_id = $2 ${whereVendor}`,
+                fetchParams
+            );
+
+            const actorName = user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email;
+            const results = [];
+            const errors = [];
+
+            for (const order of ordersRes.rows) {
+                // Validate transition
+                const allowed = VALID_TRANSITIONS[order.status] || [];
+                if (!allowed.includes(newStatus)) {
+                    errors.push({ orderId: order.id, orderNumber: order.order_number, error: `Invalid transition from '${order.status}' to '${newStatus}'` });
+                    continue;
+                }
+
+                // Check payment gate
+                if (newStatus !== 'cancelled' && !PAYMENT_STATUSES_ALLOWING_ADVANCE.includes(order.payment_status)) {
+                    errors.push({ orderId: order.id, orderNumber: order.order_number, error: `Cannot advance while payment is '${order.payment_status}'` });
+                    continue;
+                }
+
+                const currentMetadata = (typeof order.metadata === 'object' && order.metadata !== null) ? { ...order.metadata } : {};
+                const auditLog = Array.isArray(currentMetadata.audit_log) ? [...currentMetadata.audit_log] : [];
+                auditLog.push({
+                    id: require('crypto').randomUUID(),
+                    timestamp: new Date().toISOString(),
+                    action: 'bulk_status_change',
+                    from: order.status,
+                    to: newStatus,
+                    actor_id: user.id,
+                    actor_name: actorName,
+                    note: note || 'Bulk status update'
+                });
+
+                const updates = { 
+                    status: newStatus,
+                    metadata: { ...currentMetadata, audit_log: auditLog }
+                };
+                if (newStatus === 'shipped') updates.shipped_at = new Date();
+                if (newStatus === 'delivered') updates.delivered_at = new Date();
+                if (newStatus === 'cancelled') updates.cancelled_at = new Date();
+
+                const updated = await tenantUpdate('orders', tenantId, order.id, updates);
+
+                eventBus.emitEvent('order.status_changed', {
+                    tenantId,
+                    orderId: order.id,
+                    orderNumber: order.order_number,
+                    userId: order.user_id || null,
+                    vendorId: order.vendor_id || null,
+                    oldStatus: order.status,
+                    newStatus,
+                });
+
+                results.push({ orderId: order.id, orderNumber: order.order_number, status: newStatus });
+            }
+
+            res.json({
+                success: true,
+                updatedCount: results.length,
+                results,
+                errors
+            });
+        }));
+
         // ── PATCH /:id/status ──────────────────────────────────────────────────
-        // Update order status with full transition validation + payment gate.
+        // Update order status with full transition validation + payment gate + audit logging
         router.patch('/:id/status', authenticate, authorize('orders.manage'), asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
             const orderId = req.params.id;
-            const { status: newStatus } = req.body;
+            const { status: newStatus, note } = req.body;
 
             if (!newStatus) {
                 return res.status(400).json({ error: 'ValidationError', message: 'status is required' });
@@ -394,8 +747,25 @@ async function bootstrap(context) {
                 });
             }
 
-            // 5. Apply update with relevant timestamps (updated_at is added automatically by tenantUpdate)
-            const updates = { status: newStatus };
+            // 5. Apply update with audit log and relevant timestamps
+            const currentMetadata = (typeof order.metadata === 'object' && order.metadata !== null) ? { ...order.metadata } : {};
+            const auditLog = Array.isArray(currentMetadata.audit_log) ? [...currentMetadata.audit_log] : [];
+            const actorName = user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email;
+            auditLog.push({
+                id: require('crypto').randomUUID(),
+                timestamp: new Date().toISOString(),
+                action: 'status_change',
+                from: order.status,
+                to: newStatus,
+                actor_id: user.id,
+                actor_name: actorName,
+                note: note || null
+            });
+
+            const updates = { 
+                status: newStatus,
+                metadata: { ...currentMetadata, audit_log: auditLog }
+            };
             if (newStatus === 'shipped') updates.shipped_at = new Date();
             if (newStatus === 'delivered') updates.delivered_at = new Date();
             if (newStatus === 'cancelled') updates.cancelled_at = new Date();
@@ -421,7 +791,7 @@ async function bootstrap(context) {
         router.patch('/:id/payment-status', authenticate, authorize('orders.manage'), asyncHandler(async (req, res) => {
             const { tenantId, user } = req;
             const orderId = req.params.id;
-            const { payment_status: newPaymentStatus } = req.body;
+            const { payment_status: newPaymentStatus, note } = req.body;
 
             const MANUAL_ALLOWED = ['fulfilled', 'refunded'];
             if (!MANUAL_ALLOWED.includes(newPaymentStatus)) {
@@ -460,15 +830,31 @@ async function bootstrap(context) {
                 });
             }
 
+            const currentMetadata = (typeof order.metadata === 'object' && order.metadata !== null) ? { ...order.metadata } : {};
+            const auditLog = Array.isArray(currentMetadata.audit_log) ? [...currentMetadata.audit_log] : [];
+            const actorName = user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : user.email;
+            auditLog.push({
+                id: require('crypto').randomUUID(),
+                timestamp: new Date().toISOString(),
+                action: 'payment_status_change',
+                from: order.payment_status,
+                to: newPaymentStatus,
+                actor_id: user.id,
+                actor_name: actorName,
+                note: note || (newPaymentStatus === 'fulfilled' ? 'Confirmed off-platform payment' : 'Manual refund')
+            });
+
             // updated_at is added automatically by tenantUpdate
             const updates = {
                 payment_status: newPaymentStatus,
+                metadata: { ...currentMetadata, audit_log: auditLog }
             };
 
             // Record audit trail for fulfilled confirmation
             if (newPaymentStatus === 'fulfilled') {
                 updates.confirmed_by = user.id;
                 updates.payment_confirmed_at = new Date();
+                updates.fulfilled_at = new Date();
             }
 
             const updated = await tenantUpdate('orders', tenantId, orderId, updates);
@@ -599,7 +985,19 @@ async function bootstrap(context) {
 
             const finalShipping = (coupon && coupon.type === 'free_shipping') ? 0 : serverShippingFee;
 
-            const calculatedTotal = Math.max(0, calculatedSubtotal + finalShipping - discountAmount);
+            // Tax calculation
+            let taxAmount = 0;
+            let taxBreakdown = [];
+            try {
+                const { computeTax } = require('../tax');
+                const taxResult = await computeTax(tenantId, dbVendorId, cartItems);
+                taxAmount = taxResult.tax_amount || 0;
+                taxBreakdown = taxResult.tax_breakdown || [];
+            } catch (taxErr) {
+                console.warn('[Orders/WhatsApp] Tax calculation error:', taxErr.message);
+            }
+
+            const calculatedTotal = Math.max(0, calculatedSubtotal + finalShipping + taxAmount - discountAmount);
 
             const order = await tenantInsert('orders', tenantId, {
                 order_number: orderNumber,
@@ -607,10 +1005,13 @@ async function bootstrap(context) {
                 session_id: session_id || null,
                 vendor_id: dbVendorId,
                 checkout_type: 'whatsapp',
+                channel: 'storefront',
                 status: 'pending',
                 payment_status: 'unpaid',
                 subtotal: calculatedSubtotal,
                 discount_amount: discountAmount,
+                tax_amount: taxAmount,
+                tax_breakdown: JSON.stringify(taxBreakdown),
                 total: calculatedTotal,
                 coupon_code: couponCode || null,
                 currency: 'NGN',
@@ -622,6 +1023,8 @@ async function bootstrap(context) {
                     customer_name: customerName,
                     cart_id: cartId,
                     shipping_fee: finalShipping,
+                    tax_amount: taxAmount,
+                    tax_breakdown: taxBreakdown,
                     coupon_code: couponCode || null,
                 }
             });
@@ -756,7 +1159,23 @@ async function bootstrap(context) {
                     for (const item of vendorItems) {
                         vendorSubtotal += parseFloat(item.price) * item.quantity;
                     }
-                    const vendorTax = vendorSubtotal * 0.1; // Simple mock fraction
+
+                    let vendorTax = 0;
+                    let taxBreakdown = [];
+                    if (paymentData.tax !== undefined && Object.keys(itemsByVendor).length === 1) {
+                        vendorTax = parseFloat(paymentData.tax || 0);
+                        taxBreakdown = paymentData.tax_breakdown || [];
+                    } else {
+                        try {
+                            const { computeTax } = require('../tax');
+                            const taxResult = await computeTax(tenantId, dbVendorId, vendorItems.map(i => ({ price: i.price, quantity: i.quantity, product_id: i.productId })));
+                            vendorTax = taxResult.tax_amount || 0;
+                            taxBreakdown = taxResult.tax_breakdown || [];
+                        } catch (e) {
+                            vendorTax = 0;
+                        }
+                    }
+
                     const vendorShipping = vendorItems.length > 0 ? 15.0 : 0; // Simple mock
 
                     console.log(`[Orders] Creating order for vendor: ${dbVendorId || 'platform'}, userId: ${paymentData.userId || 'guest'}`);
@@ -765,9 +1184,12 @@ async function bootstrap(context) {
                         order_number: orderNumber,
                         user_id: paymentData.userId || null,
                         vendor_id: dbVendorId,
+                        channel: paymentData.channel || 'storefront',
                         status: 'paid',
                         payment_status: 'paid',
                         subtotal: vendorSubtotal,
+                        tax_amount: vendorTax,
+                        tax_breakdown: JSON.stringify(taxBreakdown),
                         total: vendorSubtotal + vendorTax + vendorShipping,
                         coupon_code: paymentData.couponCode || null,
                         customer_email: paymentData.email,

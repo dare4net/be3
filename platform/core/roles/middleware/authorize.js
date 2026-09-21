@@ -24,9 +24,10 @@ function authorize(permissionName) {
             const hasPermission = await Permission.userHasPermission(tenantId, user.id, permissionName);
 
             if (!hasPermission) {
+                const reqName = Array.isArray(permissionName) ? permissionName.join(' or ') : permissionName;
                 return res.status(403).json({
                     error: 'Forbidden',
-                    message: `You do not have permission to ${permissionName}`,
+                    message: `You do not have permission to ${reqName}`,
                     requiredPermission: permissionName,
                 });
             }

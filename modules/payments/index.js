@@ -324,13 +324,25 @@ async function bootstrap(context) {
                 }
             }
 
-            const totalNGN = Math.max(0, subtotalNGN + shippingNGN - discountAmount);
+            // Tax calculation
+            let taxAmount = 0;
+            let taxBreakdown = [];
+            const dbVendorId = !vendorId || vendorId === 'platform' ? null : vendorId;
+            try {
+                const { computeTax } = require('../tax');
+                const taxResult = await computeTax(tenantId, dbVendorId, items);
+                taxAmount = taxResult.tax_amount || 0;
+                taxBreakdown = taxResult.tax_breakdown || [];
+            } catch (taxErr) {
+                console.warn('[Payments] Tax calculation error:', taxErr.message);
+            }
+
+            const totalNGN = Math.max(0, subtotalNGN + shippingNGN + taxAmount - discountAmount);
             const totalKobo = Math.round(totalNGN * 100);
 
             // 4. Generate OUR idempotency reference BEFORE any DB or Paystack call
             const reference = `be3_${uuidv4().replace(/-/g, '')}`;
             const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-            const dbVendorId = !vendorId || vendorId === 'platform' ? null : vendorId;
 
             // 5. Create order — status 'pending' until webhook confirms payment
             const order = await tenantInsert('orders', tenantId, {
@@ -338,11 +350,14 @@ async function bootstrap(context) {
                 user_id: user?.id || null,
                 vendor_id: dbVendorId,
                 checkout_type: 'platform',
+                channel: 'storefront',
                 status: 'pending',
                 payment_status: 'unpaid',
                 paystack_reference: reference,
                 subtotal: subtotalNGN,
                 discount_amount: discountAmount,
+                tax_amount: taxAmount,
+                tax_breakdown: JSON.stringify(taxBreakdown),
                 total: totalNGN,
                 currency: 'NGN',
                 customer_email: email,
@@ -352,6 +367,8 @@ async function bootstrap(context) {
                     cart_id: cartId,
                     shipping_address: shippingAddress || null,
                     shipping_fee: shippingNGN,
+                    tax_amount: taxAmount,
+                    tax_breakdown: taxBreakdown,
                     coupon_code: couponCode || null,
                     customer_name: customerName || null,
                     customer_phone: customerPhone || null,

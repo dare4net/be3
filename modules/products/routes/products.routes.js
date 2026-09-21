@@ -31,7 +31,8 @@ function registerProductRoutes(router, eventBus) {
             const result = await paginatedTenantQuery('products', req.tenantId, {
                 page: parseInt(req.query.page) || 1,
                 perPage: parseInt(req.query.per_page) || 20,
-                conditions
+                conditions,
+                search: req.query.search || null
             });
             // Fetch categories for each product (simple N+1 solution for now, optimized in prod)
             for (let product of result.data) {
@@ -363,10 +364,11 @@ function registerProductRoutes(router, eventBus) {
             description: req.body.description,
             sku: req.body.sku,
             price: req.body.price,
-            compare_at_price: req.body.compare_at_price,
-            track_inventory: req.body.track_inventory,
-            inventory_quantity: req.body.inventory_quantity || 0,
-            status: req.body.status || 'draft',
+            track_inventory: req.body.track_inventory ?? false,
+            inventory_quantity: req.body.track_inventory ? (parseInt(req.body.inventory_quantity) || 0) : 0,
+            low_stock_threshold: req.body.track_inventory && req.body.low_stock_threshold ? parseInt(req.body.low_stock_threshold) : null,
+            is_pos_visible: req.body.is_pos_visible !== undefined ? req.body.is_pos_visible : true,
+            is_marketplace_published: req.body.is_marketplace_published !== undefined ? req.body.is_marketplace_published : true,
             created_by: req.user.id,
             attributes: JSON.stringify(productAttributes),
             is_featured: req.body.is_featured || false,
@@ -435,6 +437,24 @@ function registerProductRoutes(router, eventBus) {
             productId: product.id,
             name: product.name,
         });
+
+        // If tracked with initial quantity, record ledger entry
+        if (product.track_inventory && product.inventory_quantity > 0) {
+            try {
+                await tenantInsert('inventory_ledger', req.tenantId, {
+                    product_id: product.id,
+                    vendor_id: req.user.id,
+                    change_quantity: product.inventory_quantity,
+                    previous_quantity: 0,
+                    new_quantity: product.inventory_quantity,
+                    reason: 'restock',
+                    created_by: req.user.id,
+                    notes: 'Initial opening stock',
+                });
+            } catch (ledgerErr) {
+                console.warn('[Inventory] Opening stock ledger warning:', ledgerErr.message);
+            }
+        }
 
         // Update vendor category ledger (vendor_id and vendorName available from context)
         if (vendorName && finalCategoryIds.length > 0) {

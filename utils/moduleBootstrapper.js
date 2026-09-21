@@ -130,6 +130,9 @@ class ModuleBootstrapper {
             { name: 'discount', path: path.join(__dirname, '../modules/discount'), envVar: 'MODULE_DISCOUNT_ENABLED' },
             { name: 'invoices', path: path.join(__dirname, '../modules/invoices'), envVar: 'MODULE_INVOICES_ENABLED' },
             { name: 'wa_auth', path: path.join(__dirname, '../modules/wa_auth'), envVar: 'MODULE_WA_AUTH_ENABLED' },
+            { name: 'tax', path: path.join(__dirname, '../modules/tax'), envVar: 'MODULE_TAX_ENABLED' },
+            { name: 'inventory', path: path.join(__dirname, '../modules/inventory'), envVar: 'MODULE_INVENTORY_ENABLED' },
+            { name: 'pos', path: path.join(__dirname, '../modules/pos'), envVar: 'MODULE_POS_ENABLED' },
         ];
 
         console.log('\n=== Loading Feature Modules ===');

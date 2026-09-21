@@ -182,6 +182,71 @@ function register(eventBus, app) {
         });
     }, 'NotificationsModule');
 
+    // ── pos.cashier.assigned ─────────────────────────────────────────
+    eventBus.registerListener('pos.cashier.assigned', async ({ data }) => {
+        const { tenantId, cashierUserId, vendorName, vendorId } = data;
+        if (!cashierUserId) return;
+
+        await NotificationService.send(app, tenantId, cashierUserId, 'pos.cashier.assigned', {
+            title: `You've been added as a cashier`,
+            message: `${vendorName || 'A vendor'} has linked you as a cashier on their POS. You can now open and operate their register.`,
+            actionUrl: `${ADMIN_URL}/dashboard/pos`,
+            templateData: { vendorName },
+        });
+    }, 'NotificationsModule');
+
+
+    // ── pos.cashier.disconnected ─────────────────────────────────────
+    eventBus.registerListener('pos.cashier.disconnected', async ({ data }) => {
+        const { tenantId, cashierUserId, vendorName, reason } = data;
+        if (!cashierUserId) return;
+
+        const reasonMap = {
+            revoked:  'manually removed you from their cashier list',
+            expired:  'your link has automatically expired due to 7 days of inactivity',
+        };
+        const reasonText = reasonMap[reason] || 'disconnected your cashier link';
+
+        await NotificationService.send(app, tenantId, cashierUserId, 'pos.cashier.disconnected', {
+            title: `Cashier access removed`,
+            message: `${vendorName || 'A vendor'} has ${reasonText}. You will no longer be able to operate their POS register.`,
+            actionUrl: `${ADMIN_URL}/dashboard/pos`,
+            templateData: { vendorName, reason },
+        });
+    }, 'NotificationsModule');
+
+
+    // ── pos.shift.discrepancy ────────────────────────────────────────
+    eventBus.registerListener('pos.shift.discrepancy', async ({ data }) => {
+        const { tenantId, vendorId, cashierName, sessionId, registerId, registerName, expected, actual, discrepancy } = data;
+        if (!vendorId) return;
+
+        const shortfall = Math.abs(discrepancy).toLocaleString('en', { minimumFractionDigits: 2 });
+        const direction = discrepancy < 0 ? 'short by' : 'over by';
+
+        await NotificationService.send(app, tenantId, vendorId, 'pos.shift.discrepancy', {
+            title: `Cash discrepancy detected — ${registerName || 'Register'}`,
+            message: `${cashierName || 'A cashier'} closed a shift with a cash ${direction} ₦${shortfall}. Expected: ₦${Number(expected).toLocaleString()}, Actual: ₦${Number(actual).toLocaleString()}.`,
+            actionUrl: `${ADMIN_URL}/dashboard/pos?session=${sessionId}`,
+            templateData: { cashierName, registerName, expected, actual, discrepancy },
+        });
+    }, 'NotificationsModule');
+
+
+    // ── inventory.low_stock ──────────────────────────────────────────
+    eventBus.registerListener('inventory.low_stock', async ({ data }) => {
+        const { tenantId, vendorId, productId, productName, quantity, threshold } = data;
+        if (!vendorId) return;
+
+        await NotificationService.send(app, tenantId, vendorId, 'inventory.low_stock', {
+            title: `Low stock alert — ${productName}`,
+            message: `"${productName}" is running low with only ${quantity} unit${quantity === 1 ? '' : 's'} remaining (threshold: ${threshold}).`,
+            actionUrl: `${ADMIN_URL}/dashboard/inventory`,
+            templateData: { productName, quantity, threshold },
+        });
+    }, 'NotificationsModule');
+
+
     console.log('✓ Notifications listeners registered');
 }
 
