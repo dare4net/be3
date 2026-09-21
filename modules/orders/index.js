@@ -301,6 +301,18 @@ async function bootstrap(context) {
             }
 
             const order = orderResult.rows[0];
+
+            // Security: Vendor ownership guard for authenticated users
+            if (user) {
+                if (!user.roles) user.roles = await getUserRoles(tenantId, user.id);
+                const userIsVendor = isVendor(user.roles);
+                const userIsAdmin = isAdmin(user.roles);
+
+                if (userIsVendor && !userIsAdmin && order.vendor_id !== user.id && order.user_id !== user.id) {
+                    return res.status(403).json({ error: 'Forbidden', message: 'You can only view your own orders' });
+                }
+            }
+
             const orderSessionId = order.session_id || order.metadata?.session_id || null;
 
             // Security: If session_id is provided, must match

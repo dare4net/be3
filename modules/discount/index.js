@@ -346,8 +346,22 @@ async function bootstrap(context) {
 
         // ── PATCH /:id — update coupon ─────────────────────────────────────
         router.patch('/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
-            const { tenantId } = req;
+            const { tenantId, user } = req;
             const { code, ...rest } = req.body;
+
+            // Vendor ownership check
+            const Role = require('../../platform/core/roles/models/Role');
+            const roles = await Role.getUserRoles(tenantId, user.id);
+            const userIsVendor = roles.some(r => r.name === 'Vendor' || r === 'Vendor');
+            const userIsAdmin = roles.some(r => r.name === 'Admin' || r === 'Admin' || r.name === 'Super Admin');
+
+            const existingRes = await query(`SELECT * FROM discounts WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, [req.params.id, tenantId]);
+            if (!existingRes.rows[0]) return res.status(404).json({ error: 'Coupon not found' });
+
+            if (userIsVendor && !userIsAdmin && existingRes.rows[0].vendor_id !== user.id) {
+                return res.status(403).json({ error: 'Forbidden', message: 'You do not own this coupon' });
+            }
+
             const updates = { ...rest };
             if (code) updates.code = code.toUpperCase();
             if (updates.value !== undefined) updates.value = parseFloat(updates.value);
@@ -362,6 +376,21 @@ async function bootstrap(context) {
 
         // ── DELETE /:id — deactivate and soft delete coupon ───────────
         router.delete('/:id', authenticate, authorize('products.manage'), asyncHandler(async (req, res) => {
+            const { tenantId, user } = req;
+
+            // Vendor ownership check
+            const Role = require('../../platform/core/roles/models/Role');
+            const roles = await Role.getUserRoles(tenantId, user.id);
+            const userIsVendor = roles.some(r => r.name === 'Vendor' || r === 'Vendor');
+            const userIsAdmin = roles.some(r => r.name === 'Admin' || r === 'Admin' || r.name === 'Super Admin');
+
+            const existingRes = await query(`SELECT * FROM discounts WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL`, [req.params.id, tenantId]);
+            if (!existingRes.rows[0]) return res.status(404).json({ error: 'Coupon not found' });
+
+            if (userIsVendor && !userIsAdmin && existingRes.rows[0].vendor_id !== user.id) {
+                return res.status(403).json({ error: 'Forbidden', message: 'You do not own this coupon' });
+            }
+
             await query(
                 `UPDATE discounts SET is_active = false, deleted_at = NOW(), updated_at = NOW() WHERE id = $1 AND tenant_id = $2`,
                 [req.params.id, req.tenantId]
